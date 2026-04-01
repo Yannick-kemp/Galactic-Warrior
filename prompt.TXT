@@ -1,0 +1,21 @@
+Create a walk cycle sprite sheet for a 2D game character based on the provided image. The character should be depicted in 8 sequential frames showing a full walking animation from left to right. Each frame should maintain a consistent style, size, and angle as the original character image. The motion should be smooth and realistic, with appropriate limb movement and body balance. The background should be transparent, and each frame should be evenly spaced in a single horizontal row.
+
+The style you're referring to is often called "lineless art" or "lineless drawing." In this style, artists don't use a distinct black or colored outline to define the edges of figures (like bodies or limbs). Instead, they rely on:
+
+Color blocking
+
+Shading and highlights
+
+Shape contrast
+
+…to suggest form and depth. This style is popular in digital art, children's books, minimalistic illustrations, and modern animations.
+
+Some well-known examples:
+
+Certain scenes in Studio Ghibli films
+
+Flat design or vector art
+
+Illustrators like Mary Blair or Pascal Campion
+
+Want me to show you a visual example or suggest some artists to check out?

@@ -1,0 +1,1 @@
+﻿public enum HitKind { Spark, Laser, Projectile, Flamethrower }

@@ -1,0 +1,2524 @@
+﻿using Assets.Scripts.Characteres.EnemyContoller;
+using Assets.Scripts.Relics.Core;
+using Assets.Scripts.Relics.Events;
+using Assets.Scripts.Tools;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+using UnityEngine.EventSystems;
+
+namespace Assets.Scripts.Characteres.WarriorController
+{
+    public class Warrior : CharacterController
+    {
+        #region Singleton / Constants
+
+        public static Warrior Instance { get; private set; }
+        public const float CONTACT_Y_TOLERANCE = 0.11f;
+
+        #endregion
+
+        #region Enums
+
+        public enum HitFxPoint
+        {
+            ContactOnEnemy,
+            FistSocket,
+            KickSocket
+        }
+
+        public enum AttackAnimMode
+        {
+            Attack1,
+            Attack2
+        }
+
+        #endregion
+
+        #region Prefabs / Visuals
+
+        [Header("Prefabs")]
+        [SerializeField] private GameObject slashPrefab;
+        [SerializeField] private GameObject novaPrefab;
+        [SerializeField] private GameObject twirl2Prefab;
+
+        [Header("Hit FX (Attack1 Animation Event)")]
+        [SerializeField] private GameObject hitExplosionPrefab;
+        [SerializeField] private float hitExplosionScale = 0.25f;
+        [SerializeField] private float hitExplosionDestroyAfter = 0.6f;
+
+        [Header("Hit FX Determinism")]
+        [SerializeField] private bool hitFxUseWorldSpace = true;
+        [SerializeField] private uint hitFxFixedSeed = 12345;
+
+        [Header("Hit FX Spawn Points")]
+        [SerializeField] private Transform fistHitSocket;
+        [SerializeField] private Transform kickHitSocket;
+        [SerializeField] private Vector2 fistFxOffset = Vector2.zero;
+        [SerializeField] private Vector2 kickFxOffset = Vector2.zero;
+
+        [Header("Echo Settings")]
+        [SerializeField] private Color runEchoColor = new Color(1f, 1f, 1f, 0.3f);
+        [SerializeField] private Color jumpEchoColor = new Color(1f, 1f, 0f, 0.4f);
+        [SerializeField] private Color attackEchoColor = new Color(1f, 0f, 0f, 0.5f);
+
+        [Header("Blood Effects")]
+        [SerializeField] private GameObject bloodshedPrefab;
+        [SerializeField] private float bloodEffectCooldown = 0.5f;
+
+        #endregion
+
+        #region Attack Settings
+
+        [Header("Layers")]
+        [SerializeField] private LayerMask enemyLayer;
+
+        [Header("Attack Settings")]
+        [SerializeField] private float attackRadius = 1.5f;
+        [SerializeField] private Vector2 attackCenterOffset = new Vector2(0.5f, 0f);
+
+        [Header("Attack Damage/Knockback")]
+        [SerializeField] private int attack1Damage = 10;
+        [SerializeField] private float attack1KnockbackForce = 0.35f;
+
+        [SerializeField] private float attack2Duration = 5f; // legacy support
+        private bool attack2Enabled = false;                 // legacy support
+
+        [SerializeField] private AttackAnimMode attackMode = AttackAnimMode.Attack1;
+        [SerializeField] private string attack1Trigger = "attack_animation_1";
+        [SerializeField] private string attack2Trigger = "attack_animation_2";
+
+        [Header("Attack2 Cooldown")]
+        [SerializeField] private float attack2Cooldown = 6f;
+        [SerializeField] private bool fallbackToAttack1IfAttack2OnCooldown = true;
+
+        #endregion
+
+        #region Shield
+
+        [Header("Shield VFX")]
+        [SerializeField] private GameObject shieldPrefab;
+        [SerializeField] private Transform shieldSocket;
+        [SerializeField] private Vector3 shieldLocalOffset = new Vector3(0f, 0.6f, 0f);
+        [SerializeField] private Vector3 shieldLocalScale = Vector3.one;
+        [SerializeField] private bool shieldSimulationLocalSpace = true;
+
+        [SerializeField] private string shieldSortingLayerName = "Default";
+        [SerializeField] private int shieldOrderInLayer = 50;
+
+        [Header("Shield Gameplay")]
+        [SerializeField] private bool shieldGameplayEnabled = true;
+        [SerializeField] private float shieldMaxDurability = 100f;
+        [SerializeField] private float shieldBlockCost = 10f;
+        [SerializeField] private float shieldStompCost = 20f;
+        [SerializeField] private float shieldBreakCooldown = 2.0f;
+        [SerializeField] private float shieldMinBlockInterval = 0.06f;
+
+        [Header("Shield Block Reaction (Enemy)")]
+        [SerializeField] private float blockKnockback = 0.25f;
+        [SerializeField] private float blockStunSeconds = 0.15f;
+
+        [Header("Shield Stomp (Landing on Enemy)")]
+        [SerializeField] private int stompDamage = 25;
+        [SerializeField] private float stompKnockback = 0.9f;
+        [SerializeField] private float stompStunSeconds = 0.20f;
+
+        [SerializeField] public Collider2D shieldHitbox;
+
+
+        [Header("Shield Relic Use (UI Only)")]
+        [SerializeField] private float shieldRelicDefaultCooldown = 8f;
+        [SerializeField] private bool shieldRelicRefreshIfAlreadyActive = true;
+
+        private float _nextShieldRelicReadyTime = -999f;
+
+        public bool IsShieldRelicReady => Time.time >= _nextShieldRelicReadyTime;
+        public float ShieldRelicCooldownRemaining => Mathf.Max(0f, _nextShieldRelicReadyTime - Time.time);
+
+        private float _shieldDurability;
+        private bool _shieldBroken;
+        private float _lastBlockTime;
+        private Coroutine _shieldRecoverRoutine;
+        private GameObject _shieldInstance;
+        private ParticleSystem[] _shieldParticles;
+        private ParticleSystemRenderer[] _shieldRenderers;
+        private Coroutine _shieldDisableRoutine;
+
+        public bool ShieldIsUp =>
+            shieldGameplayEnabled &&
+            !_shieldBroken &&
+            _shieldInstance != null &&
+            _shieldInstance.activeSelf;
+
+        public float ShieldDurability01 =>
+            shieldMaxDurability <= 0 ? 0 : Mathf.Clamp01(_shieldDurability / shieldMaxDurability);
+
+        #endregion
+
+        #region Bounce / Collision Anti-Loop
+
+        [Header("Bounce Landing Away (Anti-Double-Landing)")]
+        [SerializeField] private float landAwayDistance = 1.2f;
+        [SerializeField] private float ignoreEnemyCollisionTime = 0.9f;
+        [SerializeField] private float clearancePad = 0.03f;
+
+        private float _requiredClearanceX;
+        private Enemy _lastBouncedEnemy;
+        private bool _postBounceActive;
+        private float _postBounceStartTime;
+
+        #endregion
+
+        #region Hit Reaction
+
+        [Header("Hit Reaction - Spark")]
+        [SerializeField] private float sparkImpulse = 1.2f;
+        [SerializeField] private float sparkUpBias = 0.15f;
+
+        [SerializeField] private float hitReactMinInterval = 0.12f;
+        private float _lastHitReactTime = -999f;
+        private Coroutine _hitReactRoutine;
+
+        #endregion
+
+        #region UI Input Guard
+
+        [Header("UI Input Guard")]
+        [SerializeField] private bool blockWorldInputWhenPointerOverUI = true;
+        [SerializeField] private float uiInputGuardDuration = 0.12f;
+        private float _uiInputBlockUntil = -999f;
+
+        #endregion
+
+        #region Sprint Relic (Arm -> Move -> Dodge)
+
+        [Header("Sprint Relic")]
+        [SerializeField] private Color sprintEchoColor = new Color(0.35f, 0.95f, 1f, 0.55f);
+        [SerializeField] private float sprintMinDuration = 0.05f;
+        [SerializeField] private float sprintMinMultiplier = 1.01f;
+        [SerializeField] private float sprintIgnoreRefreshInterval = 0.15f;
+        [SerializeField] private bool consumeSprintStackInsideWarrior = false;
+        // false = UI already consumed relic stack before calling Warrior (recommended for your setup)
+
+        private readonly List<Collider2D> _warriorCollidersDuringSprint = new List<Collider2D>();
+        private int _sprintArmFrame = -1;
+
+        private bool _sprintArmed;
+        private bool _sprintActive;
+
+        private string _sprintRelicId;
+        private bool _sprintConsumeOnUse;
+        private float _sprintDuration;
+        private float _sprintSpeedMultiplier;
+        private float _sprintCooldown;
+
+        private float _nextSprintReadyTime = -999f;
+        private float _speedBeforeSprint;
+        private float _nextSprintIgnoreRefreshTime;
+
+        private Coroutine _sprintRoutine;
+        private readonly HashSet<Collider2D> _ignoredEnemyCollidersDuringSprint = new HashSet<Collider2D>();
+
+        public bool IsDodging => _sprintActive;
+        public bool IsSprintArmed => _sprintArmed;
+        public float SprintCooldownRemaining => Mathf.Max(0f, _nextSprintReadyTime - Time.time);
+
+        #endregion
+
+        #region Runtime State
+        protected override bool AllowEdgeExitWhenTargetOutside => true;
+
+        // Optional: makes normal on-platform clicks less “stiff” near edge
+        protected override float PlatformSafeMargin => 0.12f;
+        private bool _attack2ArmedByRelic = false;
+        private bool _attack2WindowStarted = false; // kept for compatibility
+        private float _armedAttack2Duration = 0f;
+        private float _nextAttack2ReadyTime = -999f;
+
+        public bool IsAttack2Ready => Time.time >= _nextAttack2ReadyTime;
+        public float Attack2CooldownRemaining => Mathf.Max(0f, _nextAttack2ReadyTime - Time.time);
+        private bool IsRelicAttack2Active =>
+    _attack2ArmedByRelic &&
+    (
+        !_attack2CooldownStarted ||               // armed, waiting for first attack button click
+        Time.time < _nextAttack2ReadyTime         // cooldown/window already started and still active
+    );
+
+        private bool _attack2CooldownStarted = false;
+        public bool CanDie { get; set; }
+        public bool IsFallingEdge { get; set; }
+        public bool IsFallingPlfExit { get; set; }
+        public bool IsFallingHitEnemy { get; set; }
+        public bool IsFallingGrazesEdge { get; set; }
+        public bool IsCollindindWhenAttacking { get; set; }
+        public bool CanAttackWarrior { get; set; } = false;
+
+        public bool _blockAction;
+        public GalaticfFileSys.TimerManager.Timer ValidateTimer { get; set; }
+
+        public override bool CanJump => collider2.bounds.max.y < InputMgr.Instance.TouchedVector.y;
+
+        private bool IsFalling =>
+            IsFallingEdge || IsFallingPlfExit || IsFallingHitEnemy || IsFallingGrazesEdge;
+
+        private float _lastBloodSpawnTime = -999f;
+        private int _cmp = 0;
+
+        private CharacterEchoGenerator _echoGenerator;
+        private PlayerEventHub _hub;
+
+        private HashSet<Enemy> _enemiesInRangeLastFrame = new HashSet<Enemy>();
+        private bool _attack1HitEventConsumed = false;
+
+        private float _lastSlashTime = 0f;
+        private const float SLASH_COOLDOWN = 0.2f;
+        private const int MAX_SLASH_EFFECTS = 5;
+        private List<GameObject> _activeSlashEffects = new List<GameObject>();
+
+        // Stop running while physically touching an enemy on same platform
+        private bool _blockedByEnemyContact;
+        private Enemy _blockingEnemy;
+
+        [SerializeField] private float idleGuardAfterAttackRequest = 0.12f;
+        private float _idleGuardUntil = -999f;
+
+        #endregion
+
+
+        [Header("SFX")]
+        [SerializeField] private AudioClip attack1HitClip;          // <-- assigne punch.mp3 ici
+        [SerializeField, Range(0f, 1f)] private float attack1HitVolume = 0.9f;
+        [SerializeField] private Vector2 attack1HitPitchRange = new Vector2(0.96f, 1.04f);
+        [SerializeField] private bool attack1HitPlayOncePerFrame = true;
+
+        private AudioSource _sfxSource;
+        private int _lastAttack1HitSfxFrame = -1;
+
+        [Header("Jump SFX")]
+        [SerializeField] private AudioClip jumpClip; // <-- assigne jofae-swing-whoosh-110410.mp3 ici
+        [SerializeField, Range(0f, 1f)] private float jumpVolume = 0.85f;
+        [SerializeField] private Vector2 jumpPitchRange = new Vector2(0.96f, 1.04f);
+        [SerializeField] private bool jumpPlayOncePerFrame = true;
+
+        private int _lastJumpSfxFrame = -1;
+
+
+        [Header("Attack1 Miss SFX")]
+        [SerializeField] private AudioClip attack1MissClip; // <-- assign floraphonic-near-miss-swing-whoosh-18-233442.mp3
+        [SerializeField, Range(0f, 1f)] private float attack1MissVolume = 0.85f;
+        [SerializeField] private Vector2 attack1MissPitchRange = new Vector2(0.96f, 1.04f);
+        [SerializeField] private bool attack1MissPlayOncePerFrame = true;
+
+        private int _lastAttack1MissSfxFrame = -1;
+
+        [Header("Attack2 SFX")]
+        [SerializeField] private AudioClip attack2Clip;  // <-- assign emircanalp-zoom-sound-effect-125029.mp3 in Inspector
+        [SerializeField, Range(0f, 1f)] private float attack2Volume = 0.9f;
+        [SerializeField] private Vector2 attack2PitchRange = new Vector2(0.96f, 1.04f);
+        [SerializeField] private bool attack2PlayOncePerFrame = true;
+
+        private int _lastAttack2SfxFrame = -1;
+
+        #region Unity Lifecycle
+
+
+
+        private void Awake()
+        {
+#if UNITY_ANDROID
+            Time.fixedDeltaTime = 0.02f;
+            Application.targetFrameRate = 60;
+#endif
+            if (Instance != null && Instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+
+            CanAttackWarrior = true;
+            Instance = this;
+            DontDestroyOnLoad(gameObject);
+
+            _hub = GetComponent<PlayerEventHub>();
+        }
+
+        protected override void Start()
+        {
+            base.Start();
+
+            GameMgr.Instance?.RegisterHero(this);
+            CanMove = true;
+
+            _echoGenerator = GetComponent<CharacterEchoGenerator>();
+            _echoGenerator?.SetEchoActive(false);
+
+            SetupShield();
+            _shieldDurability = shieldMaxDurability;
+
+            CacheWarriorCollidersForSprint(); // NEW
+
+
+        }
+
+        protected void Update()
+        {
+            RefreshRelicAttack2State();
+
+            CheckIfStopRunDisplay();
+            HandleInput();
+            HandleFallingAndDeath();
+
+            CheckOutOfViewportDeath(); // <-- AJOUT
+
+            CheckEnemiesLeavingRange();
+            UpdateEcho();
+
+            _activeSlashEffects.RemoveAll(slash => slash == null);
+        }
+
+        private void FixedUpdate()
+        {
+            if (!_postBounceActive) return;
+
+            if (Time.time - _postBounceStartTime > ignoreEnemyCollisionTime)
+            {
+                EndPostBounce();
+                return;
+            }
+
+            if (activesJumpCoroutine != null) return;
+            if (CountGroundPoints() <= 0) return;
+
+            if (_lastBouncedEnemy == null || _lastBouncedEnemy.NormalCollider == null)
+            {
+                EndPostBounce();
+                return;
+            }
+
+            float enemyX = _lastBouncedEnemy.NormalCollider.bounds.center.x;
+            float myX = collider2.bounds.center.x;
+
+            if (Mathf.Abs(myX - enemyX) >= _requiredClearanceX)
+                EndPostBounce();
+        }
+
+        #endregion
+
+        #region Input / Movement / Idle
+
+        private void HandleInput()
+        {
+            if (Time.time < _uiInputBlockUntil) return;
+            if (blockWorldInputWhenPointerOverUI && IsPointerOverUI()) return;
+            if (!InputMgr.Instance.IsScreenTouched()) return;
+
+            // IMPORTANT: must be before CanJump / CanAttack block
+            if (!CanMove || !CanAttackWarrior) return;
+
+            if (activesJumpCoroutine != null || IsFallingEdge || CountGroundPoints() == 0 || IsFallingGrazesEdge || CanDie)
+                return;
+
+            SetDirectionVariables(InputMgr.Instance.TouchedVector.x);
+            StopJumpTowardCoroutine();
+            StopMoveTowardCoroutine();
+
+            if (CanJump)
+            {
+                CheckIfAvoidCollider(true);
+
+                MarkJumpStarted();
+
+                JumpAnimationDisplay();
+                activesJumpCoroutine = JumpTowardPositionAction(
+                    new Vector2(GetJumpMaxX(), transform.position.y),
+                    4f,
+                    0.5f
+                );
+                StartCoroutine(activesJumpCoroutine);
+                return;
+            }
+
+            if (CanAttackWarrior && CanAttack && !_sprintArmed && !_sprintActive)
+            {
+                if (attackMode == AttackAnimMode.Attack2 && _attack2ArmedByRelic)
+                    return;
+
+                _attack1HitEventConsumed = false;
+                GuardIdleAfterAttackRequest();
+                PlayCurrentAttackAnimation();
+                return;
+            }
+
+            if (!CanMove) return;
+
+            if (animator.GetBool("IsLosingCtrl"))
+                animator.SetBool("IsLosingCtrl", false);
+
+
+            //Sprint relic uses only when movement starts
+            TryStartArmedSprintFromMove();
+
+            activesMoveCoroutine = MoveTowardPostionAction(InputMgr.Instance.TouchedVector.x);
+            StartCoroutine(activesMoveCoroutine);
+
+            int groundPoints = CountGroundPoints();
+            float minMoveDistance = collider2.bounds.size.x * 0.2f;
+            float clickDistance = Mathf.Abs(InputMgr.Instance.TouchedVector.x - transform.position.x);
+            bool shouldRun = clickDistance > minMoveDistance;
+
+            if (groundPoints <= 1)
+            {
+                bool clickedOnPlatform = false;
+
+                if (CurrentplatForm != null && CurrentplatForm.platformCollider != null)
+                {
+                    var b = CurrentplatForm.platformCollider.bounds;
+                    clickedOnPlatform =
+                        InputMgr.Instance.TouchedVector.x > b.min.x &&
+                        InputMgr.Instance.TouchedVector.x < b.max.x;
+                }
+
+                // NEW: if warrior is allowed to exit edge and click is outside safe range,
+                // treat it as intentional run (not losing balance)
+                bool wantsEdgeExit =
+                    AllowEdgeExitWhenTargetOutside &&
+                    !clickedOnPlatform &&
+                    IsTargetOutsideCurrentPlatformSafeRange(InputMgr.Instance.TouchedVector.x);
+
+                if (clickedOnPlatform || wantsEdgeExit)
+                {
+                    if (shouldRun) RunAnimationDisplay();
+                    else WaitAnimationDisplay();
+                }
+                else
+                {
+                    // Only show losing balance if truly not moving
+                    bool movingNow = activesMoveCoroutine != null ||
+                                     (rigidbody2 != null && Mathf.Abs(rigidbody2.linearVelocity.x) > 0.05f);
+
+                    if (!movingNow)
+                        ShowLosingBalance();
+                }
+
+                return;
+            }
+
+            if (shouldRun) RunAnimationDisplay();
+        }
+
+        private void HandleFallingAndDeath()
+        {
+            if (IsFalling)
+            {
+                rigidbody2.gravityScale = 3f;
+                StopMoveTowardCoroutine();
+                JumpAnimationDisplay();
+            }
+
+            if (CanDie)
+            {
+                StopMoveTowardCoroutine();
+                DeathAnimationDisplay();
+            }
+        }
+
+        private void CheckIfStopRunDisplay()
+        {
+            if (Time.time < _idleGuardUntil) return;
+            if (activesMoveCoroutine != null) return;
+            if (CountGroundPoints() <= 1) return;
+            if (IsFalling) return;
+            if (IsAnyAttackPlaying()) return;
+
+            WaitAnimationDisplay();
+        }
+
+        private void GuardIdleAfterAttackRequest()
+        {
+            _idleGuardUntil = Time.time + idleGuardAfterAttackRequest;
+        }
+
+        private bool HasBoolParam(string paramName)
+        {
+            if (animator == null) return false;
+
+            foreach (var p in animator.parameters)
+            {
+                if (p.type == AnimatorControllerParameterType.Bool && p.name == paramName)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool IsAnyAttackPlaying()
+        {
+            if (animator == null) return false;
+
+            bool a1 = HasBoolParam("isAttacking") && animator.GetBool("isAttacking");
+            bool a2 = HasBoolParam("isAttacking2") && animator.GetBool("isAttacking2");
+            if (a1 || a2) return true;
+
+            var s = animator.GetCurrentAnimatorStateInfo(0);
+            var n = animator.GetNextAnimatorStateInfo(0);
+            return s.IsTag("Attack") || n.IsTag("Attack");
+        }
+
+        //private bool IsAttack1CurrentlyPlaying()
+        //{
+        //    if (animator == null) return false;
+
+        //    // Strongest signal
+        //    if (HasBoolParam("isAttacking") && animator.GetBool("isAttacking"))
+        //        return true;
+
+        //    // Fallback if state machine is between transitions and bools lag
+        //    var s = animator.GetCurrentAnimatorStateInfo(0);
+        //    var n = animator.GetNextAnimatorStateInfo(0);
+
+        //    bool attack2Bool = HasBoolParam("isAttacking2") && animator.GetBool("isAttacking2");
+        //    if (attack2Bool) return false;
+
+        //    return s.IsTag("Attack") || n.IsTag("Attack");
+        //}
+        private void UpdateEcho()
+        {
+            if (_echoGenerator == null) return;
+
+            if (CanDie)
+            {
+                _echoGenerator.SetEchoActive(false);
+                return;
+            }
+
+            // Sprint has top priority
+            if (_sprintActive)
+            {
+                _echoGenerator.SetEchoActive(true);
+                _echoGenerator.SetEchoColor(sprintEchoColor);
+                return;
+            }
+
+            if (IsFalling || activesJumpCoroutine != null)
+            {
+                _echoGenerator.SetEchoActive(true);
+                _echoGenerator.SetEchoColor(jumpEchoColor);
+                return;
+            }
+
+            bool grounded = CountGroundPoints() > 0;
+            bool runningByCoroutine = activesMoveCoroutine != null && grounded;
+            bool runningByVelocity = Mathf.Abs(rigidbody2.linearVelocity.x) > 0.5f && grounded;
+
+            if (runningByCoroutine || runningByVelocity)
+            {
+                _echoGenerator.SetEchoActive(true);
+                _echoGenerator.SetEchoColor(runEchoColor);
+            }
+            else
+            {
+                _echoGenerator.SetEchoActive(false);
+            }
+        }
+
+        bool IsAirborne() => CountGroundPoints() == 0 && activesJumpCoroutine != null;
+
+        public int CountGroundPoints()
+        {
+            int count = 0;
+            foreach (Transform pt in GroundPoints)
+            {
+                if (Physics2D.OverlapCircleAll(pt.position, Groundradius, PlatformLayer).Length > 0)
+                    count++;
+            }
+            return count;
+        }
+
+        private float GetJumpMaxX()
+        {
+            float x = InputMgr.Instance.TouchedVector.x;
+            float maxDistance = collider2.bounds.size.x * 2f;
+
+            if (x.GetDistanceXAxis(transform.position.x) > maxDistance)
+            {
+                if (GoLeft) x = transform.position.x - maxDistance;
+                if (GoRight) x = transform.position.x + maxDistance;
+            }
+
+            return x;
+        }
+
+        public void ForceCancelCurrentAttack()
+        {
+            if (animator == null) return;
+
+            foreach (var p in animator.parameters)
+            {
+                if (p.type == AnimatorControllerParameterType.Bool)
+                {
+                    if (p.name == "isAttacking") animator.SetBool("isAttacking", false);
+                    if (p.name == "isAttacking2") animator.SetBool("isAttacking2", false);
+                }
+            }
+
+            _attack1HitEventConsumed = true;
+        }
+
+        #endregion
+
+        #region Collision / Bounce / Contact Blocking
+
+        private void OnCollisionEnter2D(Collision2D collision)
+        {
+            var enemy = collision.collider.GetComponentInParent<Enemy>();
+
+            if (_sprintActive && enemy != null && collision.collider != null)
+            {
+                if (_ignoredEnemyCollidersDuringSprint.Add(collision.collider))
+                    SetIgnoreWithAllWarriorColliders(collision.collider, true);
+
+                if (collision.otherCollider != null)
+                    Physics2D.IgnoreCollision(collision.otherCollider, collision.collider, true);
+
+                return;
+            }
+
+            if (enemy != null)
+            {
+                if (DescendentPhase && CountGroundPoints() == 0)
+                {
+                    if (ShieldIsUp) DoShieldStomp(enemy);
+                    BounceAndLandAway(enemy);
+                    return;
+                }
+
+                if ((IsFallingEdge || IsFallingPlfExit) && WarriorOverlay(enemy))
+                {
+                    BounceAndLandAway(enemy, plfExitMode: true);
+                    IsFallingEdge = false;
+                    IsFallingPlfExit = false;
+                    IsFallingHitEnemy = false;
+                    return;
+                }
+
+                if (CountGroundPoints() == 0 && OnCollisionHitBottom(collision))
+                {
+                    IsFallingHitEnemy = true;
+                    StopJumpTowardCoroutine();
+                    WaitAnimationDisplay();
+                }
+
+                if (!_postBounceActive && !IsFalling && activesJumpCoroutine == null)
+                {
+                    StopRunningOnEnemyContact(enemy);
+                }
+
+                return;
+            }
+
+            if (collision.gameObject.layer == LayerMask.NameToLayer("PlatformLayer"))
+                _cmp = 0;
+        }
+
+        private void OnCollisionStay2D(Collision2D collision)
+        {
+            var enemy = collision.collider.GetComponentInParent<Enemy>();
+
+            if (_sprintActive && collision.collider != null)
+            {
+                //var enemy = collision.collider.GetComponentInParent<Enemy>();
+                if (enemy != null && collider2 != null)
+                {
+                    if (_ignoredEnemyCollidersDuringSprint.Add(collision.collider))
+                        Physics2D.IgnoreCollision(collider2, collision.collider, true);
+                    return;
+                }
+            }
+
+            if (enemy == null || enemy.CurrentplatForm == null) return;
+
+            if (!_postBounceActive && !IsFalling && activesJumpCoroutine == null)
+            {
+                StopRunningOnEnemyContact(enemy);
+                if (_blockedByEnemyContact) return;
+            }
+
+            if (_postBounceActive) return;
+
+            if (WarriorOverlay(enemy) && CountGroundPoints() == 0)
+                BounceAndLandAway(enemy);
+        }
+
+        private void OnCollisionExit2D(Collision2D collision)
+        {
+            var enemy = collision.collider.GetComponentInParent<Enemy>();
+            if (enemy != null)
+            {
+                _blockAction = false;
+                ClearEnemyContactBlock(enemy);
+                return;
+            }
+
+            if (collision.gameObject.layer == LayerMask.NameToLayer("PlatformLayer"))
+                _cmp = 0;
+        }
+
+        private void BounceAndLandAway(Enemy enemy, bool plfExitMode = false)
+        {
+            if (enemy == null) return;
+            if (_postBounceActive) return;
+
+            _blockAction = true;
+            _postBounceActive = true;
+            _postBounceStartTime = Time.time;
+            _lastBouncedEnemy = enemy;
+
+            if (enemy.NormalCollider != null)
+                _requiredClearanceX = enemy.NormalCollider.bounds.extents.x + collider2.bounds.extents.x + clearancePad;
+            else
+                _requiredClearanceX = collider2.bounds.extents.x + 0.2f;
+
+            IgnoreAllEnemyColliders(enemy, true);
+
+            Vector2 landing = CalculateLandingAwayFromEnemy(enemy, plfExitMode);
+            TriggerJump(landing);
+        }
+
+        private void EndPostBounce()
+        {
+            if (_lastBouncedEnemy != null)
+                IgnoreAllEnemyColliders(_lastBouncedEnemy, false);
+
+            _postBounceActive = false;
+            _lastBouncedEnemy = null;
+            _blockAction = false;
+        }
+
+        private Vector2 CalculateLandingAwayFromEnemy(Enemy enemy, bool plfExitMode)
+        {
+            float enemyX = enemy.NormalCollider != null ? enemy.NormalCollider.bounds.center.x : enemy.transform.position.x;
+            float dir = (transform.position.x < enemyX) ? -1f : 1f;
+
+            float desiredSeparation = _requiredClearanceX + Mathf.Max(0f, landAwayDistance);
+            if (plfExitMode) desiredSeparation += 0.08f;
+
+            float candidate1 = enemyX + dir * desiredSeparation;
+            float candidate2 = enemyX - dir * desiredSeparation;
+
+            var platform = enemy.CurrentplatForm != null ? enemy.CurrentplatForm : CurrentplatForm;
+
+            float y = transform.position.y;
+            float minX = float.NegativeInfinity;
+            float maxX = float.PositiveInfinity;
+
+            if (platform != null && platform.platformCollider != null)
+            {
+                float platformTop = platform.platformCollider.bounds.max.y;
+                y = platformTop + collider2.bounds.extents.y * 0.95f;
+
+                minX = platform.platformCollider.bounds.min.x + collider2.bounds.extents.x;
+                maxX = platform.platformCollider.bounds.max.x - collider2.bounds.extents.x;
+            }
+
+            float c1 = Mathf.Clamp(candidate1, minX, maxX);
+            float c2 = Mathf.Clamp(candidate2, minX, maxX);
+
+            bool c1Ok = Mathf.Abs(c1 - enemyX) >= _requiredClearanceX;
+            bool c2Ok = Mathf.Abs(c2 - enemyX) >= _requiredClearanceX;
+
+            float myX = collider2.bounds.center.x;
+
+            if (c1Ok && c2Ok)
+                return new Vector2(Mathf.Abs(c1 - myX) <= Mathf.Abs(c2 - myX) ? c1 : c2, y);
+
+            if (c1Ok) return new Vector2(c1, y);
+            if (c2Ok) return new Vector2(c2, y);
+
+            float closest = Mathf.Abs(c1 - myX) <= Mathf.Abs(c2 - myX) ? c1 : c2;
+            return new Vector2(closest, y);
+        }
+
+        public void CheckIfAvoidCollider(bool enableCollision)
+        {
+            var touching = new List<Collider2D>();
+
+            var filter = new ContactFilter2D
+            {
+                useTriggers = true,
+                useLayerMask = true
+            };
+            filter.SetLayerMask(LayerMask.GetMask("Enemy"));
+
+            int count = Physics2D.GetContacts(collider2, filter, touching);
+            if (count <= 0) return;
+
+            foreach (Collider2D c in touching)
+            {
+                if (!c.isTrigger) continue;
+
+                var enemyNormalCollider = touching.FirstOrDefault(x => x.isTrigger == false);
+                if (enemyNormalCollider == null) continue;
+
+                ResolveOverlap(collider2, enemyNormalCollider);
+                Physics2D.IgnoreCollision(collider2, enemyNormalCollider, enableCollision);
+            }
+        }
+
+        public void ResolveOverlap(Collider2D colA, Collider2D colB, bool resolveXAxisOnly = true)
+        {
+            Vector3 separation = (colA.transform.position - colB.transform.position).normalized * 0.1f;
+
+            if (resolveXAxisOnly) separation.y = 0;
+            else separation.x = 0;
+
+            colA.transform.position += separation;
+        }
+
+        private Vector2 CalculateJumpTarget(Enemy enemy)
+        {
+            Bounds warriorBounds = collider2.bounds;
+            float edge, margin, coef;
+
+            if (_cmp == 1)
+            {
+                bool warriorLeftOfEnemy = transform.position.x < enemy.transform.position.x;
+
+                if (warriorLeftOfEnemy)
+                {
+                    edge = enemy.StepLeftMaxamize();
+                    margin = -0.2f;
+                    coef = -1f;
+                    if (enemy.CanStepBack(true)) StartCoroutine(enemy.SmoothStepBack(true));
+                }
+                else
+                {
+                    edge = enemy.StepRightMaxamize();
+                    margin = 0.2f;
+                    coef = 1f;
+                    if (enemy.CanStepBack(false)) StartCoroutine(enemy.SmoothStepBack(false));
+                }
+
+                float x = edge + margin + (coef * (warriorBounds.size.x * (2f / 3f)));
+                float y = enemy.NormalCollider.bounds.center.y;
+                return new Vector2(x, y);
+            }
+
+            if (enemy.leftFacing)
+            {
+                edge = enemy.StepRightMaxamize();
+                margin = 0.2f;
+                coef = 1f;
+                if (enemy.CanStepBack(false)) StartCoroutine(enemy.SmoothStepBack(false));
+            }
+            else
+            {
+                edge = enemy.StepLeftMaxamize();
+                margin = -0.2f;
+                coef = -1f;
+                if (enemy.CanStepBack(true)) StartCoroutine(enemy.SmoothStepBack(true));
+            }
+
+            _cmp++;
+
+            float targetX = edge + margin + (coef * (warriorBounds.size.x * 0.5f));
+            float targetY = enemy.NormalCollider.bounds.center.y;
+            return new Vector2(targetX, targetY);
+        }
+
+
+        private void TriggerJump(Vector2 targetPosition, float height = 2.2f, float duration = 0.6f)
+        {
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+
+            MarkJumpStarted(); // <--- ADD THIS
+
+            JumpAnimationDisplay();
+            activesJumpCoroutine = JumpTowardPositionAction(targetPosition, height, duration);
+            StartCoroutine(activesJumpCoroutine);
+        }
+
+        private void IgnoreAllEnemyColliders(Enemy enemy, bool ignore)
+        {
+            if (enemy == null) return;
+
+            var cols = enemy.GetComponentsInChildren<Collider2D>(true);
+            foreach (var c in cols)
+            {
+                if (c == null) continue;
+                Physics2D.IgnoreCollision(collider2, c, ignore);
+            }
+        }
+
+        private bool WarriorOverlay(Enemy enemy)
+        {
+            float warriorBottom = collider2.bounds.min.y;
+            float enemyTop = enemy.NormalCollider.bounds.max.y;
+            return warriorBottom >= enemyTop - 0.01f;
+        }
+
+        private bool IsSamePlatformAs(Enemy e)
+        {
+            if (e == null) return false;
+
+            var myPlf = CurrentplatForm != null ? CurrentplatForm.platformCollider : null;
+            var enPlf = e.CurrentplatForm != null ? e.CurrentplatForm.platformCollider : null;
+
+            if (myPlf == null || enPlf == null)
+                return true;
+
+            return myPlf == enPlf;
+        }
+
+        private void StopRunningOnEnemyContact(Enemy enemy)
+        {
+            if (enemy == null) return;
+            if (!IsSamePlatformAs(enemy)) return;
+            if (CountGroundPoints() <= 0) return;
+
+            bool wasMoving = activesMoveCoroutine != null || Mathf.Abs(rigidbody2.linearVelocity.x) > 0.15f;
+            if (!wasMoving) return;
+
+            _blockedByEnemyContact = true;
+            _blockingEnemy = enemy;
+
+            StopMoveTowardCoroutine();
+
+            if (rigidbody2 != null)
+            {
+                var v = rigidbody2.linearVelocity;
+                v.x = 0f;
+                rigidbody2.linearVelocity = v;
+            }
+
+            if (CountGroundPoints() <= 1) ShowLosingBalance();
+            else WaitAnimationDisplay();
+        }
+
+        private void ClearEnemyContactBlock(Enemy enemy)
+        {
+            if (!_blockedByEnemyContact) return;
+
+            if (_blockingEnemy == null || enemy == null || enemy == _blockingEnemy)
+            {
+                _blockedByEnemyContact = false;
+                _blockingEnemy = null;
+            }
+        }
+
+        private bool OnCollisionHitBottom(Collision2D collision)
+        {
+            Vector2 avg = Vector2.zero;
+            foreach (ContactPoint2D contact in collision.contacts)
+                avg += contact.normal;
+
+            avg /= collision.contactCount;
+            return avg.y < -0.7f;
+        }
+
+        #endregion
+
+        #region Attack / FX / Damage
+
+        public void AE_Attack1_HitExplosion_Fist() => DoAttack1HitExplosion(HitFxPoint.FistSocket);
+        public void AE_Attack1_HitExplosion_Kick() => DoAttack1HitExplosion(HitFxPoint.KickSocket);
+        public void AE_Attack1_HitExplosion() => DoAttack1HitExplosion(HitFxPoint.ContactOnEnemy);
+
+        private void DoAttack1HitExplosion(HitFxPoint hitPoint)
+        {
+            if (attackMode != AttackAnimMode.Attack1) return;
+
+            _attack1HitEventConsumed = true;
+
+            Enemy[] enemiesInRange = GetEnemiesInAttackRange();
+
+            bool anyHit = false;
+            int valid = 0;
+            Vector2 sumHitPoints = Vector2.zero;
+
+            // If nobody in range at all => MISS
+            if (enemiesInRange == null || enemiesInRange.Length == 0)
+            {
+                PlayAttack1MissSfx();
+                return;
+            }
+
+            foreach (Enemy enemy in enemiesInRange)
+            {
+                if (enemy == null) continue;
+
+                // facing filter
+                if (leftFacing && enemy.NormalCollider.bounds.center.x > collider2.bounds.center.x) continue;
+                if (rightFacing && enemy.NormalCollider.bounds.center.x < collider2.bounds.center.x) continue;
+
+                anyHit = true;
+                valid++;
+
+                Vector3 hp3 = GetNovaPosition(enemy);
+                sumHitPoints += new Vector2(hp3.x, hp3.y);
+
+                Vector3 hitPos = GetHitFxPosition(enemy, hitPoint);
+                SpawnHitExplosion(hitPos);
+
+                KnockbackEnemiesInRange(attack1KnockbackForce, enemy, 2);
+            }
+
+            // HIT or MISS
+            if (anyHit) PlayAttack1HitSfx();
+            else PlayAttack1MissSfx();
+
+            if (valid >= 2)
+            {
+                Vector2 avgHp = sumHitPoints / valid;
+                GetComponent<Assets.Scripts.Scoring.SpectacularActionScorer>()
+                    ?.NotifyCrowdHit(valid, avgHp);
+            }
+        }
+
+        private Vector3 GetHitFxPosition(Enemy enemy, HitFxPoint point)
+        {
+            switch (point)
+            {
+                case HitFxPoint.FistSocket:
+                    if (fistHitSocket != null)
+                    {
+                        Vector3 p = fistHitSocket.position;
+                        p += (Vector3)fistFxOffset;
+                        return p;
+                    }
+                    break;
+
+                case HitFxPoint.KickSocket:
+                    if (kickHitSocket != null)
+                    {
+                        Vector3 p = kickHitSocket.position;
+                        p += (Vector3)kickFxOffset;
+                        return p;
+                    }
+                    break;
+            }
+
+            return GetNovaPosition(enemy);
+        }
+
+        private void SpawnHitExplosion(Vector3 pos)
+        {
+            if (hitExplosionPrefab == null) return;
+
+            GameObject fx = Instantiate(hitExplosionPrefab, pos, Quaternion.identity);
+            fx.transform.SetPositionAndRotation(pos, Quaternion.identity);
+            fx.transform.localScale = Vector3.one * hitExplosionScale;
+
+            var systems = fx.GetComponentsInChildren<ParticleSystem>(true);
+            foreach (var ps in systems)
+            {
+                var main = ps.main;
+                main.useUnscaledTime = false;
+                main.playOnAwake = false;
+                main.simulationSpace = hitFxUseWorldSpace
+                    ? ParticleSystemSimulationSpace.World
+                    : ParticleSystemSimulationSpace.Local;
+
+                ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                ps.Play(true);
+            }
+
+            Destroy(fx, hitExplosionDestroyAfter);
+        }
+
+        public void SpawnSlashAt(float rotationZ)
+        {
+            if (Time.time - _lastSlashTime < SLASH_COOLDOWN) return;
+            _lastSlashTime = Time.time;
+
+            if (slashPrefab == null || twirl2Prefab == null)
+            {
+                Debug.LogError("Missing prefab references in SpawnSlashAt!");
+                return;
+            }
+
+            if (_activeSlashEffects.Count >= MAX_SLASH_EFFECTS)
+            {
+                if (_activeSlashEffects[0] != null)
+                    Destroy(_activeSlashEffects[0]);
+
+                _activeSlashEffects.RemoveAt(0);
+            }
+
+            GameObject slash = Instantiate(
+                slashPrefab,
+                rigidbody2.position,
+                rightFacing ? Quaternion.Euler(-90f, -90f, -90f) : Quaternion.Euler(-90f, 90f, -90f)
+            );
+
+            _activeSlashEffects.Add(slash);
+
+            Vector3 warriorCenter = collider2.bounds.center;
+            GameObject twirl = Instantiate(twirl2Prefab, warriorCenter, Quaternion.identity);
+
+            if (!rightFacing)
+            {
+                var ps = twirl.GetComponent<ParticleSystem>();
+                if (ps != null)
+                {
+                    var renderer = ps.GetComponent<ParticleSystemRenderer>();
+                    if (renderer != null) renderer.flip = new Vector3(1, 0, 0);
+                }
+            }
+
+            Destroy(twirl, 0.07f);
+
+            Enemy[] enemiesInRange = GetEnemiesInAttackRange();
+            if (enemiesInRange.Length > 0)
+            {
+                SpawnNovaForCollidingEnemies(enemiesInRange);
+
+                int valid = 0;
+                Vector2 sumHp = Vector2.zero;
+
+                foreach (Enemy enemy in enemiesInRange)
+                {
+                    if (enemy == null) continue;
+                    valid++;
+
+                    Vector3 hp3 = GetNovaPosition(enemy);
+                    sumHp += new Vector2(hp3.x, hp3.y);
+
+                    KnockbackEnemiesInRange(0.35f, enemy, 10);
+                }
+
+                if (valid >= 2)
+                {
+                    Vector2 avgHp = sumHp / valid;
+                    GetComponent<Assets.Scripts.Scoring.SpectacularActionScorer>()
+                        ?.NotifyCrowdHit(valid, avgHp);
+                }
+            }
+
+            StartCoroutine(TrackSlashPosition(slash));
+        }
+
+        private IEnumerator TrackSlashPosition(GameObject slash)
+        {
+            Vector3 startPos = slash.transform.position;
+            yield return new WaitForSeconds(0.5f);
+
+            if (slash == null) yield break;
+
+            Destroy(slash);
+            _activeSlashEffects.Remove(slash);
+        }
+
+        private void SpawnNovaForCollidingEnemies(IEnumerable<Enemy> enemies)
+        {
+            foreach (Enemy enemy in enemies)
+            {
+                if (enemy == null) continue;
+
+                Vector3 novaPos = GetNovaPosition(enemy);
+                GameObject nova = Instantiate(novaPrefab, novaPos, Quaternion.identity);
+                Destroy(nova, 2f);
+            }
+        }
+
+        private Vector3 GetNovaPosition(Enemy enemy)
+        {
+            Bounds warriorBounds = collider2.bounds;
+            Bounds enemyBounds = enemy.NormalCollider.bounds;
+
+            float contactX = warriorBounds.center.x < enemyBounds.center.x ? warriorBounds.max.x : warriorBounds.min.x;
+            float contactY = Mathf.Min(warriorBounds.max.y, enemyBounds.max.y);
+
+            return new Vector3(contactX, contactY, 0f);
+        }
+
+        public void KnockbackEnemiesInRange(float knockbackForce, Enemy enemy, int damage)
+        {
+            if (enemy == null) return;
+            
+            enemy.DisableAttackTemporarily();
+            
+            Vector2 knockbackDir = (enemy.transform.position - transform.position).normalized;
+
+            enemy.StopMoveTowardCoroutine();
+            enemy.stepBackDistance = enemy.ComputeStepBackDistance(knockbackForce);
+
+            bool killed = enemy.TakeDamageAndReturnKilled(damage);
+
+            if (_hub != null)
+            {
+                Vector3 hp = GetNovaPosition(enemy);
+                _hub.RaiseHit(new HitEvent
+                {
+                    attacker = gameObject,
+                    target = enemy.gameObject,
+                    damage = damage,
+                    hitPoint = new Vector2(hp.x, hp.y)
+                });
+            }
+
+            if (killed)
+            {
+                if (_hub != null)
+                {
+                    _hub.RaiseKill(new KillEvent
+                    {
+                        killer = gameObject,
+                        victim = enemy.gameObject
+                    });
+                }
+                return;
+            }
+
+            StartCoroutine(knockbackDir.x > 0f ? enemy.SmoothStepBack(true) : enemy.SmoothStepBack(false));
+        }
+
+        public void KnockbackEnemiesInRange(float knockbackForce, Enemy enemy)
+        {
+            KnockbackEnemiesInRange(knockbackForce, enemy, 10);
+        }
+
+        private void CheckEnemiesLeavingRange()
+        {
+            Enemy[] current = GetEnemiesInAttackRange();
+            var currentSet = new HashSet<Enemy>(current);
+
+            if (currentSet.Count == 0 && _enemiesInRangeLastFrame.Count == 0)
+                return;
+
+            foreach (Enemy enemy in _enemiesInRangeLastFrame)
+            {
+                if (enemy == null) continue;
+                if (!currentSet.Contains(enemy))
+                    enemy.IsAttacked = false;
+            }
+
+            _enemiesInRangeLastFrame = currentSet;
+        }
+
+        public bool HasEnemyInAttackRange()
+        {
+            Collider2D[] hits = Physics2D.OverlapCircleAll(GetAttackCenter(), attackRadius, enemyLayer);
+            return hits.Length > 0;
+        }
+
+        private Vector2 GetAttackCenter()
+        {
+            Vector2 offset = new Vector2(
+                rightFacing ? attackCenterOffset.x : -attackCenterOffset.x,
+                attackCenterOffset.y
+            );
+
+            return (Vector2)transform.position + offset;
+        }
+
+        public Enemy[] GetEnemiesInAttackRange()
+        {
+            Collider2D[] hits = Physics2D.OverlapCircleAll(GetAttackCenter(), attackRadius, enemyLayer);
+
+            var enemies = new List<Enemy>(hits.Length);
+            foreach (Collider2D hit in hits)
+            {
+                Enemy enemy = hit.GetComponent<Enemy>();
+                if (enemy != null) enemies.Add(enemy);
+            }
+
+            return enemies.ToArray();
+        }
+
+        public bool IsFallingDueToGravity()
+        {
+            return rigidbody2.linearVelocity.y < 0 && Mathf.Abs(rigidbody2.linearVelocity.x) < 0.1f;
+        }
+
+        public void SpawnBloodshedEffectFromEnemy(Enemy enemy)
+        {
+            if (bloodshedPrefab == null || enemy == null) return;
+            if (!CanSpawnBlood()) return;
+
+            Vector3 pos = collider2.bounds.center;
+            GameObject fx = Instantiate(bloodshedPrefab, pos, Quaternion.identity);
+            fx.transform.SetParent(transform);
+
+            Destroy(fx, 0.5f);
+            _lastBloodSpawnTime = Time.time;
+        }
+
+        private bool CanSpawnBlood()
+        {
+            return Time.time >= _lastBloodSpawnTime + bloodEffectCooldown;
+        }
+
+        public void ResetBloodCooldown()
+        {
+            _lastBloodSpawnTime = -999f;
+        }
+
+        public void SetAttackMode(AttackAnimMode mode)
+        {
+            attackMode = mode;
+        }
+
+        private void PlayCurrentAttackAnimation()
+        {
+            if (attackMode == AttackAnimMode.Attack1)
+            {
+                AttackAnimationDisplay();
+                return;
+            }
+
+            // Attack2
+            PlayAttack2Sfx();          // play zoom/whoosh here
+            AttackAnimation2Display();
+        }
+        // Animation Event on the LAST frame of Attack1 clip
+        public void AE_EndAttack1()
+        {
+            if (animator != null)
+                animator.SetBool("isAttacking", false);
+
+            ExitAttackToBestState();
+        }
+
+        // Animation Event on the LAST frame of Attack2 clip (optional but recommended)
+        public void AE_EndAttack2()
+        {
+            if (animator != null)
+                animator.SetBool("isAttacking2", false);
+
+            ExitAttackToBestState();
+        }
+
+        private void ExitAttackToBestState()
+        {
+            if (CanDie)
+            {
+                DeathAnimationDisplay();
+                return;
+            }
+
+            // Air/jump/fall has priority
+            bool airborne = (CountGroundPoints() == 0) || (activesJumpCoroutine != null) || IsFalling;
+            if (airborne)
+            {
+                JumpAnimationDisplay();
+                return;
+            }
+
+            // If currently moving, go run; otherwise wait
+            bool moving = (activesMoveCoroutine != null) || Mathf.Abs(rigidbody2.linearVelocity.x) > 0.1f;
+            if (moving) RunAnimationDisplay();
+            else
+                WaitAnimationDisplay();
+        }
+        private bool IsAttack1CurrentlyPlaying()
+        {
+            if (animator == null) 
+                return false;
+
+            // Strongest signal: Attack1 bool still active
+            if (HasBoolParam("isAttacking") && animator.GetBool("isAttacking"))
+                return true;
+
+            // If Attack2 bool is active, don't treat current attack state as Attack1
+            bool a2Bool = HasBoolParam("isAttacking2") && animator.GetBool("isAttacking2");
+            if (a2Bool) 
+                return false;
+
+            // Fallback for transition frames (bools may lag one frame)
+            var s = animator.GetCurrentAnimatorStateInfo(0);
+            var n = animator.GetNextAnimatorStateInfo(0);
+            var t = s.IsTag("Attack");
+            var f = n.IsTag("Attack");
+
+
+            return s.IsTag("Attack") || n.IsTag("Attack");
+        }
+
+        #endregion
+
+        #region Relic Effects
+        public bool TryArmSprintRelic(string relicId, float speedMultiplier, float duration, float cooldown, bool consumeOnUse)
+        {
+            if (CanDie) return false;
+            if (string.IsNullOrEmpty(relicId)) return false;
+            if (_sprintActive) return false;
+            // NEW: shield/sprint mutual exclusion
+            
+            if (IsShieldBlockingSprintUse()) return false;
+            
+            if (Time.time < _nextSprintReadyTime)
+                return false;
+
+            _sprintArmed = true;
+            _sprintRelicId = relicId;
+            _sprintSpeedMultiplier = Mathf.Max(sprintMinMultiplier, speedMultiplier);
+            _sprintDuration = Mathf.Max(sprintMinDuration, duration);
+            _sprintCooldown = Mathf.Max(0f, cooldown);
+            _sprintConsumeOnUse = consumeOnUse;
+            _sprintArmFrame = Time.frameCount; // NEW
+
+            NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.12f));
+
+            if (!_sprintActive && (activesMoveCoroutine != null || Mathf.Abs(rigidbody2.linearVelocity.x) > 0.05f))
+            {
+                TryStartArmedSprintFromMove();
+            }
+
+            return true;
+        }
+
+        private bool TryStartArmedSprintFromMove()
+        {
+            if (!_sprintArmed || _sprintActive) return false;
+            if (Time.time < _nextSprintReadyTime) return false;
+
+
+            // NEW: don't start sprint while shield is up
+            if (IsShieldBlockingSprintUse()) return false;
+
+            // Only consume here if Warrior is responsible for stack consumption.
+            if (_sprintConsumeOnUse && consumeSprintStackInsideWarrior)
+            {
+                var rm = GetComponent<RelicManager>();
+                if (rm == null)
+                {
+                    _sprintArmed = false;
+                    return false;
+                }
+
+                if (!rm.TryConsumeById(_sprintRelicId, 1))
+                {
+                    _sprintArmed = false;
+                    return false;
+                }
+            }
+
+            if (_sprintRoutine != null)
+                StopCoroutine(_sprintRoutine);
+
+            _sprintRoutine = StartCoroutine(SprintRoutine(_sprintSpeedMultiplier, _sprintDuration, _sprintCooldown));
+            _sprintArmed = false;
+            _sprintArmFrame = -1;
+            return true;
+        }
+
+        private IEnumerator SprintRoutine(float speedMultiplier, float duration, float cooldown)
+        {
+            _sprintActive = true;
+            _nextSprintReadyTime = Time.time + cooldown;
+
+            // Prevent previous enemy-contact lock from freezing movement
+            _blockedByEnemyContact = false;
+            _blockingEnemy = null;
+
+            _speedBeforeSprint = Speed;
+            Speed = _speedBeforeSprint * speedMultiplier;
+
+            RefreshIgnoredEnemyColliders();
+            _nextSprintIgnoreRefreshTime = Time.time + sprintIgnoreRefreshInterval;
+
+            float endTime = Time.time + duration;
+            while (Time.time < endTime)
+            {
+                if (CanDie) break;
+
+                if (Time.time >= _nextSprintIgnoreRefreshTime)
+                {
+                    RefreshIgnoredEnemyColliders();
+                    _nextSprintIgnoreRefreshTime = Time.time + sprintIgnoreRefreshInterval;
+                }
+
+                yield return null;
+            }
+
+            Speed = _speedBeforeSprint;
+            ClearIgnoredEnemyColliders();
+
+            _sprintActive = false;
+            _sprintRoutine = null;
+        }
+
+        private void RefreshIgnoredEnemyColliders()
+        {
+            if (_warriorCollidersDuringSprint.Count == 0)
+                CacheWarriorCollidersForSprint();
+
+            if (Enemy.ActiveEnemies == null) return;
+
+            for (int i = 0; i < Enemy.ActiveEnemies.Count; i++)
+            {
+                Enemy e = Enemy.ActiveEnemies[i];
+                if (e == null) continue;
+
+                var cols = e.GetComponentsInChildren<Collider2D>(true);
+                for (int c = 0; c < cols.Length; c++)
+                {
+                    Collider2D col = cols[c];
+                    if (col == null) continue;
+
+                    if (_ignoredEnemyCollidersDuringSprint.Add(col))
+                        SetIgnoreWithAllWarriorColliders(col, true);
+                }
+            }
+        }
+
+        private void ClearIgnoredEnemyColliders()
+        {
+            foreach (var col in _ignoredEnemyCollidersDuringSprint)
+            {
+                if (col != null)
+                    SetIgnoreWithAllWarriorColliders(col, false);
+            }
+
+            _ignoredEnemyCollidersDuringSprint.Clear();
+        }
+
+        private void ForceStopSprint()
+        {
+            if (_sprintRoutine != null)
+            {
+                StopCoroutine(_sprintRoutine);
+                _sprintRoutine = null;
+            }
+
+            if (_sprintActive)
+            {
+                Speed = _speedBeforeSprint;
+                ClearIgnoredEnemyColliders();
+            }
+
+            _sprintActive = false;
+            _sprintArmed = false;
+            _sprintArmFrame = -1;
+        }
+        #endregion
+
+        #region Shield Logic
+
+        public void EnableAttack2Temporarily(float duration)
+        {
+            SetAttackMode(AttackAnimMode.Attack2);
+            // ActivateShield(duration);
+
+            if (TimerMgr.Instance == null)
+            {
+                Debug.LogWarning("TimerMgr.Instance is null. Can't auto-revert Attack2.");
+                return;
+            }
+
+            TimerMgr.Instance.StartTimer(duration, () =>
+            {
+                SetAttackMode(AttackAnimMode.Attack1);
+            });
+        }
+
+        private void SetupShield()
+        {
+            if (shieldPrefab == null)
+            {
+                Debug.LogWarning("[Warrior] Shield prefab not assigned.");
+                return;
+            }
+
+            if (shieldSocket == null)
+                shieldSocket = transform;
+
+            _shieldInstance = Instantiate(shieldPrefab, shieldSocket);
+            _shieldInstance.name = "ShieldVFX_Instance";
+            _shieldInstance.transform.localPosition = shieldLocalOffset;
+            _shieldInstance.transform.localRotation = Quaternion.identity;
+            _shieldInstance.transform.localScale = shieldLocalScale;
+
+            _shieldParticles = _shieldInstance.GetComponentsInChildren<ParticleSystem>(true);
+            _shieldRenderers = _shieldInstance.GetComponentsInChildren<ParticleSystemRenderer>(true);
+
+            if (shieldSimulationLocalSpace && _shieldParticles != null)
+            {
+                foreach (var ps in _shieldParticles)
+                {
+                    var main = ps.main;
+                    main.simulationSpace = ParticleSystemSimulationSpace.Local;
+                }
+            }
+
+            if (_shieldRenderers != null)
+            {
+                foreach (var r in _shieldRenderers)
+                {
+                    r.sortingLayerName = shieldSortingLayerName;
+                    r.sortingOrder = shieldOrderInLayer;
+                }
+            }
+
+            StopShieldImmediate();
+            _shieldInstance.SetActive(false);
+        }
+
+        public void ActivateShield(float duration = -1f)
+        {
+            if (!shieldGameplayEnabled) return;
+            if (_shieldBroken) return;
+          
+            // NEW: safety guard (direct calls)
+            if (IsSprintBlockingShieldUse()) return;
+
+            if (_shieldInstance == null)
+                SetupShield();
+
+            if (_shieldInstance == null) return;
+
+            if (_shieldDisableRoutine != null)
+            {
+                StopCoroutine(_shieldDisableRoutine);
+                _shieldDisableRoutine = null;
+            }
+
+            _shieldInstance.SetActive(true);
+
+            if (_shieldParticles != null)
+            {
+                foreach (var ps in _shieldParticles)
+                {
+                    ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                    ps.Play(true);
+                }
+            }
+
+            if (duration > 0f)
+                _shieldDisableRoutine = StartCoroutine(DisableShieldAfter(duration));
+        }
+
+        public void DeactivateShield()
+        {
+            if (_shieldInstance == null) return;
+
+            StopShieldImmediate();
+            _shieldInstance.SetActive(false);
+        }
+
+        private IEnumerator DisableShieldAfter(float seconds)
+        {
+            yield return new WaitForSeconds(seconds);
+            DeactivateShield();
+            _shieldDisableRoutine = null;
+        }
+
+        private void StopShieldImmediate()
+        {
+            if (_shieldParticles == null) return;
+
+            foreach (var ps in _shieldParticles)
+                ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        }
+
+        private void ConsumeShield(float amount)
+        {
+            if (!shieldGameplayEnabled) return;
+
+            _shieldDurability -= amount;
+            if (_shieldDurability > 0f) return;
+
+            _shieldDurability = 0f;
+            BreakShield();
+        }
+
+        private void BreakShield()
+        {
+            if (_shieldBroken) return;
+
+            _shieldBroken = true;
+            DeactivateShield();
+
+            if (_shieldRecoverRoutine != null) StopCoroutine(_shieldRecoverRoutine);
+            _shieldRecoverRoutine = StartCoroutine(RecoverShieldAfter(shieldBreakCooldown));
+        }
+
+        private IEnumerator RecoverShieldAfter(float seconds)
+        {
+            yield return new WaitForSeconds(seconds);
+
+            _shieldBroken = false;
+            _shieldDurability = shieldMaxDurability;
+            _shieldRecoverRoutine = null;
+        }
+
+        private void DoShieldStomp(Enemy enemy)
+        {
+            if (enemy == null) return;
+
+            ConsumeShield(shieldStompCost);
+            bool killed = enemy.TakeDamageAndReturnKilled(stompDamage);
+
+            if (!killed)
+            {
+                enemy.ApplyStun(stompStunSeconds);
+
+                float dir = (enemy.transform.position.x - transform.position.x) >= 0f ? 1f : -1f;
+                enemy.stepBackDistance = stompKnockback;
+                StartCoroutine(dir > 0f ? enemy.SmoothStepBack(true) : enemy.SmoothStepBack(false));
+            }
+
+            if (killed)
+            {
+                var hub = GetComponent<PlayerEventHub>();
+                if (hub != null)
+                {
+                    hub.RaiseKill(new KillEvent
+                    {
+                        killer = gameObject,
+                        victim = enemy.gameObject
+                    });
+                }
+            }
+        }
+
+        /// <summary>
+        /// Returns TRUE if the hit was BLOCKED (so caller should NOT apply damage).
+        /// Front-only, consumes durability, and applies knockback + stun to enemy.
+        /// </summary>
+        public bool TryBlockEnemyHit(Enemy enemy, float blockCost = -1f, bool applyReaction = true)
+        {
+            if (!ShieldIsUp) return false;
+            if (enemy == null) return false;
+
+            if (Time.time - _lastBlockTime < shieldMinBlockInterval)
+                return true;
+
+            _lastBlockTime = Time.time;
+            ConsumeShield(blockCost > 0f ? blockCost : shieldBlockCost);
+
+            if (applyReaction)
+            {
+                enemy.ApplyStun(blockStunSeconds);
+
+                float dir = (enemy.transform.position.x - transform.position.x) >= 0f ? 1f : -1f;
+                enemy.stepBackDistance = blockKnockback;
+                StartCoroutine(dir > 0f ? enemy.SmoothStepBack(true) : enemy.SmoothStepBack(false));
+            }
+
+            return true;
+        }
+
+        public bool TryBlockProjectile(Rigidbody2D projRb, Transform projTf, float blockCost = 5f)
+        {
+            if (!ShieldIsUp) return false;
+            if (projRb == null || projTf == null) return false;
+
+            float dx = projTf.position.x - transform.position.x;
+
+            bool incomingFromFront =
+                (rightFacing && dx > 0f && projRb.linearVelocity.x < 0f) ||
+                (leftFacing && dx < 0f && projRb.linearVelocity.x > 0f);
+
+            if (!incomingFromFront) return false;
+
+            if (Time.time - _lastBlockTime >= shieldMinBlockInterval)
+            {
+                _lastBlockTime = Time.time;
+                ConsumeShield(blockCost);
+            }
+
+            Vector2 v = projRb.linearVelocity;
+            v.x = -v.x;
+            projRb.linearVelocity = v;
+
+            return true;
+        }
+
+        public bool TryBlockProjectileKinematic(Transform projectileTf, Vector2 travelDir, float cost = 5f)
+        {
+            if (!ShieldIsUp) return false;
+            if (projectileTf == null) return false;
+
+            float dx = projectileTf.position.x - transform.position.x;
+
+            bool inFront =
+                (rightFacing && dx > 0f) ||
+                (leftFacing && dx < 0f) ||
+                Mathf.Abs(dx) < 0.01f;
+
+            bool movingToward =
+                (rightFacing && travelDir.x < 0f) ||
+                (leftFacing && travelDir.x > 0f);
+
+            if (!inFront || !movingToward) return false;
+
+            if (Time.time - _lastBlockTime >= shieldMinBlockInterval)
+            {
+                _lastBlockTime = Time.time;
+                ConsumeShield(cost);
+            }
+
+            return true;
+        }
+
+        // Absorb "squeeze" pressure with shield (cost is applied at most once per interval)
+        public bool TryAbsorbSqueeze(float cost, float minInterval = -1f)
+        {
+            if (!ShieldIsUp) return false;
+
+            float interval = (minInterval > 0f) ? minInterval : shieldMinBlockInterval;
+            if (Time.time - _lastBlockTime < interval) return true;
+
+            _lastBlockTime = Time.time;
+            ConsumeShield(cost);
+
+            return true;
+        }
+
+        public bool TryUseShieldRelic(float duration, float cooldownOverride = -1f)
+        {
+            if (CanDie) return false;
+            if (!shieldGameplayEnabled) return false;
+            if (_shieldBroken) return false;
+
+            // NEW: shield/sprint mutual exclusion
+            if (IsSprintBlockingShieldUse()) return false;
+
+            float cd = cooldownOverride > 0f ? cooldownOverride : shieldRelicDefaultCooldown;
+            if (Time.time < _nextShieldRelicReadyTime) return false;
+
+            _nextShieldRelicReadyTime = Time.time + cd;
+
+            float dur = Mathf.Max(0.05f, duration);
+
+            if (_shieldInstance == null || !_shieldInstance.activeSelf || shieldRelicRefreshIfAlreadyActive)
+                ActivateShield(dur);
+
+            NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.12f));
+
+            return true;
+        }
+
+        #endregion
+
+        #region Hit Reaction
+
+        public void ApplyHitReaction(HitKind kind, Vector2 fromWorldPos, float stunSeconds, float knockbackVel)
+        {
+            if (_sprintActive) return;
+
+            if (Time.time - _lastHitReactTime < hitReactMinInterval)
+                return;
+
+            _lastHitReactTime = Time.time;
+
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+
+            float dir = (transform.position.x - fromWorldPos.x) >= 0f ? 1f : -1f;
+
+            switch (kind)
+            {
+                case HitKind.Spark:
+                    {
+                        Vector2 knockbackDirection = ((Vector2)transform.position - fromWorldPos);
+                        if (knockbackDirection.sqrMagnitude < 0.0001f)
+                            knockbackDirection = Vector2.right;
+
+                        knockbackDirection = new Vector2(Mathf.Sign(knockbackDirection.x), sparkUpBias).normalized;
+
+                        if (rigidbody2 != null)
+                            rigidbody2.AddForce(knockbackDirection * sparkImpulse, ForceMode2D.Impulse);
+
+                        StartHitStun(stunSeconds, knockbackX: 0f);
+                        break;
+                    }
+
+                case HitKind.Laser:
+                    StartHitStun(stunSeconds, knockbackX: 0.6f * dir);
+                    break;
+
+                case HitKind.Projectile:
+                    StartHitStun(stunSeconds, knockbackX: knockbackVel * dir);
+                    break;
+            }
+        }
+
+        private void StartHitStun(float seconds, float knockbackX)
+        {
+            if (_hitReactRoutine != null) StopCoroutine(_hitReactRoutine);
+            _hitReactRoutine = StartCoroutine(HitStunRoutine(seconds, knockbackX));
+        }
+
+        private IEnumerator HitStunRoutine(float seconds, float knockbackX)
+        {
+            CanMove = false;
+            CanAttackWarrior = false;
+
+            if (Mathf.Abs(knockbackX) > 0.001f)
+            {
+                var v = rigidbody2.linearVelocity;
+                v.x = knockbackX;
+                rigidbody2.linearVelocity = v;
+            }
+
+            yield return new WaitForSeconds(seconds);
+
+            CanMove = true;
+            CanAttackWarrior = true;
+            _hitReactRoutine = null;
+        }
+
+        #endregion
+        private void CacheWarriorCollidersForSprint()
+        {
+            _warriorCollidersDuringSprint.Clear();
+
+            var cols = GetComponentsInChildren<Collider2D>(true);
+            for (int i = 0; i < cols.Length; i++)
+            {
+                if (cols[i] != null && !_warriorCollidersDuringSprint.Contains(cols[i]))
+                    _warriorCollidersDuringSprint.Add(cols[i]);
+            }
+
+            if (collider2 != null && !_warriorCollidersDuringSprint.Contains(collider2))
+                _warriorCollidersDuringSprint.Add(collider2);
+        }
+
+        private void SetIgnoreWithAllWarriorColliders(Collider2D enemyCol, bool ignore)
+        {
+            if (enemyCol == null) return;
+            if (_warriorCollidersDuringSprint.Count == 0) CacheWarriorCollidersForSprint();
+
+            for (int i = 0; i < _warriorCollidersDuringSprint.Count; i++)
+            {
+                var wcol = _warriorCollidersDuringSprint[i];
+                if (wcol == null) continue;
+                Physics2D.IgnoreCollision(wcol, enemyCol, ignore);
+            }
+        }
+        public override void TakeDamage(float damage)
+        {
+            if (_sprintActive) return;
+            if (_reviveInvulnerable) return; // prevents instant re-death
+            if (_deathStarted) return;
+
+            base.TakeDamage(damage);
+
+            OnHealthChanged?.Invoke(currentHealth, maxHealth);
+
+            if (currentHealth <= 0f)
+                StartDeath();
+        }
+        private void OnDisable()
+        {
+            ForceStopSprint();
+        }
+
+        private void OnDestroy()
+        {
+            ForceStopSprint();
+        }
+
+
+
+        #region Health / Misc
+
+        public void Heal(int amount)
+        {
+            if (amount <= 0) return;
+            if (_deathStarted || CanDie) return;
+
+            float before = currentHealth;
+            currentHealth = Mathf.Clamp(currentHealth + amount, 0f, maxHealth);
+
+            if (!Mathf.Approximately(before, currentHealth))
+            {
+                OnHealthChanged?.Invoke(currentHealth, maxHealth);
+                Debug.Log($"[Warrior] Heal +{amount} => {before} -> {currentHealth}/{maxHealth}");
+            }
+        }
+
+        #endregion
+
+        #region UI Attack Entrypoints / Relic Attack2
+
+        public void RequestPrimaryAttackFromUIButton()
+        {
+            NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.15f));
+            if (CanDie) return;
+            if (!CanMove || !CanAttackWarrior) return;
+            if (activesJumpCoroutine != null || IsFalling || IsFallingGrazesEdge) return;
+
+            if (animator != null && animator.GetBool("IsLosingCtrl"))
+                animator.SetBool("IsLosingCtrl", false);
+
+            StopMoveTowardCoroutine();
+
+            // Core rule:
+            // If relic Attack2 is still armed/active, use Attack2.
+            if (IsRelicAttack2Active)
+            {
+                if (!_attack2CooldownStarted)
+                {
+                    if (!TryConsumeAttack2Cooldown())
+                    {
+                        if (_attack2ArmedByRelic)
+                            RevertAttack2ToDefault();
+
+                        if (!fallbackToAttack1IfAttack2OnCooldown)
+                            return;
+
+                        SetAttackMode(AttackAnimMode.Attack1);
+                    }
+                    else
+                    {
+                        _attack2CooldownStarted = true;
+
+                        if (IsAnyAttackPlaying())
+                            ForceCancelCurrentAttack();
+
+                        SetAttackMode(AttackAnimMode.Attack2);
+                    }
+                }
+                else
+                {
+                    if (IsAnyAttackPlaying())
+                        ForceCancelCurrentAttack();
+
+                    SetAttackMode(AttackAnimMode.Attack2);
+                }
+            }
+            else
+            {
+                if (_attack2ArmedByRelic)
+                    RevertAttack2ToDefault();
+
+                if (!fallbackToAttack1IfAttack2OnCooldown)
+                    return;
+
+                SetAttackMode(AttackAnimMode.Attack1);
+            }
+
+            _attack1HitEventConsumed = false;
+            GuardIdleAfterAttackRequest();
+            PlayCurrentAttackAnimation();
+        }
+
+        /// <summary>
+        /// Called by UI controls to prevent world touch handling for a short time.
+        /// </summary>
+        public void NotifyUIConsumedInput(float duration = -1f)
+        {
+            float d = duration > 0f ? duration : uiInputGuardDuration;
+            _uiInputBlockUntil = Mathf.Max(_uiInputBlockUntil, Time.time + d);
+        }
+
+        private bool IsPointerOverUI()
+        {
+            if (EventSystem.current == null) return false;
+
+#if UNITY_ANDROID || UNITY_IOS
+            for (int i = 0; i < Input.touchCount; i++)
+            {
+                Touch t = Input.GetTouch(i);
+                if (EventSystem.current.IsPointerOverGameObject(t.fingerId))
+                    return true;
+            }
+            return false;
+#else
+            return EventSystem.current.IsPointerOverGameObject();
+#endif
+        }
+
+        /// <summary>
+        /// Called by relic UI button.
+        /// Applies cooldown, switches to Attack2 mode for cooldown window, optionally triggers now.
+        /// </summary>
+        public bool TryUseRelicAttack2(float duration, float cooldownOverride = -1f, bool triggerNow = false)
+        {
+            if (CanDie) return false;
+            if (!CanMove || !CanAttackWarrior) return false;
+            if (activesJumpCoroutine != null || IsFalling || IsFallingGrazesEdge) return false;
+
+            // If already armed/active, ignore (optional behavior)
+            if (_attack2ArmedByRelic)
+                return false;
+
+            // DO NOT consume cooldown here anymore.
+            // We only arm Attack2 and will start cooldown on first attack button press.
+            _attack2ArmedByRelic = true;
+            _attack2CooldownStarted = false;
+            _armedAttack2Duration = Mathf.Max(0.05f, duration);
+
+            SetAttackMode(AttackAnimMode.Attack2);
+
+            NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.20f));
+
+            // Optional immediate trigger still works:
+            // if triggerNow = true, the button-path logic below will consume cooldown there.
+            if (triggerNow)
+                RequestPrimaryAttackFromUIButton();
+
+            return true;
+        }
+
+        private bool TryConsumeAttack2Cooldown(float cooldownOverride = -1f)
+        {
+            float cd = (cooldownOverride > 0f) ? cooldownOverride : attack2Cooldown;
+
+            if (Time.time < _nextAttack2ReadyTime)
+                return false;
+
+            _nextAttack2ReadyTime = Time.time + cd;
+            return true;
+        }
+
+        private void RefreshRelicAttack2State()
+        {
+            // Don't auto-revert before first actual attack has started the cooldown/window
+            if (!_attack2ArmedByRelic) return;
+            if (!_attack2CooldownStarted) return;
+
+            if (Time.time >= _nextAttack2ReadyTime)
+                RevertAttack2ToDefault();
+        }
+
+        private void RevertAttack2ToDefault()
+        {
+            SetAttackMode(AttackAnimMode.Attack1);
+            _attack2ArmedByRelic = false;
+            _attack2CooldownStarted = false;
+            _attack2WindowStarted = false;
+            _armedAttack2Duration = 0f;
+        }
+
+        private IEnumerator RevertAttackModeAfter(float t)
+        {
+            yield return new WaitForSeconds(t);
+            RevertAttack2ToDefault();
+        }
+        #endregion
+        #region spectacular action scoring
+
+        // In Warrior
+        public void ShowLosingBalance()
+        {
+            GetComponent<Assets.Scripts.Scoring.SpectacularActionScorer>()
+                ?.NotifyLosingBalanceDisplayed();
+
+            LosingBalanceAnimationDisplay();
+        }
+
+        public float LastJumpStartTime { get; private set; } = -999f;
+        public int LastJumpStartFrame { get; private set; } = -999;
+
+        public void MarkJumpStarted()
+        {
+            LastJumpStartTime = Time.time;
+            LastJumpStartFrame = Time.frameCount;
+
+            PlayJumpSfx(); // <-- NEW
+        }
+        #endregion
+        #region Gizmos
+
+        private void OnDrawGizmosSelected()
+        {
+            if (!Application.isPlaying)
+            {
+                Vector2 right = (Vector2)transform.position + new Vector2(attackCenterOffset.x, attackCenterOffset.y);
+                Gizmos.color = new Color(1f, 0f, 0f, 0.3f);
+                Gizmos.DrawSphere(right, attackRadius);
+                Gizmos.color = Color.red;
+                Gizmos.DrawWireSphere(right, attackRadius);
+
+                Vector2 left = (Vector2)transform.position + new Vector2(-attackCenterOffset.x, attackCenterOffset.y);
+                Gizmos.color = new Color(1f, 1f, 0f, 0.3f);
+                Gizmos.DrawSphere(left, attackRadius);
+                Gizmos.color = Color.yellow;
+                Gizmos.DrawWireSphere(left, attackRadius);
+                return;
+            }
+
+            Vector2 center = GetAttackCenter();
+            bool hasEnemy = HasEnemyInAttackRange();
+
+            Gizmos.color = hasEnemy ? new Color(0f, 1f, 0f, 0.3f) : new Color(1f, 0f, 0f, 0.3f);
+            Gizmos.DrawSphere(center, attackRadius);
+            Gizmos.color = hasEnemy ? Color.green : Color.red;
+            Gizmos.DrawWireSphere(center, attackRadius);
+        }
+
+        #endregion
+
+        #region warrior state query (for external callers, e.g. relics)
+        [Header("Death (Warrior)")]
+        [SerializeField] private float gameOverUiDelay = 0.45f; // petit délai avant UI
+        [SerializeField] private bool disablePhysicsOnDeath = true;
+        [SerializeField] private bool disableCollidersOnDeath = true;
+
+        public event Action OnDeathStarted;
+        public event Action OnDeathEnded;
+        public event Action<float, float> OnHealthChanged; // current, max
+
+        private bool _deathStarted;
+
+        // (optionnel) expose si besoin pour UI
+        public bool IsDead => _deathStarted || CanDie;
+
+        // Si CharacterController possède currentHealth/maxHealth (comme Enemy),
+        // tu peux exposer ça aussi :
+        public float CurrentHealth => currentHealth;
+        public float MaxHealth => maxHealth;
+        public float Health01 => maxHealth <= 0 ? 0f : Mathf.Clamp01(currentHealth / maxHealth);
+
+        private void StartDeath()
+        {
+            if (_deathStarted) return;
+
+            _deathFinalized = false;
+            _deathStarted = true;
+
+            CanDie = true;
+            CanMove = false;
+            CanAttackWarrior = false;
+
+            // Stop tout ce qui peut continuer à agir
+            ForceCancelCurrentAttack();
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+
+            // Stop sprint + shield proprement
+            ForceStopSprint();
+            DeactivateShield();
+
+            // Bloque l’input monde (ton guard UI)
+            _uiInputBlockUntil = float.PositiveInfinity;
+
+            // Neutralise physique
+            if (rigidbody2 != null)
+            {
+                rigidbody2.linearVelocity = Vector2.zero;
+                if (disablePhysicsOnDeath) rigidbody2.simulated = false;
+            }
+
+            if (disableCollidersOnDeath)
+            {
+                if (collider2 != null) collider2.enabled = false;
+                if (shieldHitbox != null) shieldHitbox.enabled = false;
+            }
+
+            OnDeathStarted?.Invoke();
+
+            // Lancer ton anim existante
+            DeathAnimationDisplay();
+
+            // Fallback si tu n’as pas encore d’Animation Event
+            StartCoroutine(DeathEndFallback());
+        }
+
+        private IEnumerator DeathEndFallback()
+        {
+            yield return new WaitForSecondsRealtime(gameOverUiDelay);
+            EndDeath();
+        }
+
+        public void AE_WarriorDeathEnd() // <-- Animation Event à mettre sur la dernière frame du clip mort
+        {
+            EndDeath();
+        }
+
+        private void EndDeath()
+        {
+            if (!_deathStarted) return;
+            if (_deathFinalized) return;
+            _deathFinalized = true;
+
+            OnDeathEnded?.Invoke();
+            GameMgr.Instance?.HandleWarriorDead();
+        }
+        #endregion
+
+        #region restart game
+        [SerializeField] private float reviveHpPercent = 0.5f;     // 50% HP
+        [SerializeField] private float reviveInvulnSeconds = 1.2f; // short invuln
+        private bool _reviveInvulnerable;
+        private Coroutine _reviveInvulnRoutine;
+
+        public bool TryRevive(float hpPercentOverride = -1f, float invulnOverride = -1f)
+        {
+            // Only revive if dead
+            if (!_deathStarted && !CanDie) return false;
+            _deathFinalized = false;
+            float hpPercent = (hpPercentOverride > 0f) ? hpPercentOverride : reviveHpPercent;
+            float invuln = (invulnOverride > 0f) ? invulnOverride : reviveInvulnSeconds;
+
+            // restore HP
+            currentHealth = Mathf.Max(1f, maxHealth * hpPercent);
+            OnHealthChanged?.Invoke(currentHealth, maxHealth);
+
+            // clear death flags
+            _deathStarted = false;
+            CanDie = false;
+            CanMove = true;
+            CanAttackWarrior = true;
+
+            // re-enable physics/colliders (StartDeath disabled them)
+            _uiInputBlockUntil = -999f;
+
+            if (rigidbody2 != null)
+            {
+                rigidbody2.simulated = true;
+                rigidbody2.linearVelocity = Vector2.zero;
+            }
+
+            if (collider2 != null) collider2.enabled = true;
+            if (shieldHitbox != null) shieldHitbox.enabled = true;
+
+            // reset shield state (optional)
+            _shieldBroken = false;
+            _shieldDurability = shieldMaxDurability;
+            DeactivateShield();
+
+            // return to idle state visually
+            WaitAnimationDisplay();
+
+            // invulnerability window
+            if (_reviveInvulnRoutine != null) StopCoroutine(_reviveInvulnRoutine);
+            _reviveInvulnRoutine = StartCoroutine(ReviveInvuln(invuln));
+
+            return true;
+        }
+
+        private IEnumerator ReviveInvuln(float seconds)
+        {
+            _reviveInvulnerable = true;
+            yield return new WaitForSeconds(seconds);
+            _reviveInvulnerable = false;
+            _reviveInvulnRoutine = null;
+        }
+        [Header("Out Of View Death")]
+        [SerializeField] private bool killWhenBelowViewport = true;
+        [SerializeField] private float viewportBottomMargin = 0.15f; // tolérance sous l'écran
+        [SerializeField] private Camera deathCheckCamera;
+        public void ForceDeath()
+        {
+            if (_deathStarted || CanDie) return;
+
+            // si tu veux être sûr que la vie est à 0
+            currentHealth = 0f;
+            OnHealthChanged?.Invoke(currentHealth, maxHealth);
+
+            StartDeath();
+        }
+        private bool _deathFinalized;
+        private void CheckOutOfViewportDeath()
+        {
+            if (!killWhenBelowViewport) return;
+            if (_deathStarted || CanDie) return;
+
+            Camera cam = deathCheckCamera != null ? deathCheckCamera : Camera.main;
+            if (cam == null) return;
+
+            Vector3 worldPos = (collider2 != null) ? collider2.bounds.center : transform.position;
+            Vector3 vp = cam.WorldToViewportPoint(worldPos);
+
+            // Si derrière la caméra, on peut ignorer ou tuer selon ton jeu 2D
+            if (vp.z < 0f) return;
+
+            // Mort si sous l'écran avec marge
+            if (vp.y < -viewportBottomMargin)
+            {
+                Debug.Log("[Warrior] Out of viewport (below screen) -> death");
+                ForceDeath();
+            }
+        }
+        #endregion
+
+        private bool IsSprintBlockingShieldUse()
+        {
+            // strict mode: even an armed sprint blocks shield
+            return _sprintActive || _sprintArmed;
+        }
+
+        private bool IsShieldBlockingSprintUse()
+        {
+            return ShieldIsUp;
+        }
+        #region sound
+        private void EnsureSfxSource()
+        {
+            if (_sfxSource != null) return;
+
+            // Reuse existing AudioSource if present, otherwise add one
+            _sfxSource = GetComponent<AudioSource>();
+            if (_sfxSource == null) _sfxSource = gameObject.AddComponent<AudioSource>();
+
+            _sfxSource.playOnAwake = false;
+            _sfxSource.loop = false;
+            _sfxSource.spatialBlend = 0f; // 2D
+        }
+
+        private void PlayAttack1HitSfx()
+        {
+            if (attack1HitClip == null) return;
+
+            EnsureSfxSource();
+
+            if (attack1HitPlayOncePerFrame)
+            {
+                // évite double-play si plusieurs events (fist/kick) le même frame
+                if (_lastAttack1HitSfxFrame == Time.frameCount) return;
+                _lastAttack1HitSfxFrame = Time.frameCount;
+            }
+
+            _sfxSource.pitch = UnityEngine.Random.Range(attack1HitPitchRange.x, attack1HitPitchRange.y);
+            _sfxSource.PlayOneShot(attack1HitClip, attack1HitVolume);
+        }
+
+        private void PlayJumpSfx()
+        {
+            if (jumpClip == null) return;
+
+            EnsureSfxSource();
+
+            if (jumpPlayOncePerFrame)
+            {
+                if (_lastJumpSfxFrame == Time.frameCount) return;
+                _lastJumpSfxFrame = Time.frameCount;
+            }
+
+            _sfxSource.pitch = UnityEngine.Random.Range(jumpPitchRange.x, jumpPitchRange.y);
+            _sfxSource.PlayOneShot(jumpClip, jumpVolume);
+        }
+
+        private void PlayAttack1MissSfx()
+        {
+            if (attack1MissClip == null) return;
+
+            EnsureSfxSource();
+
+            if (attack1MissPlayOncePerFrame)
+            {
+                if (_lastAttack1MissSfxFrame == Time.frameCount) return;
+                _lastAttack1MissSfxFrame = Time.frameCount;
+            }
+
+            _sfxSource.pitch = UnityEngine.Random.Range(attack1MissPitchRange.x, attack1MissPitchRange.y);
+            _sfxSource.PlayOneShot(attack1MissClip, attack1MissVolume);
+        }
+
+        private void PlayAttack2Sfx()
+        {
+            if (attack2Clip == null) return;
+
+            EnsureSfxSource();
+
+            if (attack2PlayOncePerFrame)
+            {
+                if (_lastAttack2SfxFrame == Time.frameCount) return;
+                _lastAttack2SfxFrame = Time.frameCount;
+            }
+
+            _sfxSource.pitch = UnityEngine.Random.Range(attack2PitchRange.x, attack2PitchRange.y);
+            _sfxSource.PlayOneShot(attack2Clip, attack2Volume);
+        }
+        #endregion
+
+    }
+}
