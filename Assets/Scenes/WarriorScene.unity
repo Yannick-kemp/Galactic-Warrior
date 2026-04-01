@@ -267,7 +267,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &127395663
 Transform:
   m_ObjectHideFlags: 0
@@ -1752,7 +1752,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &373063806
 Transform:
   m_ObjectHideFlags: 0
@@ -3189,7 +3189,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &536453970
 Transform:
   m_ObjectHideFlags: 0
@@ -3470,7 +3470,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &587327556
 Transform:
   m_ObjectHideFlags: 0
@@ -3775,7 +3775,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &751622016
 Transform:
   m_ObjectHideFlags: 0
@@ -4319,7 +4319,7 @@ PrefabInstance:
     - target: {fileID: 2213832784050534146, guid: 1ee319e4289fa23459d527c0bd83d33c, type: 3}
       propertyPath: enemyPrefabs.Array.data[4].prefab
       value: 
-      objectReference: {fileID: 462648239515211956, guid: 65d4b2be87ca2104693e27cff30f9945, type: 3}
+      objectReference: {fileID: 462648239515211956, guid: 164b61be6e275284c9e408dc2bbd5a23, type: 3}
     - target: {fileID: 2213832784050534146, guid: 1ee319e4289fa23459d527c0bd83d33c, type: 3}
       propertyPath: enemyPrefabs.Array.data[5].prefab
       value: 
@@ -4397,7 +4397,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &879674268
 Transform:
   m_ObjectHideFlags: 0
@@ -6083,7 +6083,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1155190364
 Transform:
   m_ObjectHideFlags: 0
@@ -7947,7 +7947,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1463247871
 Transform:
   m_ObjectHideFlags: 0
@@ -8433,7 +8433,7 @@ Transform:
   m_GameObject: {fileID: 1626959075}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 24.28, y: -1.81, z: 0}
+  m_LocalPosition: {x: 27.34, y: -1.58, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -8875,7 +8875,7 @@ Transform:
   m_GameObject: {fileID: 1711059377}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 108.8, y: 23.51, z: 0}
+  m_LocalPosition: {x: -15.51, y: -0.87, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -10635,7 +10635,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1841149050
 Transform:
   m_ObjectHideFlags: 0
@@ -11492,7 +11492,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1943033787
 Transform:
   m_ObjectHideFlags: 0
@@ -11536,7 +11536,7 @@ MonoBehaviour:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
       overrideRepathInterval: 0
-  repathInterval: 0.25
+      repathInterval: 0.25
   movingVerticalPlatform: {fileID: 0}
   spawnPoint: {fileID: 0}
   visibilityMargin: 0.2
@@ -11764,7 +11764,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &2021350740
 Transform:
   m_ObjectHideFlags: 0
@@ -11808,7 +11808,7 @@ MonoBehaviour:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
       overrideRepathInterval: 0
-  repathInterval: 0.25
+      repathInterval: 0.25
   movingVerticalPlatform: {fileID: 0}
   spawnPoint: {fileID: 0}
   visibilityMargin: 0.2
@@ -11995,7 +11995,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &2067490420
 Transform:
   m_ObjectHideFlags: 0
@@ -12040,7 +12040,6 @@ MonoBehaviour:
       squeezeCheckInterval: 0.12
       overrideRepathInterval: 0
       repathInterval: 0.25
-
   movingVerticalPlatform: {fileID: 0}
   spawnPoint: {fileID: 0}
   visibilityMargin: 0.2
