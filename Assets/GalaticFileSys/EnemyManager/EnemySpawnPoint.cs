@@ -1,17 +1,13 @@
-<<<<<<< HEAD
-﻿using Assets.Scripts.Characteres.EnemyContoller;
+using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Platforms;
 using UnityEngine;
-=======
-﻿using UnityEngine;
->>>>>>> ef28a05e7f3e835850479d0c06d0acbd616b537d
+
 
 public class EnemySpawnPoint : MonoBehaviour
 {
     [SerializeField] private EnemyType enemyType;
     [SerializeField] private EnemySpawnOverrides overrides = new EnemySpawnOverrides();
 
-<<<<<<< HEAD
     [Header("Optional moving platform owner")]
     [SerializeField] private MovingVerticalPlatform movingVerticalPlatform;
 
@@ -42,17 +38,12 @@ public class EnemySpawnPoint : MonoBehaviour
     }
 
     private void Update()
-=======
-    private bool spawned;
 
-    void Update()
->>>>>>> ef28a05e7f3e835850479d0c06d0acbd616b537d
     {
         if (spawned) return;
 
         if (IsVisibleToCamera())
         {
-<<<<<<< HEAD
             Enemy enemy = Spawn();
 
             if (enemy != null)
@@ -98,27 +89,6 @@ public class EnemySpawnPoint : MonoBehaviour
             point.position,
             overrides
         );
-=======
-            Spawn();
-            spawned = true;
-        }
-    }
 
-    bool IsVisibleToCamera()
-    {
-        if (Camera.main == null) return false;
-
-        Vector3 viewportPos = Camera.main.WorldToViewportPoint(transform.position);
-        float margin = 0.2f;
-
-        return viewportPos.x >= -margin && viewportPos.x <= 1f + margin &&
-               viewportPos.y >= -margin && viewportPos.y <= 1f + margin &&
-               viewportPos.z > 0f;
-    }
-
-    void Spawn()
-    {
-        EnemyMgr.Instance?.SpawnEnemy(enemyType, transform.position, overrides);
->>>>>>> ef28a05e7f3e835850479d0c06d0acbd616b537d
     }
 }

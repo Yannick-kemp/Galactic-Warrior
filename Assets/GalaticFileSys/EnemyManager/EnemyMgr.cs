@@ -1,8 +1,5 @@
 using Assets.Scripts.Characteres.EnemyContoller;
-<<<<<<< HEAD
 using Assets.Scripts.Platforms;
-=======
->>>>>>> ef28a05e7f3e835850479d0c06d0acbd616b537d
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -13,11 +10,8 @@ public class EnemyMgr : MonoBehaviour
     [SerializeField] private List<EnemyPrefabEntry> enemyPrefabs;
 
     private Dictionary<EnemyType, GameObject> prefabLookup;
-<<<<<<< HEAD
     private readonly List<Enemy> activeEnemies = new List<Enemy>();
-=======
-    private List<Enemy> activeEnemies = new List<Enemy>();
->>>>>>> ef28a05e7f3e835850479d0c06d0acbd616b537d
+
 
     private void Awake()
     {
@@ -29,34 +23,22 @@ public class EnemyMgr : MonoBehaviour
 
         Instance = this;
         DontDestroyOnLoad(gameObject);
-<<<<<<< HEAD
-
         BuildPrefabLookup();
     }
 
     private void BuildPrefabLookup()
-=======
-    }
-
-    private void Start()
->>>>>>> ef28a05e7f3e835850479d0c06d0acbd616b537d
     {
         prefabLookup = new Dictionary<EnemyType, GameObject>();
 
         foreach (var entry in enemyPrefabs)
         {
-<<<<<<< HEAD
             if (entry == null || entry.prefab == null)
                 continue;
-
-=======
->>>>>>> ef28a05e7f3e835850479d0c06d0acbd616b537d
             if (!prefabLookup.ContainsKey(entry.type))
                 prefabLookup.Add(entry.type, entry.prefab);
         }
     }
 
-<<<<<<< HEAD
     private void EnsurePrefabLookup()
     {
         if (prefabLookup == null)
@@ -72,47 +54,33 @@ public class EnemyMgr : MonoBehaviour
     {
         EnsurePrefabLookup();
 
-=======
-    // Spawn by enemy type
-    public Enemy SpawnEnemy(EnemyType type, Vector3 position)
-    {
->>>>>>> ef28a05e7f3e835850479d0c06d0acbd616b537d
         if (!prefabLookup.ContainsKey(type))
         {
             Debug.LogError("Enemy type not registered: " + type);
             return null;
         }
 
-<<<<<<< HEAD
         GameObject prefab = prefabLookup[type];
         return SpawnEnemyByPrefab(prefab, position, overrides);
     }
 
-    public Enemy SpawnEnemy(GameObject prefab, Vector3 position)
-    {
-        return SpawnEnemyByPrefab(prefab, position, null);
-    }
+    //public Enemy SpawnEnemy(GameObject prefab, Vector3 position)
+    //{
+    //    return SpawnEnemyByPrefab(prefab, position, null);
+    //}
 
-    public Enemy SpawnEnemy(GameObject prefab, Vector3 position, EnemySpawnOverrides overrides = null)
-    {
-        return SpawnEnemyByPrefab(prefab, position, overrides);
-    }
+    //public Enemy SpawnEnemy(GameObject prefab, Vector3 position, EnemySpawnOverrides overrides = null)
+    //{
+    //    return SpawnEnemyByPrefab(prefab, position, overrides);
+    //}
 
     private Enemy SpawnEnemyByPrefab(GameObject prefab, Vector3 position, EnemySpawnOverrides overrides = null)
     {
-=======
-        return SpawnEnemy(prefabLookup[type], position);
-    }
 
-    // Spawn by prefab
-    public Enemy SpawnEnemy(GameObject prefab, Vector3 position)
-    {
->>>>>>> ef28a05e7f3e835850479d0c06d0acbd616b537d
         if (prefab == null)
             return null;
 
         GameObject enemyObject = Instantiate(prefab, position, Quaternion.identity);
-<<<<<<< HEAD
         Enemy enemy = enemyObject.GetComponent<Enemy>();
 
         if (enemy == null)
@@ -209,27 +177,12 @@ public class EnemyMgr : MonoBehaviour
 
         if (!activeEnemies.Contains(enemy))
             activeEnemies.Add(enemy);
-=======
-
-        Enemy enemy = enemyObject.GetComponent<Enemy>();
-
-        if (enemy != null)
-        {
-            enemy.target = GameMgr.Instance.WarriorInstance.transform;
-            activeEnemies.Add(enemy);
-        }
-
-        return enemy;
->>>>>>> ef28a05e7f3e835850479d0c06d0acbd616b537d
     }
 
     public void OnEnemyDestroyed(Enemy enemy)
     {
-<<<<<<< HEAD
         if (enemy != null && activeEnemies.Contains(enemy))
-=======
-        if (activeEnemies.Contains(enemy))
->>>>>>> ef28a05e7f3e835850479d0c06d0acbd616b537d
+
             activeEnemies.Remove(enemy);
     }
 
@@ -237,19 +190,8 @@ public class EnemyMgr : MonoBehaviour
     {
         return activeEnemies;
     }
-<<<<<<< HEAD
-=======
 
-    public Enemy SpawnEnemy(EnemyType type, Vector3 position, EnemySpawnOverrides overrides = null)
-    {
-        if (prefabLookup == null || !prefabLookup.ContainsKey(type))
-        {
-            Debug.LogError("Enemy type not registered: " + type);
-            return null;
-        }
 
-        return SpawnEnemy(prefabLookup[type], position, overrides);
-    }
 
     public Enemy SpawnEnemy(GameObject prefab, Vector3 position, EnemySpawnOverrides overrides = null)
     {
@@ -271,5 +213,4 @@ public class EnemyMgr : MonoBehaviour
 
         return enemy;
     }
->>>>>>> ef28a05e7f3e835850479d0c06d0acbd616b537d
 }
