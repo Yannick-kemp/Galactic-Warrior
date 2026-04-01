@@ -90,7 +90,22 @@ namespace Assets.Scripts.Platforms
 
             base.OnCollisionExit2D(collision);
         }
+        // Inside MovingVerticalPlatform.cs
 
+        public Vector3 GetSurfacePosition()
+        {
+            // Force the physics engine to acknowledge the current transform.position 
+            // before GameMgr reads the bounds.
+            Physics2D.SyncTransforms();
+
+            if (platformCollider == null) return transform.position;
+
+            return new Vector3(
+                platformCollider.bounds.center.x,
+                platformCollider.bounds.max.y,
+                transform.position.z
+            );
+        }
         // --- Editor Visualizer ---
         private void OnDrawGizmosSelected()
         {

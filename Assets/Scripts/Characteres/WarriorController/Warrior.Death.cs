@@ -61,6 +61,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (_deathStarted) return;
             StopLowHealthBlink();
             _deathFinalized = false;
+            GameMgr.Instance?.HandleWarriorDead();
             _deathStarted = true;
 
             CanDie = true;
