@@ -63,6 +63,9 @@ public class GameMgr : MonoBehaviour, IGame
 
     private AudioSource _musicSource;
 
+    // Add this under your other private variables
+    private Vector3 _initialSpawnPosition;
+    private Transform _initialSpawnParent;
     public int RetriesRemaining => Mathf.Max(0, maxRetries - retryCount);
 
     private void Awake()
@@ -100,6 +103,14 @@ public class GameMgr : MonoBehaviour, IGame
         if (warrior != Warrior.Instance) return;
 
         WarriorInstance = warrior;
+
+        // --- NEW LOGIC: Store the scene start position ---
+        // If we haven't stored an initial position yet, grab it now
+        if (_initialSpawnPosition == Vector3.zero)
+        {
+            _initialSpawnPosition = warrior.transform.position;
+            _initialSpawnParent = warrior.transform.parent;
+        }
 
         TryApplyPendingReviveMovingPlatformRespawn(warrior);
 
@@ -193,7 +204,11 @@ public class GameMgr : MonoBehaviour, IGame
     {
         if (WarriorInstance != null)
         {
+            // 1. Store the exact position
             lastDeathPosition = WarriorInstance.transform.position;
+
+            // 2. IMPORTANT: We try to capture the platform from multiple sources 
+            // to be absolutely sure we don't miss it.
             CaptureDeathMovingPlatformRespawn();
         }
 
@@ -416,23 +431,26 @@ public class GameMgr : MonoBehaviour, IGame
         if (WarriorInstance == null)
             return;
 
-        Debug.Log("[GameMgr] ReviveLevel()");
+        Debug.Log("[GameMgr] ReviveLevel() - Resetting to Default Spawn");
 
         Time.timeScale = 1f;
         IsRestarting = true;
 
         ResetMeteorHazards(true);
 
-        CaptureDeathMovingPlatformRespawn();
+        // --- CHANGE: Clear platform respawn data for Revive ---
+        _deathWasOnMovingVerticalPlatform = false;
+        _deathMovingVerticalPlatformId = null;
+        _hasPendingReviveMovingPlatformRespawn = false;
 
-        _hasPendingReviveMovingPlatformRespawn = _deathWasOnMovingVerticalPlatform;
-        _pendingReviveMovingPlatformId = _deathMovingVerticalPlatformId;
-
+        // Reset score/run
         ScoreManager.Instance?.StartNewRun();
 
+        // Destroy current warrior
         Destroy(WarriorInstance.gameObject);
         WarriorInstance = null;
 
+        // Reload the scene
         SceneManager.sceneLoaded += OnSceneLoadedAfterRevive;
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
@@ -454,6 +472,7 @@ public class GameMgr : MonoBehaviour, IGame
         retryCount = 0;
         currentCheckpoint = null;
         _checkpointVersion = 0;
+        _initialSpawnPosition = Vector3.zero; // Clear this for the new scene
         ExitForcedRetryZone();
 
         _deathWasOnMovingVerticalPlatform = false;
@@ -508,27 +527,29 @@ public class GameMgr : MonoBehaviour, IGame
         _deathMovingVerticalPlatformId = null;
 
         Warrior warrior = WarriorInstance;
-        if (warrior == null)
-            return;
+        if (warrior == null) return;
 
         MovingVerticalPlatform movingPlatform = null;
 
+        // Check Current platform first
         if (warrior.CurrentplatForm is MovingVerticalPlatform currentMoving)
+        {
             movingPlatform = currentMoving;
-        //else if (warrior.LastSafePlatform is MovingVerticalPlatform lastSafeMoving)
-        //    movingPlatform = lastSafeMoving;
+        }
+        // Fallback to LastSafePlatform if Current is null (very common during death)
+        else if (warrior.LastSafePlatform is MovingVerticalPlatform lastSafeMoving)
+        {
+            movingPlatform = lastSafeMoving;
+        }
 
-        if (movingPlatform == null)
-            return;
-
-        if (movingPlatform.platformCollider == null)
+        if (movingPlatform == null || movingPlatform.platformCollider == null)
             return;
 
         _deathWasOnMovingVerticalPlatform = true;
         _deathMovingVerticalPlatform = movingPlatform;
         _deathMovingVerticalPlatformId = movingPlatform.RespawnId;
 
-        Debug.Log($"[GameMgr] Captured moving-platform respawn: {movingPlatform.RespawnId}");
+        Debug.Log($"[GameMgr] Death platform locked: {movingPlatform.RespawnId}");
     }
 
     private MovingVerticalPlatform FindMovingVerticalPlatformByRespawnId(string respawnId)
@@ -550,26 +571,18 @@ public class GameMgr : MonoBehaviour, IGame
         return null;
     }
 
-    private Vector3 BuildSurfaceRespawnOnMovingPlatform(
-     MovingVerticalPlatform platform,
-     Warrior warrior)
+    private Vector3 BuildSurfaceRespawnOnMovingPlatform(MovingVerticalPlatform platform, Warrior warrior)
     {
-        // Force an update to get the platform's exact current position in world space
+        // CRITICAL: Update the physics world to match the current visual transform
         Physics2D.SyncTransforms();
 
-        // Bounds.max.y is the top edge of the platform collider
         float platformTop = platform.platformCollider.bounds.max.y;
-
-        // Bounds.extents.y is half the height of the Warrior
         float warriorHalfHeight = warrior.collider2.bounds.extents.y;
 
-        // Use a slightly larger offset (e.g., 0.15f) so he is clearly ABOVE the surface
-        float spawnY = platformTop + warriorHalfHeight + movingPlatformRespawnSeatOffset + 0.1f;
+        // Use a slightly larger offset if the platform is moving VERY fast
+        float spawnY = platformTop + warriorHalfHeight + movingPlatformRespawnSeatOffset;
 
-        // X is the center of the platform
-        float spawnX = platform.platformCollider.bounds.center.x;
-
-        return new Vector3(spawnX, spawnY, warrior.transform.position.z);
+        return new Vector3(platform.platformCollider.bounds.center.x, spawnY, warrior.transform.position.z);
     }
 
     private bool TryGetDeathMovingPlatformRespawn(

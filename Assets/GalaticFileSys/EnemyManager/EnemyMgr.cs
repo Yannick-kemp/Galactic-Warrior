@@ -64,16 +64,6 @@ public class EnemyMgr : MonoBehaviour
         return SpawnEnemyByPrefab(prefab, position, overrides);
     }
 
-    //public Enemy SpawnEnemy(GameObject prefab, Vector3 position)
-    //{
-    //    return SpawnEnemyByPrefab(prefab, position, null);
-    //}
-
-    //public Enemy SpawnEnemy(GameObject prefab, Vector3 position, EnemySpawnOverrides overrides = null)
-    //{
-    //    return SpawnEnemyByPrefab(prefab, position, overrides);
-    //}
-
     private Enemy SpawnEnemyByPrefab(GameObject prefab, Vector3 position, EnemySpawnOverrides overrides = null)
     {
 
