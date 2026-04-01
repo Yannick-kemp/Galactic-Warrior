@@ -573,16 +573,16 @@ public class GameMgr : MonoBehaviour, IGame
 
     private Vector3 BuildSurfaceRespawnOnMovingPlatform(MovingVerticalPlatform platform, Warrior warrior)
     {
-        // CRITICAL: Update the physics world to match the current visual transform
-        Physics2D.SyncTransforms();
+        // 1. Get the raw surface position from the platform helper
+        Vector3 surfacePos = platform.GetSurfacePosition();
 
-        float platformTop = platform.platformCollider.bounds.max.y;
+        // 2. Calculate the vertical offset for the warrior
+        // (Half height + your custom offset)
         float warriorHalfHeight = warrior.collider2.bounds.extents.y;
+        float finalY = surfacePos.y + warriorHalfHeight + movingPlatformRespawnSeatOffset;
 
-        // Use a slightly larger offset if the platform is moving VERY fast
-        float spawnY = platformTop + warriorHalfHeight + movingPlatformRespawnSeatOffset;
-
-        return new Vector3(platform.platformCollider.bounds.center.x, spawnY, warrior.transform.position.z);
+        // 3. Return the combined position
+        return new Vector3(surfacePos.x, finalY, surfacePos.z);
     }
 
     private bool TryGetDeathMovingPlatformRespawn(
