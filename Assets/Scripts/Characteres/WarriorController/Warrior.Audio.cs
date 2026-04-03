@@ -9,6 +9,8 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         #region sound
 
+
+
         [SerializeField] private bool attack2FadeOutInsteadOfHardStop = true;
         [SerializeField, Min(0f)] private float attack2FadeOutSeconds = 0.06f;
 
@@ -22,7 +24,36 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private int _lastAttack2HitSfxFrame = -1;
 
+        // ... Keep your existing Attack2 and SFX variables ...
 
+        [Header("Voice SFX")]
+        [SerializeField] private AudioSource _voiceSource; // New dedicated source
+        [SerializeField, Range(0f, 1f)] private float voiceVolume = 1.0f;
+
+        private void EnsureVoiceSource()
+        {
+            if (_voiceSource != null) return;
+
+            // Adds a third AudioSource to the Warrior GameObject
+            _voiceSource = gameObject.AddComponent<AudioSource>();
+            _voiceSource.playOnAwake = false;
+            _voiceSource.loop = false;
+            _voiceSource.spatialBlend = 0f; // 2D Sound
+        }
+
+        /// <summary>
+        /// Plays a voice clip. Use this for grunts or dialogue.
+        /// Using .Play() ensures new voice lines interrupt old ones (so they don't talk over themselves).
+        /// </summary>
+        public void PlayVoice(AudioClip clip)
+        {
+            if (clip == null) return;
+            EnsureVoiceSource();
+
+            _voiceSource.clip = clip;
+            _voiceSource.volume = voiceVolume;
+            _voiceSource.Play();
+        }
         // --- Add this method in the same partial (Warrior.Audio.cs) ---
 
         private void PlayAttack2HitSfx()
@@ -64,8 +95,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             _attack2Source.loop = false;
             _attack2Source.spatialBlend = 0f; // 2D
         }
-
-        private void PlayAttack1HitSfx()
+        private void PlayAttack1HitSfx(bool isSpecialHit = false)
         {
             if (attack1HitClip == null) return;
             EnsureSfxSource();
@@ -76,8 +106,19 @@ namespace Assets.Scripts.Characteres.WarriorController
                 _lastAttack1HitSfxFrame = Time.frameCount;
             }
 
+            // Always play the Hit SFX on the SFX Source
             _sfxSource.pitch = UnityEngine.Random.Range(attack1HitPitchRange.x, attack1HitPitchRange.y);
             _sfxSource.PlayOneShot(attack1HitClip, attack1HitVolume);
+
+            // Only play the "Yeeah" if this is the special hit (Frame 27 / Kick)
+            if (isSpecialHit && yeeahClip != null)
+            {
+                PlayVoice(yeeahClip);
+            }
+            else if (attack2Grunt != null) // Otherwise play the normal grunt
+            {
+                PlayVoice(attack2Grunt);
+            }
         }
 
         private void PlayJumpSfx()
@@ -106,11 +147,18 @@ namespace Assets.Scripts.Characteres.WarriorController
                 _lastAttack1MissSfxFrame = Time.frameCount;
             }
 
+            // Layer 1: The "Whoosh" on SFX Source
             _sfxSource.pitch = UnityEngine.Random.Range(attack1MissPitchRange.x, attack1MissPitchRange.y);
             _sfxSource.PlayOneShot(attack1MissClip, attack1MissVolume);
+
+            // Layer 2: The effort grunt on Voice Source
+            if (attack2Grunt != null)
+            {
+                PlayVoice(attack2Grunt);
+            }
         }
 
-        // ✅ START Attack2 sound (stoppable)
+        //START Attack2 sound (stoppable)
         private void StartAttack2Sfx()
         {
             if (attack2Clip == null) return;
@@ -168,8 +216,18 @@ namespace Assets.Scripts.Characteres.WarriorController
             _attack2FadeRoutine = null;
         }
         // Warrior.Audio.cs (inside the Warrior class)
-        public void AE_Attack2_SfxBegin() => StartAttack2Sfx();
+        [Header("Attack2 Hit Grunt (on enemy hit only)")]
+        [SerializeField] private AudioClip attack2Grunt; // Assign in Inspector
+
+        public void AE_Attack2_SfxBegin()
+        {
+            StartAttack2Sfx();      // Plays the "Whoosh"
+            PlayVoice(attack2Grunt); // Plays the "Hyaah!"
+        }
         public void AE_Attack2_SfxEnd() => StopAttack2Sfx();
+
+        [Header("Attack 1 Special Voice")]
+        [SerializeField] private AudioClip yeeahClip; // Assign yeeah.mp3 here in the Inspector
 
         #endregion
     }

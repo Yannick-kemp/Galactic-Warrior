@@ -20,7 +20,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         [Header("Target & Movement")]
         public Transform target;
-        public Transform? groundCheckPoint;
+        public Transform groundCheckPoint;
 
         [Header("Colliders")]
         public BoxCollider2D TriggerColliderLeft;
