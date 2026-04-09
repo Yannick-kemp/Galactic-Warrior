@@ -41,24 +41,18 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private int blinkCount = 3;
 
         [Header("Death Effects")]
+        [SerializeField] private float deathDelay = 1.5f;
+        [SerializeField] private bool hideOnDeath = true;
 
-        [SerializeField] private float deathDelay = 1.5f;    // Time to wait before destroying enemy
-        [SerializeField] private bool hideOnDeath = true;    // Hide sprite/colliders during explosion
-
-        // ---------------------- DISSOLVE (NEW) ----------------------
         [Header("Dissolve Death")]
         [SerializeField] private bool useDissolveOnDeath = true;
-        [SerializeField] private Material dissolveMaterial;     // Assign Mat_Dissolve.mat in Inspector
-        [SerializeField] private float dissolveDuration = 0.8f; // Time for dissolve 0->1
+        [SerializeField] private Material dissolveMaterial;
+        [SerializeField] private float dissolveDuration = 0.8f;
 
-        // NOTE: these names match your ShaderGraph properties exactly (including spelling)
         private static readonly int DissolveAmountID = Shader.PropertyToID("_DissovleAmount");
         private static readonly int MainTexID = Shader.PropertyToID("_MainTex");
 
-        // runtime instance so we don't modify shared material
         private Material runtimeDissolveMat;
-        // ------------------------------------------------------------
-
         private Color originalColor;
         private Coroutine blinkCoroutine;
 
@@ -68,20 +62,17 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         protected bool OddValue;
         protected bool StopMovingWhenWarriorDie = false;
 
-
-
         [Header("Death SFX")]
-        [SerializeField] private AudioClip deathSfxClip;                 // assign fire.mp3 here
+        [SerializeField] private AudioClip deathSfxClip;
         [SerializeField, Range(0f, 1f)] private float deathSfxVolume = 1f;
         [SerializeField] private Vector2 deathSfxPitchRange = new Vector2(0.95f, 1.05f);
-        [SerializeField, Range(0f, 1f)] private float deathSfxSpatialBlend = 0f; // 0=2D
+        [SerializeField, Range(0f, 1f)] private float deathSfxSpatialBlend = 0f;
         [SerializeField] private float deathSfxMaxDistance = 20f;
 
         private bool _deathSfxPlayed;
 
         [Header("Stun")]
         [SerializeField] private bool canBeStunned = true;
-
         [SerializeField] protected float meleeHitDistance = 0.65f;
 
         private bool _isStunned;
@@ -96,16 +87,40 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         public bool IsAttacked { get; set; } = false;
 
-        [SerializeField]
-        public string targetAnimationName = "AttackAnimation";
+        [SerializeField] public string targetAnimationName = "AttackAnimation";
+
+        [Header("Identity")]
+        [SerializeField] private EnemyType enemyType;
+        public EnemyType EnemyType => enemyType;
+
+        [Header("Boss")]
+        [SerializeField] private bool isBoss = false;
+        [SerializeField] private string bossDisplayName = "";
+
+        public bool IsBoss => isBoss;
+        public string BossDisplayName => string.IsNullOrWhiteSpace(bossDisplayName) ? gameObject.name : bossDisplayName;
+
+        public bool CountsForLevelClear
+        {
+            get
+            {
+                return enemyType != EnemyType.Bee
+                    && enemyType != EnemyType.BeeEretic;
+            }
+        }
+
         private AnimatorStateInfo stateInfo;
         private int lastFrameIndex = -1;
         protected AnimationClip currentClip;
-        [SerializeField]
-        public int totalFramesInAnimation = 16;
+
+        [SerializeField] public int totalFramesInAnimation = 16;
         public int frameIndex = -1;
 
         protected bool _deathStarted;
+        private bool _isDead;
+        private bool _isDespawning;
+
+        public bool IsDeadOrDying => _deathStarted || _isDead;
 
         public static readonly List<Enemy> ActiveEnemies = new List<Enemy>();
 
@@ -116,22 +131,62 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         public virtual bool HardAnchorToMovingPlatforms => true;
 
+        [SerializeField] protected EnemyHitReactionProfile hitReaction;
+        public EnemyHitReactionProfile HitReaction => hitReaction;
+
+        [Header("Viewport Auto-Despawn")]
+        [SerializeField] private bool despawnWhenOutOfViewport = true;
+        [SerializeField] private bool requireSeenOnceBeforeDespawn = true;
+        [SerializeField] private float viewportMargin = 0.08f;
+        [SerializeField] private float autoDespawnCheckInterval = 0.15f;
+
+        private bool _hasBeenSeenInViewport;
+        private float _nextViewportCheckTime;
+
+        private EnemySpawnOverrides _spawnOverrides;
+        protected EnemySpawnOverrides SpawnOverrides => _spawnOverrides;
+
+        [Header("Moving Platform Patrol")]
+        [SerializeField] protected float patrolEdgeArriveThreshold = 0.12f;
+
+        protected bool _hasCommittedPatrolEdge;
+        protected float _committedPatrolEdgeX;
+        protected Collider2D _committedPatrolPlatform;
+
+        public EnemySpawnPoint OwnerSpawnPoint { get; private set; }
+
+        protected virtual bool CanViewportDespawn =>
+            despawnWhenOutOfViewport &&
+            !IsBoss;
+
+        public void SetEnemyType(EnemyType type)
+        {
+            enemyType = type;
+        }
+
+        public void SetBoss(bool value, string displayName = null)
+        {
+            isBoss = value;
+
+            if (!string.IsNullOrWhiteSpace(displayName))
+                bossDisplayName = displayName;
+        }
+
+        public void SetOwnerSpawnPoint(EnemySpawnPoint owner)
+        {
+            OwnerSpawnPoint = owner;
+        }
+
         public virtual void DisableAttackTemporarily(float seconds = -1f)
         {
             float d = (seconds > 0f) ? seconds : disableAttackWhenHitSeconds;
             _attackDisabledUntil = Mathf.Max(_attackDisabledUntil, Time.time + d);
-
         }
-
-        // Inside Assets.Scripts.Characteres.EnemyContoller.Enemy.cs
-
-        // Inside Assets.Scripts.Characteres.EnemyContoller.Enemy.cs
 
         protected virtual void FixedUpdate()
         {
             if (groundCheckPoint == null) return;
 
-            // Perform the raycast in FixedUpdate to stay synced with Physics/Platform movement
             RaycastHit2D hit = Physics2D.Raycast(
                 groundCheckPoint.position,
                 Vector2.down,
@@ -141,45 +196,34 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             if (hit.collider != null)
             {
-                // Update our platform reference immediately
                 var platform = hit.collider.GetComponent<PlatFormPlfColliderTrigger>();
                 if (platform != null)
-                {
                     CurrentplatForm = platform;
-                }
             }
             else
             {
-                // If we truly left the platform, handle it
                 if (CurrentplatForm != null)
-                {
-                    // Optional: Add a small grace period or double check before nulling
                     CurrentplatForm = null;
-                }
             }
         }
+
         protected override void Start()
         {
             base.Start();
+
             OddValue = initDirection();
             currentClip = GetAnimationClip(targetAnimationName);
 
             if (spriteRenderer != null)
-            {
                 originalColor = spriteRenderer.color;
-            }
             else
-            {
                 Debug.LogError($"{gameObject.name}: No SpriteRenderer found!");
-            }
 
             if (target == null)
             {
                 GameObject warrior = GameObject.Find("Warrior");
                 if (warrior != null)
-                {
                     target = warrior.transform;
-                }
             }
 
             if (EnemyRangeService == null)
@@ -187,9 +231,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 EnemyRangeService = GetComponent<EnemyRangeService>();
 
                 if (EnemyRangeService == null)
-                {
                     EnemyRangeService = gameObject.AddComponent<EnemyRangeService>();
-                }
             }
 
             if (EnemyRangeService != null)
@@ -198,22 +240,15 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 ConfigureAttack();
             }
 
-            // Initialize Health Bar
             InitializeHealthBar();
+            ApplySpawnOverridesNow();
         }
 
-        /// <summary>
-        /// Initialize health bar with multiple fallback options
-        /// </summary>
         protected virtual void InitializeHealthBar()
         {
-            // Try to find existing health bar in children
             if (worldHealthBar == null)
-            {
                 worldHealthBar = GetComponentInChildren<WorldSpaceHealthBar>();
-            }
 
-            // If still not found, try to create one
             if (worldHealthBar == null)
             {
                 if (autoCreateHealthBar)
@@ -227,24 +262,18 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 }
             }
 
-            // Configure the health bar
             if (worldHealthBar != null)
             {
                 worldHealthBar.SetTarget(this.transform);
                 worldHealthBar.SetOffset(healthBarOffset);
                 worldHealthBar.ForceUpdate(currentHealth, maxHealth);
-
             }
         }
 
-        /// <summary>
-        /// Create a health bar programmatically
-        /// </summary>
         protected virtual WorldSpaceHealthBar CreateHealthBar()
         {
             WorldSpaceHealthBar healthBar;
 
-            // Try to use prefab first
             if (healthBarPrefab != null)
             {
                 healthBar = HealthBarFactory.CreateHealthBarFromPrefab(healthBarPrefab, transform, healthBarOffset);
@@ -252,7 +281,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             }
             else
             {
-                // Create default health bar
                 healthBar = HealthBarFactory.CreateHealthBar(transform, healthBarOffset);
                 Debug.Log($"{gameObject.name}: Default health bar created");
             }
@@ -262,44 +290,37 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         protected virtual void Update()
         {
-            // Keep committed patrol target stable on moving vertical platforms
             CommitPatrolEdgeForMovingVerticalPlatform();
+            UpdateViewportAutoDespawn();
 
-            RaycastHit2D hit = Physics2D.Raycast(
-                groundCheckPoint.position,
-                Vector2.down,
-                rayLength,
-                PlatformLayer
-            );
-
-            if (!hit.collider && CurrentplatForm != null)
+            if (groundCheckPoint != null)
             {
-                StopMoveTowardCoroutine();
+                RaycastHit2D hit = Physics2D.Raycast(
+                    groundCheckPoint.position,
+                    Vector2.down,
+                    rayLength,
+                    PlatformLayer
+                );
 
-                if (CurrentplatForm != null)
+                if (!hit.collider && CurrentplatForm != null)
                 {
+                    StopMoveTowardCoroutine();
+
                     Vector3 safePos = transform.position;
                     safePos.x = ClampToCurrentPlatform(safePos.x);
                     transform.position = safePos;
 
-                    // IMPORTANT:
-                    // On moving vertical platforms, keep the already committed target.
-                    // On normal platforms, keep old behavior.
-                    if (CurrentplatForm is Assets.Scripts.Platforms.MovingVerticalPlatform)
-                    {
+                    if (CurrentplatForm is MovingVerticalPlatform)
                         CommitPatrolEdgeForMovingVerticalPlatform();
-                    }
                     else
-                    {
                         xEdge = GetOppositeEdgeX();
-                    }
-                }
 
-                if (IsGroundedOnPlatform)
-                {
-                    StickToPlatform();
+                    if (IsGroundedOnPlatform)
+                        StickToPlatform();
                 }
             }
+
+            if (animator == null) return;
 
             stateInfo = animator.GetCurrentAnimatorStateInfo(0);
 
@@ -308,10 +329,80 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 frameIndex = GetCurrentFrameIndex();
 
                 if (frameIndex != lastFrameIndex && frameIndex >= 0)
-                {
                     lastFrameIndex = frameIndex;
-                }
             }
+        }
+
+        private void UpdateViewportAutoDespawn()
+        {
+            if (!CanViewportDespawn) return;
+            if (_deathStarted || _isDead || _isDespawning) return;
+            if (Time.time < _nextViewportCheckTime) return;
+
+            _nextViewportCheckTime = Time.time + autoDespawnCheckInterval;
+
+            Camera cam = Camera.main;
+            if (cam == null || spriteRenderer == null) return;
+
+            Bounds b = spriteRenderer.bounds;
+            Vector3 view = cam.WorldToViewportPoint(b.center);
+
+            bool visible =
+                view.z > 0f &&
+                view.x >= -viewportMargin && view.x <= 1f + viewportMargin &&
+                view.y >= -viewportMargin && view.y <= 1f + viewportMargin;
+
+            if (visible)
+            {
+                _hasBeenSeenInViewport = true;
+                return;
+            }
+
+            if (requireSeenOnceBeforeDespawn && !_hasBeenSeenInViewport)
+                return;
+
+            DespawnFromViewport();
+        }
+
+        public virtual void DespawnFromViewport()
+        {
+            if (_isDespawning || _deathStarted || _isDead) return;
+            if (IsBoss) return;
+
+            _isDespawning = true;
+
+            StopMoveTowardCoroutine();
+
+            if (_stunRoutine != null)
+            {
+                StopCoroutine(_stunRoutine);
+                _stunRoutine = null;
+            }
+
+            if (blinkCoroutine != null)
+            {
+                StopCoroutine(blinkCoroutine);
+                blinkCoroutine = null;
+            }
+
+            if (rigidbody2 != null)
+            {
+                rigidbody2.linearVelocity = Vector2.zero;
+                rigidbody2.angularVelocity = 0f;
+                rigidbody2.simulated = false;
+            }
+
+            if (NormalCollider != null) NormalCollider.enabled = false;
+            if (TriggerColliderLeft != null) TriggerColliderLeft.enabled = false;
+            if (TriggerColliderRight != null) TriggerColliderRight.enabled = false;
+
+            if (worldHealthBar != null)
+                worldHealthBar.SetVisibility(false);
+
+            if (animator != null)
+                animator.enabled = false;
+
+            EnemyMgr.Instance?.OnEnemyViewportDespawned(this);
         }
 
         protected void ClampEnemyToPlatformTop()
@@ -343,36 +434,26 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             AttackAnimationDisplay();
         }
 
-        //public override void StopMoveTowardCoroutine()
-        //{
-        //    base.StopMoveTowardCoroutine();
-        //    var w = GameMgr.Instance.WarriorInstance;
-        //    if (w.CanDie)
-        //        StopMovingWhenWarriorDie = true;
-        //}
         public override void StopMoveTowardCoroutine()
         {
             base.StopMoveTowardCoroutine();
         }
+
         public void OnRangeExecuted(Transform target, int damage)
         {
         }
 
         public virtual void OnAttackPerformed(IAttacker attacker, Transform attackedTarget)
         {
-            if (IsWarriorInFront(target))   //front-only
-            {
+            if (IsWarriorInFront(target))
                 AttackAnimationDisplay();
-            }
-
-
         }
-
-        private bool _isDead;
 
         public bool TakeDamageAndReturnKilled(float damage)
         {
             if (_isDead) return false;
+            if (_deathStarted) return false;
+            if (_isDespawning) return false;
             if (damage <= 0f) return false;
 
             currentHealth -= damage;
@@ -380,7 +461,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             UpdateHealthBarDisplay();
 
-            if (blinkCoroutine != null) StopCoroutine(blinkCoroutine);
+            if (blinkCoroutine != null)
+                StopCoroutine(blinkCoroutine);
+
             blinkCoroutine = StartCoroutine(BlinkOnHit());
 
             bool killed = currentHealth <= 0f;
@@ -397,38 +480,33 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             return false;
         }
 
-
         public override void TakeDamage(float damage)
         {
-            // compat si d'autres scripts appellent TakeDamage()
             TakeDamageAndReturnKilled(damage);
         }
 
-
-    
-
-        /// <summary>
-        /// Update the health bar display
-        /// </summary>
         protected virtual void UpdateHealthBarDisplay()
         {
             if (worldHealthBar != null)
-            {
                 worldHealthBar.UpdateHealth(currentHealth, maxHealth);
-            }
         }
 
-        /// <summary>
-        /// Called when enemy dies - plays dissolve/explosion and then destroys
-        /// </summary>
-        protected virtual void OnDeath() // mets "override" si le parent a virtual OnDeath()
+        protected virtual void OnDeath()
         {
             if (_deathStarted) return;
+            if (_isDespawning) return;
+
             _deathStarted = true;
+
+            Debug.Log($"[Enemy] OnDeath started: {name} | boss={IsBoss}");
+
+            OwnerSpawnPoint?.NotifyEnemyDefeated(this);
+            EnemyMgr.Instance?.OnEnemyDeathStarted(this);
+
             if (!_deathSfxPlayed)
             {
                 _deathSfxPlayed = true;
-                Assets.Scripts.Tools.OneShotAudio.Play(
+                OneShotAudio.Play(
                     deathSfxClip,
                     transform.position,
                     deathSfxVolume,
@@ -437,11 +515,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                     deathSfxMaxDistance
                 );
             }
-            // Hide health bar
+
             if (worldHealthBar != null)
                 worldHealthBar.SetVisibility(false);
 
-            // Raise OnKill (Warrior is assumed to be the only killer)
             var w = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
             if (w != null)
             {
@@ -456,78 +533,52 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 }
             }
 
-            // Keep your existing death effects (dissolve/explosion/delay)
             StartCoroutine(DeathSequence());
         }
 
-
-        /// <summary>
-        /// Death sequence with dissolve + explosion effect
-        /// </summary>
         private IEnumerator DeathSequence()
         {
-            // Stop all movement and attacks
             if (rigidbody2 != null)
             {
                 rigidbody2.linearVelocity = Vector2.zero;
                 rigidbody2.simulated = false;
             }
 
-            // Disable colliders to prevent further interactions
             if (NormalCollider != null) NormalCollider.enabled = false;
             if (TriggerColliderLeft != null) TriggerColliderLeft.enabled = false;
             if (TriggerColliderRight != null) TriggerColliderRight.enabled = false;
 
-            // Freeze current pose (optional but usually looks better with dissolve)
-            if (animator != null) animator.enabled = false;
+            if (animator != null)
+                animator.enabled = false;
 
-            // IMPORTANT:
-            // We DO NOT disable the SpriteRenderer before dissolve.
-            // If dissolve is enabled, we dissolve first, then optionally hide.
             if (useDissolveOnDeath && spriteRenderer != null && dissolveMaterial != null)
             {
                 yield return StartCoroutine(PlayDissolve());
             }
             else
             {
-                // Fallback to old behavior if dissolve is not configured
-                if (hideOnDeath)
-                {
-                    if (spriteRenderer != null) spriteRenderer.enabled = false;
-                }
+                if (hideOnDeath && spriteRenderer != null)
+                    spriteRenderer.enabled = false;
             }
 
             yield return new WaitForSeconds(deathDelay);
 
-            // notify manager
             EnemyMgr.Instance?.OnEnemyDestroyed(this);
-
-            // destroy enemy
             Destroy(gameObject);
         }
 
-        /// <summary>
-        /// Plays the dissolve effect by animating _DissovleAmount from 0 -> 1
-        /// </summary>
         private IEnumerator PlayDissolve()
         {
             if (spriteRenderer == null || dissolveMaterial == null)
                 yield break;
 
-            // Create a runtime material instance so we don't affect other enemies
             if (runtimeDissolveMat == null)
                 runtimeDissolveMat = new Material(dissolveMaterial);
 
-            // If your ShaderGraph uses _MainTex, feed it the sprite texture
             if (spriteRenderer.sprite != null)
-            {
                 runtimeDissolveMat.SetTexture(MainTexID, spriteRenderer.sprite.texture);
-            }
 
-            // Apply dissolve material
             spriteRenderer.material = runtimeDissolveMat;
-
-            // Start visible
             runtimeDissolveMat.SetFloat(DissolveAmountID, 0f);
 
             float t = 0f;
@@ -535,37 +586,24 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             {
                 t += Time.deltaTime;
                 float v = Mathf.Clamp01(t / dissolveDuration);
-
-                // If it looks inverted, swap to (1f - v)
                 runtimeDissolveMat.SetFloat(DissolveAmountID, v);
-
                 yield return null;
             }
 
             runtimeDissolveMat.SetFloat(DissolveAmountID, 1f);
 
-            // Optionally hide sprite after dissolve completes
             if (hideOnDeath)
-            {
                 spriteRenderer.enabled = false;
-            }
         }
 
         private void OnDestroy()
         {
-            // Stop all coroutines
             if (blinkCoroutine != null)
-            {
                 StopCoroutine(blinkCoroutine);
-            }
 
-            // Clean up health bar if it exists
             if (worldHealthBar != null && worldHealthBar.gameObject != null)
-            {
                 Destroy(worldHealthBar.gameObject);
-            }
 
-            // Clean up runtime dissolve material
             if (runtimeDissolveMat != null)
             {
                 Destroy(runtimeDissolveMat);
@@ -573,7 +611,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             }
         }
 
-        // BLINK EFFECT COROUTINE
         private IEnumerator BlinkOnHit()
         {
             if (spriteRenderer == null)
@@ -597,28 +634,23 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private bool initDirection()
         {
-            bool v = false;
-            var val = UnityEngine.Random.Range(1, 10);
-            if (val % 2 == 0)
-                v = true;
-            else v = false;
-            return v;
+            int val = Random.Range(1, 10);
+            return val % 2 == 0;
         }
 
         float GetOppositeEdgeX()
         {
+            if (CurrentplatForm == null || CurrentplatForm.platformCollider == null)
+                return transform.position.x;
+
             Bounds platformBounds = CurrentplatForm.platformCollider.bounds;
             float distanceToLeftEdge = Mathf.Abs(groundCheckPoint.position.x - platformBounds.min.x);
             float distanceToRightEdge = Mathf.Abs(groundCheckPoint.position.x - platformBounds.max.x);
 
             if (distanceToRightEdge < distanceToLeftEdge)
-            {
                 return platformBounds.min.x;
-            }
             else
-            {
                 return platformBounds.max.x;
-            }
         }
 
         #region Trigger Colliders for Warrior Overlap Resolution
@@ -629,12 +661,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 if (CurrentplatForm != null)
                 {
                     var w = GameMgr.Instance.WarriorInstance;
-                    if (!w.collider2.IsTouching(CurrentplatForm?.platformCollider) && w.activesJumpCoroutine != null)
+                    if (w != null &&
+                        !w.collider2.IsTouching(CurrentplatForm?.platformCollider) &&
+                        w.activesJumpCoroutine != null)
                     {
                         if (!w.DescendentPhase)
-                        {
                             Physics2D.IgnoreCollision(w.collider2, NormalCollider, true);
-                        }
                     }
                 }
             }
@@ -645,6 +677,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (collision.gameObject.name == "Warrior")
             {
                 var w = GameMgr.Instance.WarriorInstance;
+                if (w == null) return;
+
                 w.CanMove = true;
                 Physics2D.IgnoreCollision(w.collider2, NormalCollider, false);
             }
@@ -655,10 +689,18 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (collision.gameObject.name == "Warrior")
             {
                 var w = GameMgr.Instance.WarriorInstance;
+                if (w == null) return;
+
                 if (w.activesJumpCoroutine == null && !w.DescendentPhase)
                 {
-                    bool tmin = w.GoRight && collision.bounds.max.x > NormalCollider.bounds.min.x && collision.bounds.max.x.GetDistanceXAxis(NormalCollider.bounds.min.x) >= 0.2f;
-                    bool tmax = w.GoLeft && collision.bounds.min.x < NormalCollider.bounds.max.x && collision.bounds.min.x.GetDistanceXAxis(NormalCollider.bounds.max.x) >= 0.2f;
+                    bool tmin = w.GoRight &&
+                                collision.bounds.max.x > NormalCollider.bounds.min.x &&
+                                collision.bounds.max.x.GetDistanceXAxis(NormalCollider.bounds.min.x) >= 0.2f;
+
+                    bool tmax = w.GoLeft &&
+                                collision.bounds.min.x < NormalCollider.bounds.max.x &&
+                                collision.bounds.min.x.GetDistanceXAxis(NormalCollider.bounds.max.x) >= 0.2f;
+
                     if (tmin)
                     {
                         w.CanMove = false;
@@ -676,7 +718,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         public IEnumerator SmoothStepBack(bool positif)
         {
-            //central rule: if you can't step back, do nothing
             if (!CanStepBack(positif))
                 yield break;
 
@@ -716,7 +757,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             transform.position = targetPos;
         }
 
-        // make it virtual so Hashagar can override
         public virtual bool CanStepBack(bool positif)
         {
             if (CurrentplatForm == null)
@@ -726,18 +766,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             return CanMoveToPosition(targetX);
         }
 
-
         public virtual float StepRightMaxamize() => NormalCollider.bounds.max.x;
         public virtual float StepLeftMaxamize() => NormalCollider.bounds.min.x;
+
         float tolerance = 1f;
 
         public bool IsGroundPointCloserToEdge()
         {
-            if (Mathf.Abs(groundCheckPoint.position.x - xEdge) < tolerance)
-            {
-                return true;
-            }
-            return false;
+            return Mathf.Abs(groundCheckPoint.position.x - xEdge) < tolerance;
         }
 
         public virtual void OnWarriorDetectedInLaser() { }
@@ -782,26 +818,17 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             foreach (AnimationClip clip in clips)
             {
                 if (clip.name == clipName)
-                {
                     return clip;
-                }
             }
+
             return null;
         }
         #endregion
 
-        // ============================================================
-        // UPDATED FRONT CHECK (center-based like your IsWarriorInFront)
-        // ============================================================
-
-        /// <summary>
-        /// Returns the best "center X" for any target transform (prefers non-trigger colliders).
-        /// </summary>
         protected float GetTargetCenterX(Transform t)
         {
             if (t == null) return float.NaN;
 
-            // Prefer a non-trigger collider (more "body accurate" than trigger hitboxes)
             var cols = t.GetComponentsInChildren<Collider2D>();
             if (cols != null && cols.Length > 0)
             {
@@ -811,7 +838,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                         return cols[i].bounds.center.x;
                 }
 
-                // fallback: first enabled collider
                 for (int i = 0; i < cols.Length; i++)
                 {
                     if (cols[i] != null && cols[i].enabled)
@@ -822,24 +848,17 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             return t.position.x;
         }
 
-        /// <summary>
-        /// Returns enemy "center X" (prefers NormalCollider if assigned).
-        /// </summary>
         protected float GetMyCenterX()
         {
             if (NormalCollider != null && NormalCollider.enabled)
                 return NormalCollider.bounds.center.x;
 
-            // fallback: any collider on self
             var c = GetComponent<Collider2D>();
             if (c != null) return c.bounds.center.x;
 
             return transform.position.x;
         }
 
-        /// <summary>
-        /// Refresh leftFacing/rightFacing from Front/Back markers if available.
-        /// </summary>
         protected void RefreshFacingFlags()
         {
             if (Front != null && Back != null)
@@ -849,16 +868,11 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             }
             else
             {
-                // fallback: use localScale
                 rightFacing = transform.localScale.x >= 0f;
                 leftFacing = !rightFacing;
             }
         }
 
-        /// <summary>
-        /// Replaced: now uses center X + facing flags (same logic as your IsWarriorInFront).
-        /// All Enemy children will benefit automatically.
-        /// </summary>
         protected bool IsWarriorInFront(Transform t, float frontEpsilon = 0.02f)
         {
             if (t == null) return false;
@@ -869,15 +883,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             float tx = GetTargetCenterX(t);
             if (float.IsNaN(tx)) return false;
 
-            // Facing LEFT => target must be on the LEFT side (<=)
             if (leftFacing) return tx <= myX + frontEpsilon;
-
-            // Facing RIGHT => target must be on the RIGHT side (>=)
             if (rightFacing) return tx >= myX - frontEpsilon;
 
-            // fallback: use scale
-            return (transform.localScale.x >= 0f) ? (tx >= myX - frontEpsilon) : (tx <= myX + frontEpsilon);
+            return (transform.localScale.x >= 0f)
+                ? (tx >= myX - frontEpsilon)
+                : (tx <= myX + frontEpsilon);
         }
+
         protected bool IsWarriorBehind(Transform t, float epsilon = 0.02f)
         {
             if (t == null) return false;
@@ -888,12 +901,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             float tx = GetTargetCenterX(t);
             if (float.IsNaN(tx)) return false;
 
-            // opposite logic of IsWarriorInFront
             if (leftFacing) return tx > myX + epsilon;
             if (rightFacing) return tx < myX - epsilon;
 
-            return (transform.localScale.x >= 0f) ? (tx < myX - epsilon) : (tx > myX + epsilon);
+            return (transform.localScale.x >= 0f)
+                ? (tx < myX - epsilon)
+                : (tx > myX + epsilon);
         }
+
         public bool IsWarriorCloseEnoughToHit(Warrior warrior)
         {
             if (warrior == null) return false;
@@ -901,11 +916,11 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             float myX = NormalCollider.bounds.center.x;
             float warriorX = warrior.collider2.bounds.center.x;
-
             float dist = Mathf.Abs(warriorX - myX);
 
             return dist <= meleeHitDistance;
         }
+
         protected void Flip()
         {
             Vector3 scale = transform.localScale;
@@ -933,7 +948,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (seconds <= 0f) return;
             if (currentHealth <= 0) return;
 
-            if (_stunRoutine != null) StopCoroutine(_stunRoutine);
+            if (_stunRoutine != null)
+                StopCoroutine(_stunRoutine);
+
             _stunRoutine = StartCoroutine(StunRoutine(seconds));
         }
 
@@ -943,7 +960,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             CanMove = false;
 
             StopMoveTowardCoroutine();
-            if (rigidbody2 != null) rigidbody2.linearVelocity = Vector2.zero;
+
+            if (rigidbody2 != null)
+                rigidbody2.linearVelocity = Vector2.zero;
 
             yield return new WaitForSeconds(seconds);
 
@@ -955,7 +974,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             _stunRoutine = null;
         }
-
 
         protected virtual void OnDamaged(float damage, bool killed)
         {
@@ -972,10 +990,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             ActiveEnemies.Remove(this);
         }
 
-        [SerializeField] protected EnemyHitReactionProfile hitReaction;
-        public EnemyHitReactionProfile HitReaction => hitReaction; // optional read-only access
-
-
         public virtual float ComputeStepBackDistance(float incoming)
         {
             if (hitReaction == null) return incoming;
@@ -987,28 +1001,15 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             return Mathf.Clamp(incoming * mul, hitReaction.min, hitReaction.max);
         }
+
         public override void OnDrawGizmos()
         {
             base.OnDrawGizmos();
             Gizmos.color = Color.red;
+
             if (groundCheckPoint != null)
-            {
                 Gizmos.DrawLine(groundCheckPoint.position, groundCheckPoint.position + Vector3.down * rayLength);
-            }
         }
-
-        #region Viewport Auto-Death
-        [Header("Viewport Auto-Death")]
-        [SerializeField] private bool dieWhenOutOfViewport = true;
-        [SerializeField] private bool requireSeenOnceBeforeAutoDeath = true;
-        [SerializeField] private float viewportMargin = 0.08f; // allow a small margin outside screen
-        [SerializeField] private float autoDeathCheckInterval = 0.15f;
-
-        private bool _hasBeenSeenInViewport;
-        private float _nextViewportCheckTime;
-
-
-        #endregion
 
         protected bool CanDealDamageNow()
         {
@@ -1023,7 +1024,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             if (_deathStarted) return;
 
-            // IMPORTANT
             StopMovingWhenWarriorDie = false;
 
             float newHealth = maxHealth * healthPercent;
@@ -1032,9 +1032,18 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             base.StopMoveTowardCoroutine();
 
             if (rigidbody2 != null)
+            {
+                rigidbody2.simulated = true;
                 rigidbody2.linearVelocity = Vector2.zero;
+                rigidbody2.angularVelocity = 0f;
+            }
 
             _isStunned = false;
+            _isDead = false;
+            _isDespawning = false;
+            _deathStarted = false;
+            _hasBeenSeenInViewport = false;
+            _nextViewportCheckTime = 0f;
 
             DisableAttackTemporarily(1.5f);
 
@@ -1042,8 +1051,24 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (TriggerColliderLeft != null) TriggerColliderLeft.enabled = true;
             if (TriggerColliderRight != null) TriggerColliderRight.enabled = true;
 
+            if (spriteRenderer != null)
+            {
+                spriteRenderer.enabled = true;
+                spriteRenderer.color = Color.white;
+            }
+
+            if (worldHealthBar != null)
+            {
+                worldHealthBar.SetVisibility(true);
+                worldHealthBar.ForceUpdate(currentHealth, maxHealth);
+            }
+
+            if (animator != null)
+                animator.enabled = true;
+
             UpdateHealthBarDisplay();
         }
+
         protected virtual void StickToPlatform()
         {
             if (CurrentplatForm == null) return;
@@ -1053,8 +1078,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             v.y = 0f;
             rigidbody2.linearVelocity = v;
         }
-        private EnemySpawnOverrides _spawnOverrides;
-        protected EnemySpawnOverrides SpawnOverrides => _spawnOverrides;
 
         public virtual void SetSpawnOverrides(EnemySpawnOverrides overrides)
         {
@@ -1093,16 +1116,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         protected virtual void ApplySpecificSpawnOverrides()
         {
         }
-        [Header("Moving Platform Patrol")]
-        [SerializeField] protected float patrolEdgeArriveThreshold = 0.12f;
-
-        protected bool _hasCommittedPatrolEdge;
-        protected float _committedPatrolEdgeX;
-        protected Collider2D _committedPatrolPlatform;
 
         protected void CommitPatrolEdgeForMovingVerticalPlatform()
         {
-            if (!(CurrentplatForm is Assets.Scripts.Platforms.MovingVerticalPlatform))
+            if (!(CurrentplatForm is MovingVerticalPlatform))
             {
                 _committedPatrolPlatform = null;
                 _hasCommittedPatrolEdge = false;
@@ -1118,14 +1135,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             float leftEdge = pb.min.x;
             float rightEdge = pb.max.x;
 
-            // New platform => forget previous commitment
             if (_committedPatrolPlatform != platformCol)
             {
                 _committedPatrolPlatform = platformCol;
                 _hasCommittedPatrolEdge = false;
             }
 
-            // First time on this platform: commit the CURRENT target once
             if (!_hasCommittedPatrolEdge)
             {
                 bool xEdgeIsLeft = Mathf.Abs(xEdge - leftEdge) < 0.01f;
@@ -1141,10 +1156,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 _hasCommittedPatrolEdge = true;
             }
 
-            // Force patrol target to remain committed
             xEdge = _committedPatrolEdgeX;
 
-            // Swap only when the committed target edge is actually reached
             if (HasReachedCommittedPatrolEdge(pb))
             {
                 _committedPatrolEdgeX =
@@ -1172,7 +1185,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 return false;
 
             Bounds eb = support.bounds;
-
             bool targetLeft = Mathf.Abs(_committedPatrolEdgeX - pb.min.x) < 0.01f;
 
             if (targetLeft)
@@ -1180,6 +1192,5 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             return Mathf.Abs(eb.max.x - pb.max.x) <= patrolEdgeArriveThreshold;
         }
-
     }
 }

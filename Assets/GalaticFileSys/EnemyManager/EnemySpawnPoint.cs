@@ -2,7 +2,6 @@ using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Platforms;
 using UnityEngine;
 
-
 public class EnemySpawnPoint : MonoBehaviour
 {
     [SerializeField] private EnemyType enemyType;
@@ -17,7 +16,15 @@ public class EnemySpawnPoint : MonoBehaviour
     [Header("Camera spawn")]
     [SerializeField] private float visibilityMargin = 0.2f;
 
-    private bool spawned;
+    private Enemy currentEnemy;
+    private bool permanentlyDefeated;
+
+    public bool HasActiveEnemy => currentEnemy != null;
+
+    public bool HasAliveCountableEnemy =>
+        !permanentlyDefeated &&
+        enemyType != EnemyType.Bee &&
+        enemyType != EnemyType.BeeEretic;
 
     private void Reset()
     {
@@ -38,16 +45,16 @@ public class EnemySpawnPoint : MonoBehaviour
     }
 
     private void Update()
-
     {
-        if (spawned) return;
+        if (permanentlyDefeated) return;
+        if (currentEnemy != null) return;
 
         if (IsVisibleToCamera())
         {
             Enemy enemy = Spawn();
 
             if (enemy != null)
-                spawned = true;
+                currentEnemy = enemy;
         }
     }
 
@@ -74,21 +81,47 @@ public class EnemySpawnPoint : MonoBehaviour
 
         Transform point = spawnPoint != null ? spawnPoint : transform;
 
+        Enemy enemy;
+
         if (movingVerticalPlatform != null)
         {
-            return EnemyMgr.Instance.SpawnEnemyOnMovingVerticalPlatform(
+            enemy = EnemyMgr.Instance.SpawnEnemyOnMovingVerticalPlatform(
                 enemyType,
                 movingVerticalPlatform,
                 point,
-                overrides
+                overrides,
+                this
+            );
+        }
+        else
+        {
+            enemy = EnemyMgr.Instance.SpawnEnemy(
+                enemyType,
+                point.position,
+                overrides,
+                this
             );
         }
 
-        return EnemyMgr.Instance.SpawnEnemy(
-            enemyType,
-            point.position,
-            overrides
-        );
+        if (enemy != null)
+            currentEnemy = enemy;
 
+        return enemy;
+    }
+
+    public void NotifyEnemyDespawned(Enemy enemy)
+    {
+        if (enemy == null) return;
+        if (currentEnemy == enemy)
+            currentEnemy = null;
+    }
+
+    public void NotifyEnemyDefeated(Enemy enemy)
+    {
+        if (enemy == null) return;
+        if (currentEnemy == enemy)
+            currentEnemy = null;
+
+        permanentlyDefeated = true;
     }
 }

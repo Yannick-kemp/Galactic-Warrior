@@ -1,12 +1,12 @@
 # ninja log v5
-264	2635	7967516750021356	FramePacing/CMakeFiles/swappywrapper.dir/UnitySwappyWrapper.cpp.o	16a743650a695dab
-2637	3324	7967516756256498	C:/Users/yannk/Documents/Galactic-Warrior/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/1n394q64/obj/arm64-v8a/libswappywrapper.so	cf93736fb59c821c
-60	5004	7967516773472481	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	c5aad7ab85e102d8
-2	5307	7967516776441222	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	c45e7d3925cdc547
-187	5363	7967516776756851	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	ded31fcca2d5bf5e
-49	5365	7967516776037360	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	850f4594bf8dc2c4
-248	5639	7967516779998505	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	f9b1314993f94c65
-20	5736	7967516781084353	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	dc56c76d4b0a29c9
-77	6196	7967516785649592	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	ea204fd94474f51c
-36	6398	7967516787406796	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	335883d646eb646e
-6399	6663	7967516790467429	C:/Users/yannk/Documents/Galactic-Warrior/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/1n394q64/obj/arm64-v8a/libgame.so	26d102da555995c6
+79	698	7970882214629415	FramePacing/CMakeFiles/swappywrapper.dir/UnitySwappyWrapper.cpp.o	419e939959979423
+700	1077	7970882218381747	C:/Users/yannk/Documents/Galactic-Warrior/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/1n394q64/obj/arm64-v8a/libswappywrapper.so	df13f67503d539a7
+24	2107	7970882228846466	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	e775bce9368ba4db
+68	2207	7970882229794396	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	e0439ab2ed273d11
+16	2208	7970882229697503	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	a34e207dc9eae8e3
+33	2288	7970882230683138	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	67514057fc8da75
+54	2320	7970882231073110	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	44652dbd720e1cf3
+8	2414	7970882232036860	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	7cca221f7e2408a4
+43	2571	7970882233564797	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	856d5c2c548bdffd
+0	2693	7970882234791499	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	af8a2837f0df86fd
+2693	2851	7970882236464406	C:/Users/yannk/Documents/Galactic-Warrior/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/1n394q64/obj/arm64-v8a/libgame.so	58c9ee5399b7f3b0

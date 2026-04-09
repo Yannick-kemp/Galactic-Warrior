@@ -1,4 +1,6 @@
-
+using System.Collections;
+using System.Collections.Generic;
+using System.Text;
 using Assets.GalaticfFileSys;
 using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Characteres.WarriorController;
@@ -14,7 +16,6 @@ public class GameMgr : MonoBehaviour, IGame
 
     private int retryCount = 0;
     private Vector3 lastDeathPosition;
-    private bool retryPending;
     public bool IsRestarting { get; private set; }
     public static GameMgr Instance { get; private set; }
 
@@ -54,6 +55,45 @@ public class GameMgr : MonoBehaviour, IGame
     [Header("Moving Platform Respawn")]
     [SerializeField] private float movingPlatformRespawnSeatOffset = 0.05f;
 
+    [Header("Campaign / Scenes")]
+    [SerializeField] private string mainMenuSceneName = "MainMenu";
+    [SerializeField] private string level2SceneName = "AgeOfIce";
+    [SerializeField] private List<string> campaignSceneOrder = new List<string> { "WarriorScene", "AgeOfIce" };
+
+    [Header("Scene Transition")]
+    [SerializeField] private float levelCompleteSlowMoScale = 0.30f;
+    [SerializeField] private float levelCompleteSlowMoDuration = 0.45f;
+    [SerializeField] private float transitionBeforeLoadDelay = 0.65f;
+    [SerializeField] private float transitionAfterLoadDelay = 0.20f;
+
+    [Header("Boss Death Finish")]
+    [SerializeField] private float bossDeathSlowMoScale = 0.15f;
+    [SerializeField] private float bossDeathSlowMoDuration = 0.60f;
+    [SerializeField] private float bossDeathCompletionDelay = 0.05f;
+
+    [Header("Progression / Purchase")]
+    [SerializeField] private bool level2Unlocked = false; // legacy + "paid for the rest" flag
+    [SerializeField] private bool autoUnlockForTesting = false;
+    [SerializeField] private string purchasePriceText = "€3.99";
+
+    [Header("Level 2 Entry Rewards")]
+    [SerializeField] private int level2EntryCoinsReward = 50;
+    [SerializeField] private int level2EntryUpgradeTokens = 1;
+
+    private const string CampaignPurchasedKey = "GW_CampaignPurchased";
+    private const string HighestReachedSceneIndexKey = "GW_HighestReachedSceneIndex";
+    private const string LegacyLevel2UnlockedKey = "GW_Level2Unlocked";
+
+    private int _highestReachedSceneIndex;
+
+    private bool _isSceneTransitionRunning;
+    private bool _level2EntryFlowShownThisLoad;
+
+    private bool _bossSlowMoPlaying;
+    private bool _bossFinalDeathFlowRunning;
+    private bool _skipNextLevelTransitionSlowMo;
+    private bool _levelCompletionHandledThisScene;
+
     private bool _deathWasOnMovingVerticalPlatform;
     private MovingVerticalPlatform _deathMovingVerticalPlatform;
     private string _deathMovingVerticalPlatformId;
@@ -62,11 +102,18 @@ public class GameMgr : MonoBehaviour, IGame
     private string _pendingReviveMovingPlatformId;
 
     private AudioSource _musicSource;
-
-    // Add this under your other private variables
     private Vector3 _initialSpawnPosition;
     private Transform _initialSpawnParent;
+
     public int RetriesRemaining => Mathf.Max(0, maxRetries - retryCount);
+
+    // Treat this as "campaign purchased / rest unlocked"
+    public bool Level2Unlocked => autoUnlockForTesting || level2Unlocked;
+
+    // Menu-facing properties
+    public bool HasCampaignPurchase => Level2Unlocked;
+    public int HighestReachedSceneIndex => _highestReachedSceneIndex;
+    public int CampaignSceneCount => campaignSceneOrder != null ? campaignSceneOrder.Count : 0;
 
     private void Awake()
     {
@@ -81,6 +128,8 @@ public class GameMgr : MonoBehaviour, IGame
 
         Initialize();
         EnsureMusicSource();
+        NormalizeCampaignSceneOrder();
+        LoadProgression();
 
         SceneManager.sceneLoaded += HandleSceneLoaded;
         HandleSceneLoaded(SceneManager.GetActiveScene(), LoadSceneMode.Single);
@@ -104,8 +153,6 @@ public class GameMgr : MonoBehaviour, IGame
 
         WarriorInstance = warrior;
 
-        // --- NEW LOGIC: Store the scene start position ---
-        // If we haven't stored an initial position yet, grab it now
         if (_initialSpawnPosition == Vector3.zero)
         {
             _initialSpawnPosition = warrior.transform.position;
@@ -139,7 +186,30 @@ public class GameMgr : MonoBehaviour, IGame
 
     private void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        NormalizeCampaignSceneOrder();
+
         bool isLevel1 = scene.name == warriorSceneName;
+        bool isLevel2 = scene.name == level2SceneName;
+
+        _levelCompletionHandledThisScene = false;
+        _bossSlowMoPlaying = false;
+        _bossFinalDeathFlowRunning = false;
+        _skipNextLevelTransitionSlowMo = false;
+        _isSceneTransitionRunning = false;
+        Time.timeScale = 1f;
+
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.HidePurchaseScreen();
+            UIManager.Instance.HideGameOver();
+        }
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = false;
+
+        int currentCampaignIndex = GetCampaignSceneIndex(scene.name);
+        if (currentCampaignIndex == 0 || Level2Unlocked)
+            MarkSceneAsReached(currentCampaignIndex);
 
         if (isLevel1)
         {
@@ -150,6 +220,27 @@ public class GameMgr : MonoBehaviour, IGame
         {
             StopLevel1Music();
         }
+
+        if (isLevel2)
+        {
+            _level2EntryFlowShownThisLoad = false;
+            StartCoroutine(ShowLevel2PostEntryFlow());
+        }
+    }
+
+    private IEnumerator ShowLevel2PostEntryFlow()
+    {
+        if (_level2EntryFlowShownThisLoad)
+            yield break;
+
+        _level2EntryFlowShownThisLoad = true;
+
+        yield return new WaitForSeconds(0.5f);
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = true;
+
+        UIManager.Instance?.ShowRewardScreen(level2EntryCoinsReward, level2EntryUpgradeTokens);
     }
 
     private void StartLevel1Music()
@@ -189,6 +280,10 @@ public class GameMgr : MonoBehaviour, IGame
         Debug.Log("[GameMgr] RestartCurrentLevel()");
 
         IsRestarting = true;
+        _levelCompletionHandledThisScene = false;
+        _bossSlowMoPlaying = false;
+        _bossFinalDeathFlowRunning = false;
+        _skipNextLevelTransitionSlowMo = false;
         Time.timeScale = 1f;
 
         if (Warrior.Instance != null)
@@ -204,11 +299,7 @@ public class GameMgr : MonoBehaviour, IGame
     {
         if (WarriorInstance != null)
         {
-            // 1. Store the exact position
             lastDeathPosition = WarriorInstance.transform.position;
-
-            // 2. IMPORTANT: We try to capture the platform from multiple sources 
-            // to be absolutely sure we don't miss it.
             CaptureDeathMovingPlatformRespawn();
         }
 
@@ -226,13 +317,18 @@ public class GameMgr : MonoBehaviour, IGame
         Debug.Log($"[GameMgr] LoadMenu({menuSceneName})");
 
         Time.timeScale = 1f;
-
         ScoreManager.Instance?.StartNewRun();
 
         if (Warrior.Instance != null)
             Destroy(Warrior.Instance.gameObject);
 
+        WarriorInstance = null;
         SceneManager.LoadScene(menuSceneName);
+    }
+
+    private void LoadMainMenu()
+    {
+        LoadMenu(mainMenuSceneName);
     }
 
     public void EnterForcedRetryZone(Vector3 respawnPosition)
@@ -340,8 +436,229 @@ public class GameMgr : MonoBehaviour, IGame
         ResetAllEnemies();
 
         Debug.Log($"[GameMgr] Retry {retryCount}/{maxRetries}");
-
         return true;
+    }
+
+    // Wrapper kept for compatibility with your current EnemyMgr calls
+    public void HandleLevel1Completed()
+    {
+        if (_levelCompletionHandledThisScene)
+            return;
+
+        _levelCompletionHandledThisScene = true;
+        CompleteCurrentCampaignSceneInternal();
+    }
+
+    private void CompleteCurrentCampaignSceneInternal()
+    {
+        int currentIndex = GetCurrentCampaignSceneIndex();
+        if (currentIndex < 0)
+        {
+            LoadMainMenu();
+            return;
+        }
+
+        if (!HasNextCampaignScene(currentIndex))
+        {
+            Debug.Log("[GameMgr] No next campaign scene. Returning to menu.");
+            LoadMainMenu();
+            return;
+        }
+
+        // Demo gate: first level cleared but campaign not purchased yet
+        if (!Level2Unlocked)
+        {
+            if (currentIndex == 0)
+            {
+                ShowPurchaseGateForNextScene(currentIndex);
+                return;
+            }
+
+            LoadMainMenu();
+            return;
+        }
+
+        int nextIndex = currentIndex + 1;
+        MarkSceneAsReached(nextIndex);
+        GoToCampaignSceneByIndex(nextIndex);
+    }
+
+    private void ShowPurchaseGateForNextScene(int currentIndex)
+    {
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = true;
+
+        string nextSceneName = GetNextCampaignSceneName(currentIndex);
+        string nextDisplayName = NicifySceneName(nextSceneName);
+
+        string title = string.IsNullOrWhiteSpace(nextDisplayName)
+            ? "UNLOCK THE FULL GAME"
+            : $"UNLOCK {nextDisplayName.ToUpperInvariant()}";
+
+        string description = string.IsNullOrWhiteSpace(nextDisplayName)
+            ? "You defeated the boss. Buy the rest of the game to continue your adventure."
+            : $"You defeated the boss. Buy the rest of the game to continue into {nextDisplayName}.";
+
+        UIManager.Instance?.ShowPurchaseScreen(title, description, purchasePriceText);
+    }
+
+    public void PlayBossDeathSlowMotion()
+    {
+        if (_bossSlowMoPlaying) return;
+        StartCoroutine(PlayBossDeathSlowMotionRoutine());
+    }
+
+    private IEnumerator PlayBossDeathSlowMotionRoutine()
+    {
+        _bossSlowMoPlaying = true;
+
+        Time.timeScale = 1f;
+        Time.timeScale = bossDeathSlowMoScale;
+
+        yield return new WaitForSecondsRealtime(bossDeathSlowMoDuration);
+
+        Time.timeScale = 1f;
+        _bossSlowMoPlaying = false;
+    }
+
+    public void HandleBossFinalDeathLevelComplete()
+    {
+        if (_bossFinalDeathFlowRunning) return;
+        if (_levelCompletionHandledThisScene) return;
+
+        StartCoroutine(HandleBossFinalDeathLevelCompleteRoutine());
+    }
+
+    private IEnumerator HandleBossFinalDeathLevelCompleteRoutine()
+    {
+        _bossFinalDeathFlowRunning = true;
+        _levelCompletionHandledThisScene = true;
+        _skipNextLevelTransitionSlowMo = true;
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = true;
+
+        while (_bossSlowMoPlaying)
+            yield return null;
+
+        yield return new WaitForSecondsRealtime(bossDeathCompletionDelay);
+
+        CompleteCurrentCampaignSceneInternal();
+
+        _bossFinalDeathFlowRunning = false;
+    }
+
+    // Kept for compatibility with your existing code
+    public void UnlockLevel2()
+    {
+        level2Unlocked = true;
+
+        int level2Index = GetCampaignSceneIndex(level2SceneName);
+        if (level2Index >= 0)
+            MarkSceneAsReached(level2Index);
+
+        SaveProgression();
+        Debug.Log("[GameMgr] Campaign purchased / Level 2 unlocked.");
+    }
+
+    public void OnPurchaseConfirmed()
+    {
+        UnlockLevel2();
+
+        UIManager.Instance?.HidePurchaseScreen();
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = false;
+
+        int currentIndex = GetCurrentCampaignSceneIndex();
+        if (HasNextCampaignScene(currentIndex))
+        {
+            int nextIndex = currentIndex + 1;
+            MarkSceneAsReached(nextIndex);
+            GoToCampaignSceneByIndex(nextIndex);
+        }
+        else
+        {
+            LoadMainMenu();
+        }
+    }
+
+    public void OnPurchaseDeclined()
+    {
+        UIManager.Instance?.HidePurchaseScreen();
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = false;
+
+        Debug.Log("[GameMgr] Purchase declined. Returning to main menu.");
+        LoadMainMenu();
+    }
+
+    // Kept for compatibility with your existing calls
+    public void GoToAgeOfGlace()
+    {
+        int currentIndex = GetCurrentCampaignSceneIndex();
+        if (!HasNextCampaignScene(currentIndex))
+        {
+            LoadMainMenu();
+            return;
+        }
+
+        GoToCampaignSceneByIndex(currentIndex + 1);
+    }
+
+    private void GoToCampaignSceneByIndex(int sceneIndex)
+    {
+        if (_isSceneTransitionRunning)
+            return;
+
+        if (sceneIndex < 0 || sceneIndex >= campaignSceneOrder.Count)
+        {
+            LoadMainMenu();
+            return;
+        }
+
+        StartCoroutine(GoToCampaignSceneRoutine(campaignSceneOrder[sceneIndex]));
+    }
+
+    private IEnumerator GoToCampaignSceneRoutine(string targetSceneName)
+    {
+        _isSceneTransitionRunning = true;
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = true;
+
+        bool doSlowMo = !_skipNextLevelTransitionSlowMo;
+        _skipNextLevelTransitionSlowMo = false;
+
+        Time.timeScale = 1f;
+
+        if (doSlowMo)
+        {
+            Time.timeScale = levelCompleteSlowMoScale;
+            yield return new WaitForSecondsRealtime(levelCompleteSlowMoDuration);
+            Time.timeScale = 1f;
+        }
+
+        foreach (var e in Enemy.ActiveEnemies)
+        {
+            if (e == null) continue;
+            e.StopMoveTowardCoroutine();
+        }
+
+        UIManager.Instance?.PlayLevelTransition(
+            NicifySceneName(targetSceneName),
+            GetSceneSubtitle(targetSceneName)
+        );
+
+        yield return new WaitForSecondsRealtime(transitionBeforeLoadDelay);
+
+        WarriorInstance = null;
+        SceneManager.LoadScene(targetSceneName);
+
+        yield return new WaitForSecondsRealtime(transitionAfterLoadDelay);
+
+        _isSceneTransitionRunning = false;
     }
 
     private void ApplySpawnBubble(Warrior warrior, Vector3 spawnPos)
@@ -408,6 +725,11 @@ public class GameMgr : MonoBehaviour, IGame
 
         ExitForcedRetryZone();
 
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = false;
+
+        Time.timeScale = 1f;
+
         Debug.Log("[GameMgr] Scene loaded → restart finished");
     }
 
@@ -436,21 +758,22 @@ public class GameMgr : MonoBehaviour, IGame
         Time.timeScale = 1f;
         IsRestarting = true;
 
+        _levelCompletionHandledThisScene = false;
+        _bossSlowMoPlaying = false;
+        _bossFinalDeathFlowRunning = false;
+        _skipNextLevelTransitionSlowMo = false;
+
         ResetMeteorHazards(true);
 
-        // --- CHANGE: Clear platform respawn data for Revive ---
         _deathWasOnMovingVerticalPlatform = false;
         _deathMovingVerticalPlatformId = null;
         _hasPendingReviveMovingPlatformRespawn = false;
 
-        // Reset score/run
         ScoreManager.Instance?.StartNewRun();
 
-        // Destroy current warrior
         Destroy(WarriorInstance.gameObject);
         WarriorInstance = null;
 
-        // Reload the scene
         SceneManager.sceneLoaded += OnSceneLoadedAfterRevive;
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
@@ -464,15 +787,49 @@ public class GameMgr : MonoBehaviour, IGame
 
         ExitForcedRetryZone();
 
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = false;
+
+        Time.timeScale = 1f;
+
         Debug.Log("[GameMgr] Revive restart finished");
     }
 
     public void StartNewGame()
     {
+        ResetMenuLaunchState();
+        ScoreManager.Instance?.StartNewRun();
+        SceneManager.LoadScene(warriorSceneName);
+    }
+
+    public void ContinueGame()
+    {
+        ResetMenuLaunchState();
+        ScoreManager.Instance?.StartNewRun();
+        SceneManager.LoadScene(GetContinueSceneName());
+    }
+
+    public void LoadCampaignSceneFromMenu(int sceneIndex)
+    {
+        if (!IsSceneUnlockedForMenu(sceneIndex))
+        {
+            Debug.LogWarning($"[GameMgr] Scene index {sceneIndex} is not unlocked for menu selection.");
+            return;
+        }
+
+        ResetMenuLaunchState();
+        ScoreManager.Instance?.StartNewRun();
+        SceneManager.LoadScene(campaignSceneOrder[sceneIndex]);
+    }
+
+    private void ResetMenuLaunchState()
+    {
         retryCount = 0;
         currentCheckpoint = null;
         _checkpointVersion = 0;
-        _initialSpawnPosition = Vector3.zero; // Clear this for the new scene
+        _initialSpawnPosition = Vector3.zero;
+        _initialSpawnParent = null;
+
         ExitForcedRetryZone();
 
         _deathWasOnMovingVerticalPlatform = false;
@@ -480,9 +837,20 @@ public class GameMgr : MonoBehaviour, IGame
         _deathMovingVerticalPlatformId = null;
         _hasPendingReviveMovingPlatformRespawn = false;
         _pendingReviveMovingPlatformId = null;
+        _level2EntryFlowShownThisLoad = false;
 
-        ScoreManager.Instance?.StartNewRun();
-        SceneManager.LoadScene(warriorSceneName);
+        _levelCompletionHandledThisScene = false;
+        _bossSlowMoPlaying = false;
+        _bossFinalDeathFlowRunning = false;
+        _skipNextLevelTransitionSlowMo = false;
+        _isSceneTransitionRunning = false;
+
+        WarriorInstance = null;
+        IsRestarting = false;
+        Time.timeScale = 1f;
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = false;
     }
 
     private void ResetMeteorHazards(bool resetTriggers = true)
@@ -531,16 +899,10 @@ public class GameMgr : MonoBehaviour, IGame
 
         MovingVerticalPlatform movingPlatform = null;
 
-        // Check Current platform first
         if (warrior.CurrentplatForm is MovingVerticalPlatform currentMoving)
-        {
             movingPlatform = currentMoving;
-        }
-        // Fallback to LastSafePlatform if Current is null (very common during death)
         else if (warrior.LastSafePlatform is MovingVerticalPlatform lastSafeMoving)
-        {
             movingPlatform = lastSafeMoving;
-        }
 
         if (movingPlatform == null || movingPlatform.platformCollider == null)
             return;
@@ -573,15 +935,11 @@ public class GameMgr : MonoBehaviour, IGame
 
     private Vector3 BuildSurfaceRespawnOnMovingPlatform(MovingVerticalPlatform platform, Warrior warrior)
     {
-        // 1. Get the raw surface position from the platform helper
         Vector3 surfacePos = platform.GetSurfacePosition();
 
-        // 2. Calculate the vertical offset for the warrior
-        // (Half height + your custom offset)
         float warriorHalfHeight = warrior.collider2.bounds.extents.y;
         float finalY = surfacePos.y + warriorHalfHeight + movingPlatformRespawnSeatOffset;
 
-        // 3. Return the combined position
         return new Vector3(surfacePos.x, finalY, surfacePos.z);
     }
 
@@ -613,46 +971,40 @@ public class GameMgr : MonoBehaviour, IGame
         respawnPlatform = platform;
         return true;
     }
+
     private void ApplyRespawnToWarrior(
-    Warrior warrior,
-    Vector3 respawnPosition,
-    PlatFormColliderTrigger platform = null)
+        Warrior warrior,
+        Vector3 respawnPosition,
+        PlatFormColliderTrigger platform = null)
     {
         if (warrior == null) return;
 
-        // 1. Prepare Warrior (Must re-enable physics disabled in StartDeath)
         if (warrior.rigidbody2 != null)
         {
             warrior.rigidbody2.simulated = true;
             warrior.rigidbody2.linearVelocity = Vector2.zero;
             warrior.rigidbody2.angularVelocity = 0f;
-
-            // Snap the physics body to the calculated surface position
             warrior.rigidbody2.position = respawnPosition;
         }
 
-        // 2. Snap the Transform
         warrior.transform.position = respawnPosition;
 
-        // 3. Assign Platform
         warrior.CurrentplatForm = platform;
         if (platform != null)
         {
             warrior.LastSafePlatform = platform;
-            // Parent him so he moves with the lift immediately
             warrior.transform.SetParent(platform.transform);
         }
 
-        // 4. Reset Fall States
         warrior.LastSafePosition = respawnPosition;
         warrior.IsFallingPlfExit = false;
         warrior.IsFallingGrazesEdge = false;
         warrior.IsFallingEdge = false;
         warrior.IsFallingHitEnemy = false;
 
-        // 5. Tell the physics engine to update his location right now
         Physics2D.SyncTransforms();
     }
+
     private void TryApplyPendingReviveMovingPlatformRespawn(Warrior warrior)
     {
         if (!_hasPendingReviveMovingPlatformRespawn)
@@ -672,5 +1024,178 @@ public class GameMgr : MonoBehaviour, IGame
 
         _hasPendingReviveMovingPlatformRespawn = false;
         _pendingReviveMovingPlatformId = null;
+    }
+
+    // -------------------------
+    // Campaign progression
+    // -------------------------
+
+    private void NormalizeCampaignSceneOrder()
+    {
+        if (campaignSceneOrder == null)
+            campaignSceneOrder = new List<string>();
+
+        for (int i = campaignSceneOrder.Count - 1; i >= 0; i--)
+        {
+            if (string.IsNullOrWhiteSpace(campaignSceneOrder[i]))
+                campaignSceneOrder.RemoveAt(i);
+        }
+
+        if (!campaignSceneOrder.Contains(warriorSceneName))
+            campaignSceneOrder.Insert(0, warriorSceneName);
+
+        if (!string.IsNullOrWhiteSpace(level2SceneName) && !campaignSceneOrder.Contains(level2SceneName))
+            campaignSceneOrder.Add(level2SceneName);
+
+        int warriorIndex = campaignSceneOrder.IndexOf(warriorSceneName);
+        if (warriorIndex > 0)
+        {
+            campaignSceneOrder.RemoveAt(warriorIndex);
+            campaignSceneOrder.Insert(0, warriorSceneName);
+        }
+    }
+
+    private void LoadProgression()
+    {
+        int legacyUnlocked = PlayerPrefs.GetInt(LegacyLevel2UnlockedKey, level2Unlocked ? 1 : 0);
+        int purchased = PlayerPrefs.GetInt(CampaignPurchasedKey, legacyUnlocked > 0 ? 1 : 0);
+
+        level2Unlocked = purchased == 1 || legacyUnlocked == 1;
+
+        int defaultReachedIndex = level2Unlocked ? 1 : 0;
+        int maxIndex = Mathf.Max(0, campaignSceneOrder.Count - 1);
+
+        _highestReachedSceneIndex = PlayerPrefs.GetInt(HighestReachedSceneIndexKey, defaultReachedIndex);
+        _highestReachedSceneIndex = Mathf.Clamp(_highestReachedSceneIndex, 0, maxIndex);
+
+        if (level2Unlocked)
+            _highestReachedSceneIndex = Mathf.Max(_highestReachedSceneIndex, Mathf.Min(1, maxIndex));
+    }
+
+    private void SaveProgression()
+    {
+        PlayerPrefs.SetInt(CampaignPurchasedKey, level2Unlocked ? 1 : 0);
+        PlayerPrefs.SetInt(LegacyLevel2UnlockedKey, level2Unlocked ? 1 : 0);
+        PlayerPrefs.SetInt(HighestReachedSceneIndexKey, _highestReachedSceneIndex);
+        PlayerPrefs.Save();
+    }
+
+    private void MarkSceneAsReached(int sceneIndex)
+    {
+        if (sceneIndex < 0)
+            return;
+
+        int clamped = Mathf.Clamp(sceneIndex, 0, Mathf.Max(0, campaignSceneOrder.Count - 1));
+        if (clamped <= _highestReachedSceneIndex)
+            return;
+
+        _highestReachedSceneIndex = clamped;
+        SaveProgression();
+
+        Debug.Log($"[GameMgr] Highest reached scene index saved: {_highestReachedSceneIndex} ({campaignSceneOrder[_highestReachedSceneIndex]})");
+    }
+
+    private int GetCampaignSceneIndex(string sceneName)
+    {
+        if (string.IsNullOrWhiteSpace(sceneName))
+            return -1;
+
+        for (int i = 0; i < campaignSceneOrder.Count; i++)
+        {
+            if (campaignSceneOrder[i] == sceneName)
+                return i;
+        }
+
+        return -1;
+    }
+
+    private int GetCurrentCampaignSceneIndex()
+    {
+        return GetCampaignSceneIndex(SceneManager.GetActiveScene().name);
+    }
+
+    private bool HasNextCampaignScene(int currentIndex)
+    {
+        return currentIndex >= 0 && currentIndex < campaignSceneOrder.Count - 1;
+    }
+
+    private string GetNextCampaignSceneName(int currentIndex)
+    {
+        if (!HasNextCampaignScene(currentIndex))
+            return string.Empty;
+
+        return campaignSceneOrder[currentIndex + 1];
+    }
+
+    public string GetContinueSceneName()
+    {
+        NormalizeCampaignSceneOrder();
+
+        if (campaignSceneOrder == null || campaignSceneOrder.Count == 0)
+            return warriorSceneName;
+
+        int sceneIndex = Mathf.Clamp(_highestReachedSceneIndex, 0, campaignSceneOrder.Count - 1);
+        return campaignSceneOrder[sceneIndex];
+    }
+
+    public string GetContinueSceneDisplayName()
+    {
+        return NicifySceneName(GetContinueSceneName());
+    }
+
+    public bool IsSceneUnlockedForMenu(int sceneIndex)
+    {
+        NormalizeCampaignSceneOrder();
+
+        if (sceneIndex < 0 || sceneIndex >= campaignSceneOrder.Count)
+            return false;
+
+        if (sceneIndex == 0)
+            return true;
+
+        if (!Level2Unlocked)
+            return false;
+
+        return sceneIndex <= _highestReachedSceneIndex;
+    }
+
+    private string GetSceneSubtitle(string sceneName)
+    {
+        int index = GetCampaignSceneIndex(sceneName);
+        if (index < 0)
+            return string.Empty;
+
+        return $"Level {index + 1}";
+    }
+
+    private string NicifySceneName(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return raw;
+
+        string cleaned = raw.Replace("_", " ").Trim();
+
+        var sb = new StringBuilder(cleaned.Length + 8);
+        for (int i = 0; i < cleaned.Length; i++)
+        {
+            char c = cleaned[i];
+
+            if (i > 0 &&
+                char.IsUpper(c) &&
+                !char.IsWhiteSpace(cleaned[i - 1]) &&
+                !char.IsUpper(cleaned[i - 1]))
+            {
+                sb.Append(' ');
+            }
+
+            sb.Append(c);
+        }
+
+        string result = sb.ToString().Trim();
+
+        if (result.EndsWith(" Scene"))
+            result = result.Substring(0, result.Length - " Scene".Length).Trim();
+
+        return result;
     }
 }
