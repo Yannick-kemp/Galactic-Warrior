@@ -56,7 +56,7 @@ public class GameMgr : MonoBehaviour, IGame
     [SerializeField] private float movingPlatformRespawnSeatOffset = 0.05f;
 
     [Header("Campaign / Scenes")]
-    [SerializeField] private string mainMenuSceneName = "MainMenu";
+    [SerializeField] private string mainMenuSceneName = "menu";
     [SerializeField] private string level2SceneName = "AgeOfIce";
     [SerializeField] private List<string> campaignSceneOrder = new List<string> { "WarriorScene", "AgeOfIce" };
 
@@ -114,6 +114,7 @@ public class GameMgr : MonoBehaviour, IGame
     public bool HasCampaignPurchase => Level2Unlocked;
     public int HighestReachedSceneIndex => _highestReachedSceneIndex;
     public int CampaignSceneCount => campaignSceneOrder != null ? campaignSceneOrder.Count : 0;
+    public string PurchasePriceText => purchasePriceText;
 
     private void Awake()
     {
@@ -548,7 +549,6 @@ public class GameMgr : MonoBehaviour, IGame
         _bossFinalDeathFlowRunning = false;
     }
 
-    // Kept for compatibility with your existing code
     public void UnlockLevel2()
     {
         level2Unlocked = true;
@@ -564,13 +564,24 @@ public class GameMgr : MonoBehaviour, IGame
     public void OnPurchaseConfirmed()
     {
         UnlockLevel2();
-
-        UIManager.Instance?.HidePurchaseScreen();
+        HideAnyPurchaseScreen();
 
         if (InputMgr.Instance != null)
             InputMgr.Instance.InputLocked = false;
 
         int currentIndex = GetCurrentCampaignSceneIndex();
+
+        // Achat depuis le menu
+        if (currentIndex < 0 || IsMainMenuScene())
+        {
+            var menu = FindFirstObjectByType<MainMenuUI>(FindObjectsInactive.Include);
+            if (menu != null)
+                menu.Refresh();
+
+            return;
+        }
+
+        // Achat depuis WarriorScene après le boss
         if (HasNextCampaignScene(currentIndex))
         {
             int nextIndex = currentIndex + 1;
@@ -585,11 +596,24 @@ public class GameMgr : MonoBehaviour, IGame
 
     public void OnPurchaseDeclined()
     {
-        UIManager.Instance?.HidePurchaseScreen();
+        HideAnyPurchaseScreen();
 
         if (InputMgr.Instance != null)
             InputMgr.Instance.InputLocked = false;
 
+        int currentIndex = GetCurrentCampaignSceneIndex();
+
+        // Refus depuis le menu : rester sur le menu
+        if (currentIndex < 0 || IsMainMenuScene())
+        {
+            var menu = FindFirstObjectByType<MainMenuUI>(FindObjectsInactive.Include);
+            if (menu != null)
+                menu.Refresh();
+
+            return;
+        }
+
+        // Refus depuis WarriorScene : retour menu
         Debug.Log("[GameMgr] Purchase declined. Returning to main menu.");
         LoadMainMenu();
     }
@@ -1197,5 +1221,19 @@ public class GameMgr : MonoBehaviour, IGame
             result = result.Substring(0, result.Length - " Scene".Length).Trim();
 
         return result;
+    }
+
+    private bool IsMainMenuScene()
+    {
+        return SceneManager.GetActiveScene().name == mainMenuSceneName;
+    }
+
+    private void HideAnyPurchaseScreen()
+    {
+        UIManager.Instance?.HidePurchaseScreen();
+
+        var purchase = FindFirstObjectByType<PurchaseUI>(FindObjectsInactive.Include);
+        if (purchase != null)
+            purchase.Hide();
     }
 }

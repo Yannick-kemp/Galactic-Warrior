@@ -9,51 +9,68 @@ public class MainMenuUI : MonoBehaviour
     [SerializeField] private string upgradesScene = "Upgrades";
 
     [Header("Main State Groups")]
-    [SerializeField] private GameObject demoButtonsGroup;       // SafeArea/MainMenuCard/ContentRow/LeftColumn/DemoButtonsGroup
-    [SerializeField] private GameObject fullButtonsGroup;       // SafeArea/MainMenuCard/ContentRow/LeftColumn/FullButtonsGroup
-    [SerializeField] private GameObject metaButtonsGroup;       // SafeArea/MainMenuCard/ContentRow/LeftColumn/MetaButtonsGroup
-    [SerializeField] private GameObject footerButtonsGroup;     // SafeArea/MainMenuCard/ContentRow/LeftColumn/FooterButtonsGroup
+    [SerializeField] private GameObject demoButtonsGroup;
+    [SerializeField] private GameObject fullButtonsGroup;
+    [SerializeField] private GameObject metaButtonsGroup;
+    [SerializeField] private GameObject footerButtonsGroup;
 
     [Header("Header Texts")]
-    [SerializeField] private TMP_Text titleText;                // SafeArea/MainMenuCard/Header/TitleText
-    [SerializeField] private TMP_Text modeBadgeText;            // SafeArea/MainMenuCard/Header/ModeBadgeText
-    [SerializeField] private TMP_Text subtitleText;             // SafeArea/MainMenuCard/Header/SubtitleText
+    [SerializeField] private TMP_Text titleText;
+    [SerializeField] private TMP_Text modeBadgeText;
+    [SerializeField] private TMP_Text subtitleText;
 
     [Header("Continue Area")]
-    [SerializeField] private TMP_Text continueSubtitleText;     // SafeArea/MainMenuCard/ContentRow/LeftColumn/FullButtonsGroup/ContinueSubtitleText
+    [SerializeField] private TMP_Text continueSubtitleText;
 
     [Header("Progress Card")]
-    [SerializeField] private TMP_Text cardTitleText;            // SafeArea/MainMenuCard/ContentRow/ProgressCard/CardTitleText
-    [SerializeField] private TMP_Text cardSceneText;            // SafeArea/MainMenuCard/ContentRow/ProgressCard/CardSceneText
-    [SerializeField] private TMP_Text cardProgressText;         // SafeArea/MainMenuCard/ContentRow/ProgressCard/CardProgressText
+    [SerializeField] private TMP_Text cardTitleText;
+    [SerializeField] private TMP_Text cardSceneText;
+    [SerializeField] private TMP_Text cardProgressText;
 
     [Header("Popups / Panels")]
-    [SerializeField] private LevelSelectPanelUI levelSelectPanel;  // SafeArea/LevelSelectPopupRoot
-    [SerializeField] private SettingsPopupUI settingsPopup;        // SafeArea/SettingsPopupRoot
-    [SerializeField] private GameObject creditsPanel;              // optional
+    [SerializeField] private LevelSelectPanelUI levelSelectPanel;
+    [SerializeField] private SettingsPopupUI settingsPopup;
+    [SerializeField] private GameObject creditsPanel;
+
+    [Header("Menu Purchase Popup")]
+    [SerializeField] private PurchaseUI menuPurchaseUI;
+    [SerializeField] private string menuUnlockTitle = "UNLOCK THE FULL GAME";
+    [TextArea]
+    [SerializeField] private string menuUnlockDescription = "Unlock Level 2, new progression, rewards, and upgrades.";
 
     [Header("Optional Buttons To Toggle")]
-    [SerializeField] private GameObject unlockFullGameButton;      // optional: Btn_UnlockFullGame
-    [SerializeField] private GameObject continueButton;            // optional: Btn_Continue
-    [SerializeField] private GameObject levelSelectButton;         // optional: Btn_LevelSelect
-    [SerializeField] private GameObject newGameButton;             // optional: Btn_NewGame
+    [SerializeField] private GameObject unlockFullGameButton;
+    [SerializeField] private GameObject continueButton;
+    [SerializeField] private GameObject levelSelectButton;
+    [SerializeField] private GameObject newGameButton;
 
     private void Start()
     {
-        Refresh();
+        StartCoroutine(RefreshNextFrame());
     }
 
     private void OnEnable()
     {
+        StartCoroutine(RefreshNextFrame());
+    }
+
+    private System.Collections.IEnumerator RefreshNextFrame()
+    {
+        yield return null;
         Refresh();
     }
 
     public void Refresh()
     {
-        var gm = GameMgr.Instance;
-        bool purchased = gm != null && gm.HasCampaignPurchase;
+        if (GameMgr.Instance == null)
+        {
+            Debug.LogWarning("[MainMenuUI] Refresh() skipped because GameMgr is still null.");
+            return;
+        }
 
-        // Header
+        var gm = GameMgr.Instance;
+        bool purchased = gm.HasCampaignPurchase;
+
         if (titleText != null)
             titleText.text = "GALACTIC WARRIOR";
 
@@ -65,7 +82,6 @@ public class MainMenuUI : MonoBehaviour
                 ? "Welcome back, Warrior."
                 : "Defeat the boss to unlock the next chapter.";
 
-        // State groups
         if (demoButtonsGroup != null)
             demoButtonsGroup.SetActive(!purchased);
 
@@ -78,7 +94,6 @@ public class MainMenuUI : MonoBehaviour
         if (footerButtonsGroup != null)
             footerButtonsGroup.SetActive(true);
 
-        // Optional direct button references
         if (unlockFullGameButton != null)
             unlockFullGameButton.SetActive(!purchased);
 
@@ -91,7 +106,6 @@ public class MainMenuUI : MonoBehaviour
         if (newGameButton != null)
             newGameButton.SetActive(purchased);
 
-        // Continue subtitle
         if (continueSubtitleText != null)
         {
             if (purchased && gm != null)
@@ -100,7 +114,6 @@ public class MainMenuUI : MonoBehaviour
                 continueSubtitleText.text = string.Empty;
         }
 
-        // Progress card
         if (cardTitleText != null)
             cardTitleText.text = purchased ? "CURRENT PROGRESS" : "NEXT CHAPTER";
 
@@ -130,14 +143,12 @@ public class MainMenuUI : MonoBehaviour
             }
         }
 
-        // Ensure popup closed when menu appears
         if (levelSelectPanel != null)
             levelSelectPanel.HideImmediate();
-    }
 
-    // -------------------------
-    // Main actions
-    // -------------------------
+        if (menuPurchaseUI == null)
+            menuPurchaseUI = FindFirstObjectByType<PurchaseUI>(FindObjectsInactive.Include);
+    }
 
     public void PlayDemo()
     {
@@ -157,6 +168,41 @@ public class MainMenuUI : MonoBehaviour
     public void OpenLevelSelect()
     {
         levelSelectPanel?.Show();
+    }
+
+    public void OpenUnlockFullGameOffer()
+    {
+        if (GameMgr.Instance == null)
+        {
+            Debug.LogWarning("[MainMenuUI] GameMgr.Instance is null.");
+            return;
+        }
+
+        if (GameMgr.Instance.HasCampaignPurchase)
+        {
+            Refresh();
+            return;
+        }
+
+        if (menuPurchaseUI == null)
+            menuPurchaseUI = FindFirstObjectByType<PurchaseUI>(FindObjectsInactive.Include);
+
+        if (menuPurchaseUI == null)
+        {
+            Debug.LogWarning("[MainMenuUI] Menu PurchaseUI not found in scene.");
+            return;
+        }
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = true;
+
+        menuPurchaseUI.ConfigureOffer(
+            menuUnlockTitle,
+            menuUnlockDescription,
+            GameMgr.Instance.PurchasePriceText
+        );
+
+        menuPurchaseUI.Show();
     }
 
     public void Relics()
@@ -194,19 +240,9 @@ public class MainMenuUI : MonoBehaviour
 #endif
     }
 
-    // -------------------------
-    // Temporary testing action
-    // -------------------------
-
+    // Keep this name too, so old Inspector hookups still work.
     public void UnlockFullGameForTesting()
     {
-        if (GameMgr.Instance == null)
-        {
-            Debug.LogWarning("[MainMenuUI] GameMgr.Instance is null. Cannot unlock full game.");
-            return;
-        }
-
-        GameMgr.Instance.UnlockLevel2();
-        Refresh();
+        OpenUnlockFullGameOffer();
     }
 }
