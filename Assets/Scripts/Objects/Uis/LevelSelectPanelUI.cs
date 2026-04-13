@@ -11,7 +11,7 @@ public class LevelSelectPanelUI : MonoBehaviour
     [Header("Title")]
     [SerializeField] private TMP_Text titleText;           // PopupCard/TopBar/TitleText
 
-    [Header("Level 1")]
+    [Header("Demo ")]
     [SerializeField] private Button level1Button;          // PopupCard/Btn_Level1
     [SerializeField] private TMP_Text level1TitleText;     // child inside Btn_Level1
     [SerializeField] private TMP_Text level1SubtitleText;  // child inside Btn_Level1
@@ -82,10 +82,10 @@ public class LevelSelectPanelUI : MonoBehaviour
 
         // Level 1
         if (level1TitleText != null)
-            level1TitleText.text = "LEVEL 1";
+            level1TitleText.text = "Close";
 
         if (level1SubtitleText != null)
-            level1SubtitleText.text = "Warrior - Replay from the beginning";
+            level1SubtitleText.text = "The Warrior - Replay from the beginning";
 
         if (level1Button != null)
             level1Button.interactable = true;
@@ -94,7 +94,7 @@ public class LevelSelectPanelUI : MonoBehaviour
         bool level2Unlocked = GameMgr.Instance != null && GameMgr.Instance.IsSceneUnlockedForMenu(1);
 
         if (level2TitleText != null)
-            level2TitleText.text = "LEVEL 2";
+            level2TitleText.text = "LEVEL 1";
 
         if (level2SubtitleText != null)
         {

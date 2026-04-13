@@ -109,13 +109,6 @@ public class EnemySpawnPoint : MonoBehaviour
         return enemy;
     }
 
-    public void NotifyEnemyDespawned(Enemy enemy)
-    {
-        if (enemy == null) return;
-        if (currentEnemy == enemy)
-            currentEnemy = null;
-    }
-
     public void NotifyEnemyDefeated(Enemy enemy)
     {
         if (enemy == null) return;

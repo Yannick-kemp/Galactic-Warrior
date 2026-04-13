@@ -76,13 +76,16 @@ public class GameMgr : MonoBehaviour, IGame
     [SerializeField] private bool autoUnlockForTesting = false;
     [SerializeField] private string purchasePriceText = "€3.99";
 
-    [Header("Level 2 Entry Rewards")]
+    [Header("Level 1 Entry Rewards")]
     [SerializeField] private int level2EntryCoinsReward = 50;
     [SerializeField] private int level2EntryUpgradeTokens = 1;
 
     private const string CampaignPurchasedKey = "GW_CampaignPurchased";
     private const string HighestReachedSceneIndexKey = "GW_HighestReachedSceneIndex";
     private const string LegacyLevel2UnlockedKey = "GW_Level2Unlocked";
+
+    [Header("Post-Level Complete")]
+    [SerializeField] private bool returnToMenuAfterPurchasedLevelComplete = true;
 
     private int _highestReachedSceneIndex;
 
@@ -459,6 +462,7 @@ public class GameMgr : MonoBehaviour, IGame
             return;
         }
 
+        // No next scene = end of campaign (or end of current content)
         if (!HasNextCampaignScene(currentIndex))
         {
             Debug.Log("[GameMgr] No next campaign scene. Returning to menu.");
@@ -480,8 +484,64 @@ public class GameMgr : MonoBehaviour, IGame
         }
 
         int nextIndex = currentIndex + 1;
+        string nextSceneName = campaignSceneOrder[nextIndex];
+
+        // Save the newly unlocked / continue target first
         MarkSceneAsReached(nextIndex);
+
+        // Whole-game flow:
+        // show next level title, then return to menu so FullButtonsGroup appears first
+        if (returnToMenuAfterPurchasedLevelComplete)
+        {
+            StartCoroutine(ReturnToMenuAfterLevelCompleteRoutine(nextSceneName));
+            return;
+        }
+
+        // Old behavior (directly go into next level)
         GoToCampaignSceneByIndex(nextIndex);
+    }
+    private IEnumerator ReturnToMenuAfterLevelCompleteRoutine(string nextSceneName)
+    {
+        if (_isSceneTransitionRunning)
+            yield break;
+
+        _isSceneTransitionRunning = true;
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = true;
+
+        bool doSlowMo = !_skipNextLevelTransitionSlowMo;
+        _skipNextLevelTransitionSlowMo = false;
+
+        Time.timeScale = 1f;
+
+        if (doSlowMo)
+        {
+            Time.timeScale = levelCompleteSlowMoScale;
+            yield return new WaitForSecondsRealtime(levelCompleteSlowMoDuration);
+            Time.timeScale = 1f;
+        }
+
+        foreach (var e in Enemy.ActiveEnemies)
+        {
+            if (e == null) continue;
+            e.StopMoveTowardCoroutine();
+        }
+
+        // Show the title of the next scene first
+        UIManager.Instance?.PlayLevelTransition(
+            NicifySceneName(nextSceneName),
+            GetSceneSubtitle(nextSceneName)
+        );
+
+        yield return new WaitForSecondsRealtime(transitionBeforeLoadDelay);
+
+        WarriorInstance = null;
+        SceneManager.LoadScene(mainMenuSceneName);
+
+        yield return new WaitForSecondsRealtime(transitionAfterLoadDelay);
+
+        _isSceneTransitionRunning = false;
     }
 
     private void ShowPurchaseGateForNextScene(int currentIndex)
@@ -571,27 +631,28 @@ public class GameMgr : MonoBehaviour, IGame
 
         int currentIndex = GetCurrentCampaignSceneIndex();
 
-        // Achat depuis le menu
+        // Purchase confirmed while already in menu:
+        // refresh immediately to show FullButtonsGroup
         if (currentIndex < 0 || IsMainMenuScene())
         {
             var menu = FindFirstObjectByType<MainMenuUI>(FindObjectsInactive.Include);
             if (menu != null)
                 menu.Refresh();
+            else
+                LoadMainMenu();
 
             return;
         }
 
-        // Achat depuis WarriorScene après le boss
+        // Purchase confirmed from gameplay / boss purchase flow:
+        // save the next scene as continue target, then go to menu first
         if (HasNextCampaignScene(currentIndex))
         {
             int nextIndex = currentIndex + 1;
             MarkSceneAsReached(nextIndex);
-            GoToCampaignSceneByIndex(nextIndex);
         }
-        else
-        {
-            LoadMainMenu();
-        }
+
+        LoadMainMenu();
     }
 
     public void OnPurchaseDeclined()

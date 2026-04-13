@@ -118,7 +118,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         protected bool _deathStarted;
         private bool _isDead;
-        private bool _isDespawning;
 
         public bool IsDeadOrDying => _deathStarted || _isDead;
 
@@ -134,15 +133,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] protected EnemyHitReactionProfile hitReaction;
         public EnemyHitReactionProfile HitReaction => hitReaction;
 
-        [Header("Viewport Auto-Despawn")]
-        [SerializeField] private bool despawnWhenOutOfViewport = true;
-        [SerializeField] private bool requireSeenOnceBeforeDespawn = true;
-        [SerializeField] private float viewportMargin = 0.08f;
-        [SerializeField] private float autoDespawnCheckInterval = 0.15f;
-
-        private bool _hasBeenSeenInViewport;
-        private float _nextViewportCheckTime;
-
         private EnemySpawnOverrides _spawnOverrides;
         protected EnemySpawnOverrides SpawnOverrides => _spawnOverrides;
 
@@ -154,10 +144,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         protected Collider2D _committedPatrolPlatform;
 
         public EnemySpawnPoint OwnerSpawnPoint { get; private set; }
-
-        protected virtual bool CanViewportDespawn =>
-            despawnWhenOutOfViewport &&
-            !IsBoss;
 
         public void SetEnemyType(EnemyType type)
         {
@@ -291,7 +277,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         protected virtual void Update()
         {
             CommitPatrolEdgeForMovingVerticalPlatform();
-            UpdateViewportAutoDespawn();
 
             if (groundCheckPoint != null)
             {
@@ -331,78 +316,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 if (frameIndex != lastFrameIndex && frameIndex >= 0)
                     lastFrameIndex = frameIndex;
             }
-        }
-
-        private void UpdateViewportAutoDespawn()
-        {
-            if (!CanViewportDespawn) return;
-            if (_deathStarted || _isDead || _isDespawning) return;
-            if (Time.time < _nextViewportCheckTime) return;
-
-            _nextViewportCheckTime = Time.time + autoDespawnCheckInterval;
-
-            Camera cam = Camera.main;
-            if (cam == null || spriteRenderer == null) return;
-
-            Bounds b = spriteRenderer.bounds;
-            Vector3 view = cam.WorldToViewportPoint(b.center);
-
-            bool visible =
-                view.z > 0f &&
-                view.x >= -viewportMargin && view.x <= 1f + viewportMargin &&
-                view.y >= -viewportMargin && view.y <= 1f + viewportMargin;
-
-            if (visible)
-            {
-                _hasBeenSeenInViewport = true;
-                return;
-            }
-
-            if (requireSeenOnceBeforeDespawn && !_hasBeenSeenInViewport)
-                return;
-
-            DespawnFromViewport();
-        }
-
-        public virtual void DespawnFromViewport()
-        {
-            if (_isDespawning || _deathStarted || _isDead) return;
-            if (IsBoss) return;
-
-            _isDespawning = true;
-
-            StopMoveTowardCoroutine();
-
-            if (_stunRoutine != null)
-            {
-                StopCoroutine(_stunRoutine);
-                _stunRoutine = null;
-            }
-
-            if (blinkCoroutine != null)
-            {
-                StopCoroutine(blinkCoroutine);
-                blinkCoroutine = null;
-            }
-
-            if (rigidbody2 != null)
-            {
-                rigidbody2.linearVelocity = Vector2.zero;
-                rigidbody2.angularVelocity = 0f;
-                rigidbody2.simulated = false;
-            }
-
-            if (NormalCollider != null) NormalCollider.enabled = false;
-            if (TriggerColliderLeft != null) TriggerColliderLeft.enabled = false;
-            if (TriggerColliderRight != null) TriggerColliderRight.enabled = false;
-
-            if (worldHealthBar != null)
-                worldHealthBar.SetVisibility(false);
-
-            if (animator != null)
-                animator.enabled = false;
-
-            EnemyMgr.Instance?.OnEnemyViewportDespawned(this);
         }
 
         protected void ClampEnemyToPlatformTop()
@@ -453,7 +366,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             if (_isDead) return false;
             if (_deathStarted) return false;
-            if (_isDespawning) return false;
             if (damage <= 0f) return false;
 
             currentHealth -= damage;
@@ -494,7 +406,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         protected virtual void OnDeath()
         {
             if (_deathStarted) return;
-            if (_isDespawning) return;
 
             _deathStarted = true;
 
@@ -1040,10 +951,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             _isStunned = false;
             _isDead = false;
-            _isDespawning = false;
             _deathStarted = false;
-            _hasBeenSeenInViewport = false;
-            _nextViewportCheckTime = 0f;
 
             DisableAttackTemporarily(1.5f);
 

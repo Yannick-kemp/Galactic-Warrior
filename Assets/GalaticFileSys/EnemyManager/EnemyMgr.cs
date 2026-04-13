@@ -1,6 +1,5 @@
 using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Platforms;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -10,15 +9,8 @@ public class EnemyMgr : MonoBehaviour
     private class SceneEnemyState
     {
         public Enemy enemy;
-        public Transform originalParent;
-        public Vector3 originalLocalPosition;
-        public Quaternion originalLocalRotation;
-        public Vector3 originalLocalScale;
-        public PlatFormColliderTrigger originalPlatform;
         public bool permanentlyDefeated;
-        public bool currentlyDespawned;
         public bool countsForLevelClear;
-        public bool isBoss;
     }
 
     public static EnemyMgr Instance { get; private set; }
@@ -66,13 +58,6 @@ public class EnemyMgr : MonoBehaviour
                 if (state == null) continue;
                 if (state.permanentlyDefeated) continue;
                 if (!state.countsForLevelClear) continue;
-
-                if (state.currentlyDespawned)
-                {
-                    count++;
-                    continue;
-                }
-
                 if (state.enemy != null && !state.enemy.IsDeadOrDying)
                     count++;
             }
@@ -113,11 +98,6 @@ public class EnemyMgr : MonoBehaviour
         StartCoroutine(RegisterSceneStateNextFrame());
     }
 
-    private void Update()
-    {
-        ProcessSceneEnemyRespawns();
-    }
-
     private void OnDestroy()
     {
         if (Instance == this)
@@ -129,7 +109,7 @@ public class EnemyMgr : MonoBehaviour
         StartCoroutine(RegisterSceneStateNextFrame());
     }
 
-    private IEnumerator RegisterSceneStateNextFrame()
+    private System.Collections.IEnumerator RegisterSceneStateNextFrame()
     {
         yield return null;
         RegisterSceneState();
@@ -229,15 +209,8 @@ public class EnemyMgr : MonoBehaviour
         var state = new SceneEnemyState
         {
             enemy = enemy,
-            originalParent = enemy.transform.parent,
-            originalLocalPosition = enemy.transform.localPosition,
-            originalLocalRotation = enemy.transform.localRotation,
-            originalLocalScale = enemy.transform.localScale,
-            originalPlatform = enemy.CurrentplatForm,
             permanentlyDefeated = false,
-            currentlyDespawned = false,
-            countsForLevelClear = enemy.CountsForLevelClear,
-            isBoss = enemy.IsBoss
+            countsForLevelClear = enemy.CountsForLevelClear
         };
 
         sceneEnemyStates.Add(state);
@@ -256,77 +229,6 @@ public class EnemyMgr : MonoBehaviour
         }
 
         return null;
-    }
-
-    private void ProcessSceneEnemyRespawns()
-    {
-        if (Camera.main == null) return;
-
-        for (int i = 0; i < sceneEnemyStates.Count; i++)
-        {
-            var state = sceneEnemyStates[i];
-            if (state == null) continue;
-            if (state.permanentlyDefeated) continue;
-            if (!state.currentlyDespawned) continue;
-            if (state.enemy == null) continue;
-
-            Vector3 worldPos = GetSceneEnemyRespawnWorldPosition(state);
-            if (!IsWorldPositionVisible(worldPos, 0.2f))
-                continue;
-
-            RespawnSceneEnemy(state);
-        }
-    }
-
-    private Vector3 GetSceneEnemyRespawnWorldPosition(SceneEnemyState state)
-    {
-        if (state.originalParent != null)
-            return state.originalParent.TransformPoint(state.originalLocalPosition);
-
-        return state.originalLocalPosition;
-    }
-
-    private bool IsWorldPositionVisible(Vector3 worldPos, float margin)
-    {
-        if (Camera.main == null)
-            return false;
-
-        Vector3 viewportPos = Camera.main.WorldToViewportPoint(worldPos);
-
-        return viewportPos.x >= -margin && viewportPos.x <= 1f + margin &&
-               viewportPos.y >= -margin && viewportPos.y <= 1f + margin &&
-               viewportPos.z > 0f;
-    }
-
-    private void RespawnSceneEnemy(SceneEnemyState state)
-    {
-        if (state == null || state.enemy == null) return;
-
-        Enemy enemy = state.enemy;
-        Transform t = enemy.transform;
-
-        if (state.originalParent != null)
-            t.SetParent(state.originalParent);
-
-        t.localPosition = state.originalLocalPosition;
-        t.localRotation = state.originalLocalRotation;
-        t.localScale = state.originalLocalScale;
-
-        enemy.gameObject.SetActive(true);
-        enemy.CurrentplatForm = state.originalPlatform;
-
-        var warrior = GameMgr.Instance?.WarriorInstance;
-        if (warrior != null)
-            enemy.target = warrior.transform;
-
-        enemy.ResetCombatState(1f);
-
-        state.currentlyDespawned = false;
-
-        if (!activeEnemies.Contains(enemy))
-            activeEnemies.Add(enemy);
-
-        Debug.Log($"[EnemyMgr] Scene enemy respawned: {enemy.Name}");
     }
 
     public Enemy SpawnEnemy(EnemyType type, Vector3 position)
@@ -479,14 +381,14 @@ public class EnemyMgr : MonoBehaviour
     }
 
     private Enemy SpawnEnemyOnMovingVerticalPlatformInternal(
-      GameObject prefab,
-      EnemyType type,
-      MovingVerticalPlatform platform,
-      Transform spawnPoint,
-      EnemySpawnOverrides overrides,
-      bool isBoss = false,
-      string bossName = null,
-      EnemySpawnPoint ownerSpawnPoint = null)
+        GameObject prefab,
+        EnemyType type,
+        MovingVerticalPlatform platform,
+        Transform spawnPoint,
+        EnemySpawnOverrides overrides,
+        bool isBoss = false,
+        string bossName = null,
+        EnemySpawnPoint ownerSpawnPoint = null)
     {
         if (prefab == null || platform == null)
             return null;
@@ -575,34 +477,6 @@ public class EnemyMgr : MonoBehaviour
         }
     }
 
-    public void OnEnemyViewportDespawned(Enemy enemy)
-    {
-        if (enemy == null) return;
-
-        if (activeEnemies.Contains(enemy))
-            activeEnemies.Remove(enemy);
-
-        if (enemy.OwnerSpawnPoint != null)
-        {
-            enemy.OwnerSpawnPoint.NotifyEnemyDespawned(enemy);
-            Destroy(enemy.gameObject);
-            Debug.Log($"[EnemyMgr] Spawn-point enemy despawned: {enemy.Name}");
-            return;
-        }
-
-        var state = FindSceneEnemyState(enemy);
-        if (state != null)
-        {
-            state.currentlyDespawned = true;
-            enemy.gameObject.SetActive(false);
-            Debug.Log($"[EnemyMgr] Scene enemy despawned: {enemy.Name}");
-            return;
-        }
-
-        Destroy(enemy.gameObject);
-        Debug.Log($"[EnemyMgr] Untracked enemy despawned: {enemy.Name}");
-    }
-
     public void OnEnemyDestroyed(Enemy enemy)
     {
         if (enemy != null && activeEnemies.Contains(enemy))
@@ -612,7 +486,6 @@ public class EnemyMgr : MonoBehaviour
         if (state != null)
         {
             state.permanentlyDefeated = true;
-            state.currentlyDespawned = false;
         }
 
         if (enemy != null && enemy == currentBoss)
@@ -676,12 +549,11 @@ public class EnemyMgr : MonoBehaviour
 
             enemy.SetSpawnOverrides(overrides);
             enemy.SetOwnerSpawnPoint(ownerSpawnPoint);
-            // Preserve prefab-configured boss status
+
             if (enemy.IsBoss)
             {
                 enemy.SetBoss(true, enemy.BossDisplayName);
             }
-
 
             if (!activeEnemies.Contains(enemy))
                 activeEnemies.Add(enemy);
