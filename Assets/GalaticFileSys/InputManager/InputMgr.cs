@@ -4,11 +4,11 @@ using UnityEngine;
 public class InputMgr : MonoBehaviour, IGame
 {
     public static InputMgr Instance { get; private set; }
-    public Vector2 TouchedVector
-    {
-        get;
-        private set;
-    }
+
+    public Vector2 TouchedVector { get; private set; }
+
+    public bool InputLocked { get; set; }
+
     private void Awake()
     {
         if (Instance != null && Instance != this)
@@ -23,21 +23,32 @@ public class InputMgr : MonoBehaviour, IGame
 
     public Vector2 GetMovementInput()
     {
-        // Returns a 2D vector for movement (WASD/Arrow keys)
-        float horizontal = Input.GetAxis("Horizontal"); // Set in Input settings by default
+        if (InputLocked)
+            return Vector2.zero;
+
+        float horizontal = Input.GetAxis("Horizontal");
         float vertical = Input.GetAxis("Vertical");
         return new Vector2(horizontal, vertical);
     }
 
     public bool IsJumpPressed()
     {
-        return Input.GetButtonDown("Jump"); // Space bar is the default
+        if (InputLocked)
+            return false;
+
+        return Input.GetButtonDown("Jump");
     }
 
     public bool IsScreenTouched()
     {
+        if (InputLocked)
+            return false;
+
         var c = Input.mousePosition;
-        TouchedVector = Camera.main.ScreenToWorldPoint(c);
+
+        if (Camera.main != null)
+            TouchedVector = Camera.main.ScreenToWorldPoint(c);
+
         return Input.GetMouseButtonDown(0);
     }
 
@@ -45,6 +56,4 @@ public class InputMgr : MonoBehaviour, IGame
     {
         Debug.Log("InputManager Initialized");
     }
-
-
 }

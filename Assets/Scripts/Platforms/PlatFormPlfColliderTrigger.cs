@@ -90,9 +90,7 @@ namespace Assets.Scripts.Platforms
 
             zalaytyEdgeTimer?.Update(Time.fixedDeltaTime);
 
-
-
-            var warrior = GameMgr.Instance.WarriorInstance;
+            var warrior = GameMgr.Instance?.WarriorInstance;
 
             if (warrior != null
 

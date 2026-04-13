@@ -1,28 +1,234 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 public class MainMenuUI : MonoBehaviour
 {
-    [Header("Scene names (must be in Build Settings)")]
-    [SerializeField] private string gameScene = "WarriorScene";
+    [Header("Scene Names")]
     [SerializeField] private string relicsScene = "Relics";
     [SerializeField] private string upgradesScene = "Upgrades";
 
-    public void Play() => SceneManager.LoadScene(gameScene);
-    public void Relics() => SceneManager.LoadScene(relicsScene);
-    public void Upgrades() => SceneManager.LoadScene(upgradesScene);
+    [Header("Main State Groups")]
+    [SerializeField] private GameObject demoButtonsGroup;
+    [SerializeField] private GameObject fullButtonsGroup;
+    [SerializeField] private GameObject metaButtonsGroup;
+    [SerializeField] private GameObject footerButtonsGroup;
 
+    [Header("Header Texts")]
+    [SerializeField] private TMP_Text titleText;
+    [SerializeField] private TMP_Text modeBadgeText;
+    [SerializeField] private TMP_Text subtitleText;
+
+    [Header("Continue Area")]
+    [SerializeField] private TMP_Text continueSubtitleText;
+
+    [Header("Progress Card")]
+    [SerializeField] private TMP_Text cardTitleText;
+    [SerializeField] private TMP_Text cardSceneText;
+    [SerializeField] private TMP_Text cardProgressText;
+
+    [Header("Popups / Panels")]
+    [SerializeField] private LevelSelectPanelUI levelSelectPanel;
     [SerializeField] private SettingsPopupUI settingsPopup;
+    [SerializeField] private GameObject creditsPanel;
+
+    [Header("Menu Purchase Popup")]
+    [SerializeField] private PurchaseUI menuPurchaseUI;
+    [SerializeField] private string menuUnlockTitle = "UNLOCK THE FULL GAME";
+    [TextArea]
+    [SerializeField] private string menuUnlockDescription = "Unlock Level 2, new progression, rewards, and upgrades.";
+
+    [Header("Optional Buttons To Toggle")]
+    [SerializeField] private GameObject unlockFullGameButton;
+    [SerializeField] private GameObject continueButton;
+    [SerializeField] private GameObject levelSelectButton;
+    [SerializeField] private GameObject newGameButton;
+
+    private void Start()
+    {
+        StartCoroutine(RefreshNextFrame());
+    }
+
+    private void OnEnable()
+    {
+        StartCoroutine(RefreshNextFrame());
+    }
+
+    private System.Collections.IEnumerator RefreshNextFrame()
+    {
+        yield return null;
+        Refresh();
+    }
+
+    public void Refresh()
+    {
+        if (GameMgr.Instance == null)
+        {
+            Debug.LogWarning("[MainMenuUI] Refresh() skipped because GameMgr is still null.");
+            return;
+        }
+
+        var gm = GameMgr.Instance;
+        bool purchased = gm.HasCampaignPurchase;
+
+        if (titleText != null)
+            titleText.text = "GALACTIC WARRIOR";
+
+        if (modeBadgeText != null)
+            modeBadgeText.text = purchased ? "FULL GAME" : "DEMO";
+
+        if (subtitleText != null)
+            subtitleText.text = purchased
+                ? "Welcome back, Warrior."
+                : "Defeat the boss to unlock the next chapter.";
+
+        if (demoButtonsGroup != null)
+            demoButtonsGroup.SetActive(!purchased);
+
+        if (fullButtonsGroup != null)
+            fullButtonsGroup.SetActive(purchased);
+
+        if (metaButtonsGroup != null)
+            metaButtonsGroup.SetActive(true);
+
+        if (footerButtonsGroup != null)
+            footerButtonsGroup.SetActive(true);
+
+        if (unlockFullGameButton != null)
+            unlockFullGameButton.SetActive(!purchased);
+
+        if (continueButton != null)
+            continueButton.SetActive(purchased);
+
+        if (levelSelectButton != null)
+            levelSelectButton.SetActive(purchased);
+
+        if (newGameButton != null)
+            newGameButton.SetActive(purchased);
+
+        if (continueSubtitleText != null)
+        {
+            if (purchased && gm != null)
+                continueSubtitleText.text = $"Continue - {gm.GetContinueSceneDisplayName()}";
+            else
+                continueSubtitleText.text = string.Empty;
+        }
+
+        if (cardTitleText != null)
+            cardTitleText.text = purchased ? "CURRENT PROGRESS" : "NEXT CHAPTER";
+
+        if (cardSceneText != null)
+        {
+            if (purchased && gm != null)
+                cardSceneText.text = $"Continue at: {gm.GetContinueSceneDisplayName()}";
+            else
+                cardSceneText.text = "Age Of Ice";
+        }
+
+        if (cardProgressText != null)
+        {
+            if (gm == null)
+            {
+                cardProgressText.text = string.Empty;
+            }
+            else if (purchased)
+            {
+                int current = gm.HighestReachedSceneIndex + 1;
+                int total = Mathf.Max(1, gm.CampaignSceneCount);
+                cardProgressText.text = $"Progress: {current}/{total} chapters available";
+            }
+            else
+            {
+                cardProgressText.text = "Locked until purchase";
+            }
+        }
+
+        if (levelSelectPanel != null)
+            levelSelectPanel.HideImmediate();
+
+        if (menuPurchaseUI == null)
+            menuPurchaseUI = FindFirstObjectByType<PurchaseUI>(FindObjectsInactive.Include);
+    }
+
+    public void PlayDemo()
+    {
+        GameMgr.Instance?.StartNewGame();
+    }
+
+    public void Continue()
+    {
+        GameMgr.Instance?.ContinueGame();
+    }
+
+    public void NewGame()
+    {
+        GameMgr.Instance?.StartNewGame();
+    }
+
+    public void OpenLevelSelect()
+    {
+        levelSelectPanel?.Show();
+    }
+
+    public void OpenUnlockFullGameOffer()
+    {
+        if (GameMgr.Instance == null)
+        {
+            Debug.LogWarning("[MainMenuUI] GameMgr.Instance is null.");
+            return;
+        }
+
+        if (GameMgr.Instance.HasCampaignPurchase)
+        {
+            Refresh();
+            return;
+        }
+
+        if (menuPurchaseUI == null)
+            menuPurchaseUI = FindFirstObjectByType<PurchaseUI>(FindObjectsInactive.Include);
+
+        if (menuPurchaseUI == null)
+        {
+            Debug.LogWarning("[MainMenuUI] Menu PurchaseUI not found in scene.");
+            return;
+        }
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = true;
+
+        menuPurchaseUI.ConfigureOffer(
+            menuUnlockTitle,
+            menuUnlockDescription,
+            GameMgr.Instance.PurchasePriceText
+        );
+
+        menuPurchaseUI.Show();
+    }
+
+    public void Relics()
+    {
+        SceneManager.LoadScene(relicsScene);
+    }
+
+    public void Upgrades()
+    {
+        SceneManager.LoadScene(upgradesScene);
+    }
 
     public void Settings()
     {
-        settingsPopup.Show();
+        if (settingsPopup != null)
+            settingsPopup.Show();
+        else
+            Debug.LogWarning("[MainMenuUI] SettingsPopupUI reference is missing.");
     }
 
     public void Credits()
     {
-        // open a panel or load scene
-        Debug.Log("Open credits");
+        if (creditsPanel != null)
+            creditsPanel.SetActive(true);
+        else
+            Debug.Log("[MainMenuUI] Credits panel not assigned.");
     }
 
     public void Exit()
@@ -30,8 +236,13 @@ public class MainMenuUI : MonoBehaviour
         Application.Quit();
 
 #if UNITY_EDITOR
-        // So it also "works" when testing in the Editor
         UnityEditor.EditorApplication.isPlaying = false;
 #endif
+    }
+
+    // Keep this name too, so old Inspector hookups still work.
+    public void UnlockFullGameForTesting()
+    {
+        OpenUnlockFullGameOffer();
     }
 }

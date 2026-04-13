@@ -469,7 +469,7 @@ public class M97Monster : Enemy
         base.FixedUpdate();
 
         // 2. Run M97 specific sticking logic
-  //      StickToDescendingMovingPlatformSurface();
+        StickToDescendingMovingPlatformSurface();
 
         // 3. Run overlap resolution logic
         if (!_resolveOverlapThisStep)

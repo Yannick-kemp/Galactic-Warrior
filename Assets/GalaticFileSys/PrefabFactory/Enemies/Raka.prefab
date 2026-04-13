@@ -401,6 +401,9 @@ MonoBehaviour:
   canBeStunned: 1
   meleeHitDistance: 0.65
   targetAnimationName: AttackAnimation
+  enemyType: 6
+  isBoss: 1
+  bossDisplayName: Raka Mini Boss
   totalFramesInAnimation: 16
   frameIndex: 0
   disableAttackWhenHitSeconds: 0.2
@@ -409,6 +412,7 @@ MonoBehaviour:
   requireSeenOnceBeforeAutoDeath: 1
   viewportMargin: 0.08
   autoDeathCheckInterval: 0.15
+  patrolEdgeArriveThreshold: 0.12
   meleeRange: 4
   rangedRange: 9
   meleeCooldown: 0.6
