@@ -420,16 +420,15 @@ public class M97Monster : Enemy
 
         float targetX = shouldClamp ? ClampToCurrentPlatform(x) : x;
 
+        // Inside MoveTowardPositionNoFlipAction
         while (Mathf.Abs(targetX - transform.position.x) > 0.1f)
         {
-            Vector2 currentPosition = transform.position;
+            Vector2 currentPosition = rigidbody2.position; // Use RB position
             Vector2 targetPosition = new Vector2(targetX, currentPosition.y);
             Vector2 newPosition = Vector2.MoveTowards(currentPosition, targetPosition, Speed * Time.deltaTime);
 
-            if (shouldClamp && CurrentplatForm != null)
-                newPosition.x = ClampToCurrentPlatform(newPosition.x);
-
-            transform.position = new Vector3(newPosition.x, newPosition.y, transform.position.z);
+            // Use MovePosition for Dynamic RBs to keep physics happy
+            rigidbody2.MovePosition(new Vector2(newPosition.x, rigidbody2.position.y));
             yield return null;
         }
 
@@ -1514,6 +1513,19 @@ public class M97Monster : Enemy
     {
         if (!stickToDescendingPlatformSurface || _isDeadOrDying) return;
         if (CurrentplatForm is not MovingVerticalPlatform movingPlatform) return;
+
+        // If we are already parented, the platform is already moving us.
+        // We only need to ensure we don't "float" when the platform accelerates downward.
+        if (transform.parent == movingPlatform.transform)
+        {
+            // Simply ensure vertical velocity isn't positive (jumping) 
+            // while the platform is moving down.
+            if (movingPlatform.IsMovingUpNow == false && rigidbody2.linearVelocity.y > 0)
+            {
+                rigidbody2.linearVelocity = new Vector2(rigidbody2.linearVelocity.x, 0);
+            }
+            return;
+        }
 
         // Use the Rigidbody of the platform to get its exact velocity
         Rigidbody2D platformRb = movingPlatform.GetComponent<Rigidbody2D>();

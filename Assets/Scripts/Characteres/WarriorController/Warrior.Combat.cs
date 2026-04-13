@@ -26,53 +26,64 @@ namespace Assets.Scripts.Characteres.WarriorController
         #region Attack / FX / Damage
 
         public void AE_Attack1_HitExplosion_Fist() => DoAttack1HitExplosion(HitFxPoint.FistSocket);
-        public void AE_Attack1_HitExplosion_Kick() => DoAttack1HitExplosion(HitFxPoint.KickSocket);
+        public void AE_Attack1_HitExplosion_Kick()
+        {
+            // We moved the yeeahClip logic inside PlayAttack1HitSfx 
+            // so it only plays if you actually hit an enemy.
+            DoAttack1HitExplosion(HitFxPoint.KickSocket);
+        }
         public void AE_Attack1_HitExplosion() => DoAttack1HitExplosion(HitFxPoint.ContactOnEnemy);
 
         private void DoAttack1HitExplosion(HitFxPoint hitPoint)
         {
+            // 1. Safety check for the current attack mode
             if (attackMode != AttackAnimMode.Attack1) return;
 
             _attack1HitEventConsumed = true;
 
+            // 2. Scan for enemies in the predefined radius
             Enemy[] enemiesInRange = GetEnemiesInAttackRange();
 
             bool anyHit = false;
             int valid = 0;
             Vector2 sumHitPoints = Vector2.zero;
 
-            // If nobody in range at all => MISS
+            // 3. Handle MISS logic if no enemies are nearby
             if (enemiesInRange == null || enemiesInRange.Length == 0)
             {
                 PlayAttack1MissSfx();
                 return;
             }
 
+            // 4. Process each enemy detected in range
             foreach (Enemy enemy in enemiesInRange)
             {
                 if (enemy == null) continue;
 
-                // facing filter
+                // Filter based on character facing direction
                 if (leftFacing && enemy.NormalCollider.bounds.center.x > collider2.bounds.center.x) continue;
                 if (rightFacing && enemy.NormalCollider.bounds.center.x < collider2.bounds.center.x) continue;
 
                 anyHit = true;
                 valid++;
 
+                // Calculate visual feedback positions
                 Vector3 hp3 = GetNovaPosition(enemy);
                 sumHitPoints += new Vector2(hp3.x, hp3.y);
 
                 Vector3 hitPos = GetHitFxPosition(enemy, hitPoint);
                 SpawnHitExplosion(hitPos);
-               
+
+                // 5. Determine individual enemy knockback and damage values
                 float KnockBack = enemy switch
                 {
                     M97Monster => 0.134f,
                     CrawlingMonster => 0.4f,
-                    RakaMonster=> 0.2f,
+                    RakaMonster => 0.2f,
                     _ => attack1KnockbackForce
                 };
-                int  damage = enemy switch
+
+                int damage = enemy switch
                 {
                     M97Monster => 6,
                     CrawlingMonster => 8,
@@ -81,14 +92,26 @@ namespace Assets.Scripts.Characteres.WarriorController
                     ZalaytyMonster => 5,
                     HashagarMonster => 2,
                     _ => attack1Damage
-                };  
+                };
+
                 KnockbackEnemiesInRange(KnockBack, enemy, damage);
             }
 
-            // HIT or MISS
-            if (anyHit) PlayAttack1HitSfx();
-            else PlayAttack1MissSfx();
+            // 6. Final Sound Layering: Determine which SFX and Voice to overlay
+            if (anyHit)
+            {
+                // Check if this specific hit event is the Kick (Frame 27)
+                bool isKick = (hitPoint == HitFxPoint.KickSocket);
 
+                // Pass the kick status to play the correct overlay (Hit SFX + "Yeeah")
+                PlayAttack1HitSfx(isKick);
+            }
+            else
+            {
+                PlayAttack1MissSfx();
+            }
+
+            // 7. Scoring and Crowd Feedback for multi-hits
             if (valid >= 2)
             {
                 Vector2 avgHp = sumHitPoints / valid;

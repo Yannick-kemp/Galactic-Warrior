@@ -5,42 +5,62 @@ public class UIManager : MonoBehaviour
     public static UIManager Instance { get; private set; }
 
     [SerializeField] private GameOverUI gameOver;
+    [SerializeField] private LevelTransitionUI levelTransitionUI;
+    [SerializeField] private PurchaseUI purchaseUI;
+    [SerializeField] private RewardUI rewardUI;
+    [SerializeField] private UpgradeUI upgradeUI;
 
     private void Awake()
     {
-        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
         Instance = this;
         DontDestroyOnLoad(gameObject);
 
         Debug.Log("[UIManager] Awake() - Instance ready");
     }
 
-    public void ShowGameOver()
+    private GameOverUI ResolveGameOverUI()
     {
         if (gameOver == null)
-            gameOver = FindFirstObjectByType<GameOverUI>();
+            gameOver = FindFirstObjectByType<GameOverUI>(FindObjectsInactive.Include);
 
-        if (gameOver == null)
+        return gameOver;
+    }
+
+    public void ShowGameOver()
+    {
+        var ui = ResolveGameOverUI();
+        if (ui == null)
         {
-            Debug.LogError("[UIManager] GameOverUI not found in scene (is WarriorUI prefab in Hierarchy?)");
+            Debug.LogError("[UIManager] GameOverUI not found in scene.");
             return;
         }
+
+        if (!ui.gameObject.activeSelf)
+            ui.gameObject.SetActive(true);
 
         int score = 0;
         if (Assets.Scripts.Scoring.ScoreManager.Instance != null)
             score = Assets.Scripts.Scoring.ScoreManager.Instance.TotalPoints;
 
-        gameOver.Show(score);
+        ui.Show(score);
     }
 
     public void HideGameOver()
     {
-        if (gameOver == null)
-            gameOver = FindFirstObjectByType<GameOverUI>();
+        var ui = ResolveGameOverUI();
+        if (ui == null)
+            return;
 
-        if (gameOver == null) return;
+        if (!ui.gameObject.activeSelf)
+            ui.gameObject.SetActive(true);
 
-        gameOver.Hide();
+        ui.Hide();
     }
 
     public void TryReviveFromGameOver()
@@ -66,5 +86,109 @@ public class UIManager : MonoBehaviour
         var autoHeal = w.GetComponent<AutoHealthRelicConsumer>();
         if (autoHeal != null)
             autoHeal.ResetThresholdTriggers();
+    }
+
+    public void PlayLevelTransition(string levelName, string subtitle = "")
+    {
+        if (levelTransitionUI == null)
+            levelTransitionUI = FindFirstObjectByType<LevelTransitionUI>(FindObjectsInactive.Include);
+
+        if (levelTransitionUI == null)
+        {
+            Debug.LogError("[UIManager] LevelTransitionUI not found.");
+            return;
+        }
+
+        levelTransitionUI.Play(levelName, subtitle);
+    }
+
+    public void ShowPurchaseScreen()
+    {
+        if (purchaseUI == null)
+            purchaseUI = FindFirstObjectByType<PurchaseUI>(FindObjectsInactive.Include);
+
+        if (purchaseUI == null)
+        {
+            Debug.LogError("[UIManager] PurchaseUI not found.");
+            return;
+        }
+
+        purchaseUI.Show();
+    }
+
+    public void ShowPurchaseScreen(string title, string description, string price = null)
+    {
+        if (purchaseUI == null)
+            purchaseUI = FindFirstObjectByType<PurchaseUI>(FindObjectsInactive.Include);
+
+        if (purchaseUI == null)
+        {
+            Debug.LogError("[UIManager] PurchaseUI not found.");
+            return;
+        }
+
+        purchaseUI.ConfigureOffer(title, description, price);
+        purchaseUI.Show();
+    }
+
+    public void HidePurchaseScreen()
+    {
+        if (purchaseUI == null)
+            purchaseUI = FindFirstObjectByType<PurchaseUI>(FindObjectsInactive.Include);
+
+        if (purchaseUI == null)
+            return;
+
+        purchaseUI.Hide();
+    }
+
+    public void ShowRewardScreen(int coins, int tokens)
+    {
+        if (rewardUI == null)
+            rewardUI = FindFirstObjectByType<RewardUI>(FindObjectsInactive.Include);
+
+        if (rewardUI == null)
+        {
+            Debug.LogError("[UIManager] RewardUI not found.");
+            return;
+        }
+
+        rewardUI.Show(coins, tokens);
+    }
+
+    public void HideRewardScreen()
+    {
+        if (rewardUI == null)
+            rewardUI = FindFirstObjectByType<RewardUI>(FindObjectsInactive.Include);
+
+        if (rewardUI == null)
+            return;
+
+        rewardUI.Hide();
+    }
+
+    public void ShowUpgradeScreen()
+    {
+        if (upgradeUI == null)
+            upgradeUI = FindFirstObjectByType<UpgradeUI>(FindObjectsInactive.Include);
+
+        if (upgradeUI == null)
+        {
+            Debug.LogError("[UIManager] UpgradeUI not found.");
+            return;
+        }
+
+        upgradeUI.Show();
+    }
+
+    public void HideUpgradeScreen()
+    {
+        if (upgradeUI == null)
+            upgradeUI = FindFirstObjectByType<UpgradeUI>(FindObjectsInactive.Include);
+
+        if (upgradeUI == null)
+            return;
+
+        upgradeUI.Hide();
     }
 }

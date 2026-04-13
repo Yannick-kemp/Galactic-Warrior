@@ -470,14 +470,18 @@ MonoBehaviour:
   canBeStunned: 1
   meleeHitDistance: 0.65
   targetAnimationName: AttackAnimation
+  enemyType: 0
+  isBoss: 0
+  bossDisplayName: 
   totalFramesInAnimation: 16
   frameIndex: -1
   disableAttackWhenHitSeconds: 0.2
   hitReaction: {fileID: 11400000, guid: 533894972b5c13546857e1467b413539, type: 2}
-  dieWhenOutOfViewport: 1
-  requireSeenOnceBeforeAutoDeath: 1
+  dieWhenOutOfViewport: 0
+  requireSeenOnceBeforeAutoDeath: 0
   viewportMargin: 0.08
   autoDeathCheckInterval: 0.15
+  patrolEdgeArriveThreshold: 0.12
   edgeSafeMargin: 0.45
   edgeTolerance: 0.05
 --- !u!61 &3971217980109467877

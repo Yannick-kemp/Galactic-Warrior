@@ -1,0 +1,80 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &4315649855814584681
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5822744156706765294}
+  - component: {fileID: 1928913765699674672}
+  m_Layer: 0
+  m_Name: GameMgr
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5822744156706765294
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4315649855814584681}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -17.977049, y: -0.90480757, z: -0.04292624}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1928913765699674672
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4315649855814584681}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3b14b7acb4448bc4eadcba72f3d74c77, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maxRetries: 3
+  useSpawnBubbleOnRetry: 1
+  spawnBubbleRadius: 1.5
+  spawnBubblePushDistance: 1
+  pushEnemiesOnSpawnBubble: 1
+  ignoreEnemyCollisionOnSpawnBubble: 1
+  spawnBubbleIgnoreSeconds: 0.45
+  currentCheckpoint: {fileID: 0}
+  useCheckpointRespawn: 1
+  useForcedRetryZoneRespawn: 1
+  warriorSceneName: WarriorScene
+  level1Music: {fileID: 8300000, guid: be8a7db7e302f1c4780ebce2e95426af, type: 3}
+  musicVolume: 0.132
+  restartMusicOnLevelRestart: 1
+  enemyResetRadius: 12
+  enemyResetHealthPercent: 1
+  movingPlatformRespawnSeatOffset: 0.35
+  mainMenuSceneName: MainMenu
+  level2SceneName: AgeOfIce
+  campaignSceneOrder:
+  - WarriorScene
+  - AgeOfIce
+  levelCompleteSlowMoScale: 0.3
+  levelCompleteSlowMoDuration: 0.45
+  transitionBeforeLoadDelay: 0.65
+  transitionAfterLoadDelay: 0.2
+  bossDeathSlowMoScale: 0.15
+  bossDeathSlowMoDuration: 0.6
+  bossDeathCompletionDelay: 0.05
+  level2Unlocked: 0
+  autoUnlockForTesting: 0
+  purchasePriceText: "\u20AC3.99"
+  level2EntryCoinsReward: 50
+  level2EntryUpgradeTokens: 1

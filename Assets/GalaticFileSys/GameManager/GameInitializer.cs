@@ -2,31 +2,29 @@ using UnityEngine;
 
 public class GameInitializer : MonoBehaviour
 {
-    private void Start()
+    private void Awake()
     {
+        Debug.Log("[GameInitializer] Awake()");
+
         if (GameMgr.Instance == null)
         {
-            GameObject gameManager = new GameObject("GameManager");
-            gameManager.AddComponent<GameMgr>();
-            GameMgr.Instance.Initialize();
+            var go = new GameObject("GameManager");
+            go.AddComponent<GameMgr>();
+            Debug.Log("[GameInitializer] GameMgr created.");
         }
+
         if (InputMgr.Instance == null)
         {
-            GameObject gameManager = new GameObject("InputManager");
-            gameManager.AddComponent<InputMgr>();
-            InputMgr.Instance.Initialize();
+            var go = new GameObject("InputManager");
+            go.AddComponent<InputMgr>();
+            Debug.Log("[GameInitializer] InputMgr created.");
         }
+
         if (TimerMgr.Instance == null)
         {
-            GameObject timerManager = new GameObject("TimerManager");
-            timerManager.AddComponent<TimerMgr>();
-            TimerMgr.Instance.Initialize();
+            var go = new GameObject("TimerManager");
+            go.AddComponent<TimerMgr>();
+            Debug.Log("[GameInitializer] TimerMgr created.");
         }
-        //if (CameraMgr.Instance == null)
-        //{
-        //    GameObject cameraManager = new GameObject("CameraManager");
-        //    cameraManager.AddComponent<CameraMgr>();
-        //    CameraMgr.Instance.Initialize();
-        //}
     }
 }
