@@ -36,7 +36,7 @@ public class MainMenuUI : MonoBehaviour
     [SerializeField] private PurchaseUI menuPurchaseUI;
     [SerializeField] private string menuUnlockTitle = "UNLOCK THE FULL GAME";
     [TextArea]
-    [SerializeField] private string menuUnlockDescription = "Unlock Level 2, new progression, rewards, and upgrades.";
+    [SerializeField] private string menuUnlockDescription = "Unlock Level 1, new progression, rewards, and upgrades.";
 
     [Header("Optional Buttons To Toggle")]
     [SerializeField] private GameObject unlockFullGameButton;

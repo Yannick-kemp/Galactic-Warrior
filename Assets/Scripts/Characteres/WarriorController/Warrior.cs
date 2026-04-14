@@ -392,7 +392,8 @@ namespace Assets.Scripts.Characteres.WarriorController
             HandleInput();
             HandleFallingAndDeath();
 
-            CheckOutOfViewportDeath();
+            CheckWorldYDeathFallback();
+           // CheckOutOfViewportDeath();
             CheckEnemiesLeavingRange();
             UpdateEcho();
             UpdateLowHealthBlink();   // optional safety

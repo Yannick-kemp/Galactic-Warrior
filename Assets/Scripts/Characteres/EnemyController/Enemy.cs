@@ -75,6 +75,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private bool canBeStunned = true;
         [SerializeField] protected float meleeHitDistance = 0.65f;
 
+        [Header("Void Death Fallback")]
+        [SerializeField] private bool useWorldYDeathFallback = true;
+        [SerializeField] private float worldDeathY = -30f;
+
         private bool _isStunned;
         private Coroutine _stunRoutine;
         public bool IsStunned => _isStunned;
@@ -276,6 +280,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         protected virtual void Update()
         {
+            CheckWorldYDeathFallback();
+
             CommitPatrolEdgeForMovingVerticalPlatform();
 
             if (groundCheckPoint != null)
@@ -1100,5 +1106,57 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             return Mathf.Abs(eb.max.x - pb.max.x) <= patrolEdgeArriveThreshold;
         }
+        public void ForceDeath()
+        {
+            if (_deathStarted || _isDead) return;
+
+            currentHealth = 0f;
+            UpdateHealthBarDisplay();
+
+            _isDead = true;
+            OnDeath();
+        }
+
+        public void ForceDeathImmediate()
+        {
+            if (_deathStarted || _isDead) return;
+
+            _deathStarted = true;
+            _isDead = true;
+            currentHealth = 0f;
+
+            OwnerSpawnPoint?.NotifyEnemyDefeated(this);
+            EnemyMgr.Instance?.OnEnemyDeathStarted(this);
+
+            if (worldHealthBar != null)
+                worldHealthBar.SetVisibility(false);
+
+            if (NormalCollider != null) NormalCollider.enabled = false;
+            if (TriggerColliderLeft != null) TriggerColliderLeft.enabled = false;
+            if (TriggerColliderRight != null) TriggerColliderRight.enabled = false;
+
+            if (rigidbody2 != null)
+            {
+                rigidbody2.linearVelocity = Vector2.zero;
+                rigidbody2.simulated = false;
+            }
+
+            EnemyMgr.Instance?.OnEnemyDestroyed(this);
+            Destroy(gameObject);
+        }
+        protected void CheckWorldYDeathFallback()
+        {
+            if (!useWorldYDeathFallback) return;
+            if (_deathStarted || _isDead) return;
+            if (collider2 == null) return;
+
+            if (collider2.bounds.max.y < worldDeathY)
+            {
+                Debug.Log($"[Enemy] {name} fell below world death Y");
+                ForceDeathImmediate();
+            }
+        }
     }
+
+
 }
