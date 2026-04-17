@@ -21,10 +21,13 @@ public class EnemySpawnPoint : MonoBehaviour
 
     public bool HasActiveEnemy => currentEnemy != null;
 
-    public bool HasAliveCountableEnemy =>
-        !permanentlyDefeated &&
+    public bool CountsForLevelClear =>
         enemyType != EnemyType.Bee &&
         enemyType != EnemyType.BeeEretic;
+
+    public bool HasAliveCountableEnemy =>
+        !permanentlyDefeated &&
+        CountsForLevelClear;
 
     private void Reset()
     {
@@ -112,6 +115,7 @@ public class EnemySpawnPoint : MonoBehaviour
     public void NotifyEnemyDefeated(Enemy enemy)
     {
         if (enemy == null) return;
+
         if (currentEnemy == enemy)
             currentEnemy = null;
 

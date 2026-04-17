@@ -1,6 +1,7 @@
+using System;
+using System.Collections.Generic;
 using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Platforms;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -25,8 +26,17 @@ public class EnemyMgr : MonoBehaviour
     private Enemy currentBoss;
     private bool _levelClearTriggeredThisScene;
 
+    public event Action<int, int> OnEnemyCounterChanged;
+
+    private int _totalCountableEnemyCount;
+    private int _lastPublishedRemaining = -1;
+    private int _lastPublishedTotal = -1;
+
     public Enemy CurrentBoss => currentBoss;
     public bool HasAliveBoss => currentBoss != null && !currentBoss.IsDeadOrDying;
+
+    public int TotalCountableEnemyCount => _totalCountableEnemyCount;
+    public int RemainingCountableEnemyCount => AliveCountableEnemyCount;
 
     public int AliveEnemyCount
     {
@@ -89,7 +99,6 @@ public class EnemyMgr : MonoBehaviour
         DontDestroyOnLoad(gameObject);
 
         BuildPrefabLookup();
-
         SceneManager.sceneLoaded += HandleSceneLoaded;
     }
 
@@ -176,9 +185,57 @@ public class EnemyMgr : MonoBehaviour
             RegisterExistingEnemy(enemy);
         }
 
+        _totalCountableEnemyCount = ComputeTotalCountableEnemiesForScene();
+        PublishEnemyCounter(true);
+
         Debug.Log($"[EnemyMgr] Scene enemies registered: total={AliveEnemyCount}, required={AliveCountableEnemyCount}, boss={(currentBoss != null ? currentBoss.BossDisplayName : "none")}");
     }
 
+    private int ComputeTotalCountableEnemiesForScene()
+    {
+        CleanupSpawnPoints();
+
+        int total = 0;
+
+        foreach (var sp in spawnPoints)
+        {
+            if (sp == null) continue;
+            if (sp.CountsForLevelClear)
+                total++;
+        }
+
+        foreach (var state in sceneEnemyStates)
+        {
+            if (state == null) continue;
+            if (state.countsForLevelClear)
+                total++;
+        }
+
+        return total;
+    }
+
+    private void PublishEnemyCounter(bool force = false)
+    {
+        int remaining = AliveCountableEnemyCount;
+
+        if (remaining > _totalCountableEnemyCount)
+            _totalCountableEnemyCount = remaining;
+
+        int total = _totalCountableEnemyCount;
+
+        if (!force &&
+            remaining == _lastPublishedRemaining &&
+            total == _lastPublishedTotal)
+        {
+            return;
+        }
+
+        _lastPublishedRemaining = remaining;
+        _lastPublishedTotal = total;
+
+        Debug.Log($"[EnemyMgr] PublishEnemyCounter -> {remaining}/{total}");
+        OnEnemyCounterChanged?.Invoke(remaining, total);
+    }
     private void RegisterExistingEnemy(Enemy enemy)
     {
         if (enemy == null)
@@ -444,12 +501,16 @@ public class EnemyMgr : MonoBehaviour
             Debug.Log($"[EnemyMgr] Boss registered: {enemy.BossDisplayName}");
         }
 
+        PublishEnemyCounter();
+
         Debug.Log($"[EnemyMgr] Spawned {enemy.EnemyType} | Boss={enemy.IsBoss} | Counts={enemy.CountsForLevelClear}");
     }
 
     public void OnEnemyDeathStarted(Enemy enemy)
     {
         if (enemy == null) return;
+
+        PublishEnemyCounter();
 
         if (enemy.IsBoss)
         {
@@ -493,6 +554,8 @@ public class EnemyMgr : MonoBehaviour
             Debug.Log($"[EnemyMgr] Boss defeated: {enemy.BossDisplayName}");
             currentBoss = null;
         }
+
+        PublishEnemyCounter();
 
         Debug.Log($"[EnemyMgr] Remaining enemies: {AliveEnemyCount}, required: {AliveCountableEnemyCount}, boss alive: {HasAliveBoss}");
 
@@ -563,6 +626,8 @@ public class EnemyMgr : MonoBehaviour
                 currentBoss = enemy;
                 Debug.Log($"[EnemyMgr] Boss registered: {enemy.BossDisplayName}");
             }
+
+            PublishEnemyCounter();
         }
 
         return enemy;

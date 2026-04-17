@@ -39,6 +39,10 @@ namespace Assets.Scripts.Characteres.WarriorController
         [SerializeField] private bool disablePhysicsOnDeath = true;
         [SerializeField] private bool disableCollidersOnDeath = true;
 
+        [Header("Void Death Fallback")]
+        [SerializeField] private bool useWorldYDeathFallback = true;
+        [SerializeField] private float worldDeathY = -30f;
+
         public event Action OnDeathStarted;
         public event Action OnDeathEnded;
         public event Action<float, float> OnHealthChanged; // current, max
@@ -321,6 +325,21 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (vp.y < -viewportBottomMargin)
             {
                 Debug.Log("[Warrior] Out of viewport (below screen) -> death");
+                ForceDeath();
+            }
+        }
+
+        private void CheckWorldYDeathFallback()
+        {
+            if (!useWorldYDeathFallback) return;
+            if (Time.time < _allowViewportDeathTime) return;
+            if (_deathStarted || CanDie) return;
+            if (GameMgr.Instance?.IsRestarting == true) return;
+            if (collider2 == null) return;
+
+            if (collider2.bounds.max.y < worldDeathY)
+            {
+                Debug.Log("[Warrior] Fell below world death Y -> death");
                 ForceDeath();
             }
         }
