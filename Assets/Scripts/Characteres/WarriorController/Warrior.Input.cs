@@ -11,9 +11,12 @@ namespace Assets.Scripts.Characteres.WarriorController
         private void HandleInput()
         {
 
-            if (Time.time < _uiInputBlockUntil) return;
-            if (blockWorldInputWhenPointerOverUI && IsPointerOverUI()) return;
-            if (!InputMgr.Instance.IsScreenTouched()) return;
+            if (Time.time < _uiInputBlockUntil) 
+                return;
+            if (blockWorldInputWhenPointerOverUI && IsPointerOverUI()) 
+                return;
+            if (!InputMgr.Instance.IsScreenTouched())
+                return;
 
             // IMPORTANT: must be before CanJump / CanAttack block
             if (activesJumpCoroutine == null

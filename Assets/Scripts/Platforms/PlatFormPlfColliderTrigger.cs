@@ -51,33 +51,21 @@ namespace Assets.Scripts.Platforms
 
 
         protected override void Start()
-
         {
+            base.Start();
 
             warriorEdgeTimer = new Timer(0.75f);
-
             warriorEdgeTimer.OnTimerComplete += PerformWarriorEdgeFall;
 
-
-
             zalaytyEdgeTimer = new Timer(0.20f);
-
             zalaytyEdgeTimer.OnTimerComplete += PerformZalaytyEdgeJumpOrDrop;
 
-
-
             var warrior = GameMgr.Instance?.WarriorInstance;
-
             if (warrior != null)
-
             {
-
                 warrior.rigidbody2.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
-
                 warrior.rigidbody2.interpolation = RigidbodyInterpolation2D.Interpolate;
-
             }
-
         }
 
 

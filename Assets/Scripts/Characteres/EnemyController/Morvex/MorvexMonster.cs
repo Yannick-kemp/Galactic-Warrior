@@ -1,0 +1,531 @@
+﻿using System.Collections.Generic;
+using Assets.Scripts.Characteres.WarriorController;
+using UnityEngine;
+
+namespace Assets.Scripts.Characteres.EnemyContoller
+{
+    [RequireComponent(typeof(Rigidbody2D))]
+    [RequireComponent(typeof(Collider2D))]
+    public class MorvexMonster : Enemy
+    {
+        private enum State
+        {
+            Idle,
+            FlyToReserve,
+            GrabStone,
+            FlyAboveWarrior,
+            DropStone,
+            Retreat,
+            SearchNewReserve,
+            NoReserveMode
+        }
+
+        [Header("Morvex References")]
+        [SerializeField] private Warrior warrior;
+        [SerializeField] private Transform visualRoot;
+        [SerializeField] private Transform holdPoint;
+        [SerializeField] private GameObject carriedStoneVisual;
+        [SerializeField] private FallingStone fallingStonePrefab;
+
+        [Header("Reserve Search")]
+        [SerializeField] private bool autoDiscoverReserves = true;
+        [SerializeField] private List<StoneReserve> reserves = new List<StoneReserve>();
+
+        [Header("Detection")]
+        [SerializeField] private float detectRange = 14f;
+        [SerializeField] private float forgetRange = 20f;
+
+        [Header("Flight")]
+        [SerializeField] private float flySpeed = 4f;
+        [SerializeField] private float carryFlySpeed = 3.2f;
+        [SerializeField] private float retreatFlySpeed = 5.5f;
+        [SerializeField] private float arriveDistance = 0.15f;
+
+        [Header("Idle Hover")]
+        [SerializeField] private float idlePatrolDistance = 1.4f;
+        [SerializeField] private float idlePatrolSpeed = 1.2f;
+        [SerializeField] private float idleHoverAmplitude = 0.25f;
+        [SerializeField] private float idleHoverFrequency = 2f;
+
+        [Header("Stone Attack")]
+        [SerializeField] private float preferredDropHeight = 4.5f;
+        [SerializeField] private float minimumDropHeight = 3.5f;
+        [SerializeField] private float horizontalDropTolerance = 0.75f;
+        [SerializeField] private float grabDuration = 0.35f;
+        [SerializeField] private float dropWindup = 0.25f;
+
+        [Header("Retreat")]
+        [SerializeField] private float retreatDuration = 1f;
+        [SerializeField] private Vector2 retreatOffset = new Vector2(2.5f, 1.75f);
+
+        [Header("Hit Reaction")]
+        [SerializeField] private float hitStunDuration = 0.35f;
+
+        [Header("No Reserve Mode")]
+        [SerializeField] private float noReserveRecheckInterval = 1.5f;
+        [SerializeField] private float noReserveHoverRadius = 1.5f;
+
+        private State currentState;
+        private StoneReserve currentReserve;
+        private bool hasStone;
+        private float stateTimer;
+        private float noReserveRecheckTimer;
+        private float stunTimer;
+        private Vector3 idleAnchor;
+        private Vector3 retreatTarget;
+        private Vector3 committedDropPosition;
+
+        public bool HasStone => hasStone;
+        public StoneReserve CurrentReserve => currentReserve;
+
+        protected override void Start()
+        {
+            Range = 0f;
+            attackCooldown = 0f;
+            attackDamage = 0;
+
+            base.Start();
+
+            if (visualRoot == null)
+                visualRoot = transform;
+
+            if (holdPoint == null)
+                holdPoint = transform;
+
+            if (rigidbody2 != null)
+            {
+                rigidbody2.gravityScale = 0f;
+                rigidbody2.linearVelocity = Vector2.zero;
+            }
+
+            FindWarriorIfMissing();
+
+            if (autoDiscoverReserves)
+                DiscoverReserves();
+
+            idleAnchor = transform.position;
+            SetCarriedStoneVisible(false);
+            EnterState(State.Idle);
+        }
+
+        protected override void Update()
+        {
+            if (StopMovingWhenWarriorDie)
+                return;
+
+            FindWarriorIfMissing();
+
+            if (autoDiscoverReserves && reserves.Count == 0)
+                DiscoverReserves();
+
+            if (stunTimer > 0f)
+            {
+                stunTimer -= Time.deltaTime;
+                HoverAround(transform.position, 0.15f, 5f);
+                UpdateCarriedStoneVisualPosition();
+                return;
+            }
+
+            switch (currentState)
+            {
+                case State.Idle:
+                    UpdateIdle();
+                    break;
+                case State.FlyToReserve:
+                    UpdateFlyToReserve();
+                    break;
+                case State.GrabStone:
+                    UpdateGrabStone();
+                    break;
+                case State.FlyAboveWarrior:
+                    UpdateFlyAboveWarrior();
+                    break;
+                case State.DropStone:
+                    UpdateDropStone();
+                    break;
+                case State.Retreat:
+                    UpdateRetreat();
+                    break;
+                case State.SearchNewReserve:
+                    UpdateSearchNewReserve();
+                    break;
+                case State.NoReserveMode:
+                    UpdateNoReserveMode();
+                    break;
+            }
+
+            UpdateCarriedStoneVisualPosition();
+        }
+
+        public override void TakeDamage(float damage)
+        {
+            base.TakeDamage(damage);
+
+            if (hasStone)
+                DropStone();
+
+            stunTimer = hitStunDuration;
+            LosingBalanceAnimationDisplay();
+        }
+
+        private void FindWarriorIfMissing()
+        {
+            if (warrior == null)
+                warrior = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : Warrior.Instance;
+
+            if (warrior == null && target != null)
+                warrior = target.GetComponent<Warrior>();
+        }
+
+        private void DiscoverReserves()
+        {
+            reserves.Clear();
+            reserves.AddRange(FindObjectsByType<StoneReserve>(FindObjectsSortMode.None));
+        }
+
+        private void EnterState(State newState)
+        {
+            currentState = newState;
+
+            switch (currentState)
+            {
+                case State.Idle:
+                    idleAnchor = transform.position;
+                    WaitAnimationDisplay();
+                    break;
+                case State.GrabStone:
+                    stateTimer = grabDuration;
+                    WaitAnimationDisplay();
+                    break;
+                case State.DropStone:
+                    stateTimer = dropWindup;
+                    committedDropPosition = new Vector3(transform.position.x, transform.position.y, transform.position.z);
+                    AttackAnimationDisplay();
+                    break;
+                case State.Retreat:
+                    stateTimer = retreatDuration;
+                    retreatTarget = BuildRetreatTarget();
+                    RunAnimationDisplay();
+                    break;
+                case State.NoReserveMode:
+                    noReserveRecheckTimer = 0f;
+                    RunAnimationDisplay();
+                    break;
+                default:
+                    RunAnimationDisplay();
+                    break;
+            }
+        }
+
+        private void UpdateIdle()
+        {
+            Vector3 patrolOffset = new Vector3(
+                Mathf.Sin(Time.time * idlePatrolSpeed) * idlePatrolDistance,
+                Mathf.Sin(Time.time * idleHoverFrequency) * idleHoverAmplitude,
+                0f);
+
+            FlyTowards(idleAnchor + patrolOffset, flySpeed * 0.5f);
+
+            if (!WarriorInDetectRange())
+                return;
+
+            currentReserve = FindNearestAvailableReserve();
+            EnterState(currentReserve != null ? State.FlyToReserve : State.NoReserveMode);
+        }
+
+        private void UpdateFlyToReserve()
+        {
+            if (currentReserve == null || !currentReserve.HasStones)
+            {
+                EnterState(State.SearchNewReserve);
+                return;
+            }
+
+            Vector3 targetPosition = currentReserve.GetGrabWorldPosition();
+            FlyTowards(targetPosition, flySpeed);
+
+            if (Vector2.Distance(transform.position, targetPosition) <= arriveDistance)
+                EnterState(State.GrabStone);
+        }
+
+        private void UpdateGrabStone()
+        {
+            if (currentReserve == null)
+            {
+                EnterState(State.SearchNewReserve);
+                return;
+            }
+
+            HoverAround(currentReserve.GetGrabWorldPosition(), 0.05f, 4f);
+
+            stateTimer -= Time.deltaTime;
+            if (stateTimer > 0f)
+                return;
+
+            if (!currentReserve.TryTakeStone())
+            {
+                EnterState(State.SearchNewReserve);
+                return;
+            }
+
+            hasStone = true;
+            SetCarriedStoneVisible(true);
+            EnterState(State.FlyAboveWarrior);
+        }
+
+        private void UpdateFlyAboveWarrior()
+        {
+            if (!hasStone)
+            {
+                EnterState(State.SearchNewReserve);
+                return;
+            }
+
+            if (!HasValidWarrior())
+            {
+                DropStone();
+                EnterState(State.Retreat);
+                return;
+            }
+
+            Vector3 targetPosition = warrior.transform.position + Vector3.up * preferredDropHeight;
+            FlyTowards(targetPosition, carryFlySpeed);
+
+            float horizontalDistance = Mathf.Abs(transform.position.x - warrior.transform.position.x);
+            float verticalGap = transform.position.y - warrior.transform.position.y;
+
+            if (horizontalDistance <= horizontalDropTolerance && verticalGap >= minimumDropHeight)
+                EnterState(State.DropStone);
+        }
+
+        private void UpdateDropStone()
+        {
+            if (!hasStone)
+            {
+                EnterState(State.Retreat);
+                return;
+            }
+
+            if (!HasValidWarrior())
+            {
+                DropStone();
+                EnterState(State.Retreat);
+                return;
+            }
+
+            FlyTowards(committedDropPosition, carryFlySpeed * 0.4f);
+
+            stateTimer -= Time.deltaTime;
+            if (stateTimer > 0f)
+                return;
+
+            DropStone();
+            EnterState(State.Retreat);
+        }
+
+        private void UpdateRetreat()
+        {
+            FlyTowards(retreatTarget, retreatFlySpeed);
+
+            stateTimer -= Time.deltaTime;
+            if (stateTimer > 0f && Vector2.Distance(transform.position, retreatTarget) > arriveDistance)
+                return;
+
+            EnterState(currentReserve != null && currentReserve.HasStones
+                ? State.FlyToReserve
+                : State.SearchNewReserve);
+        }
+
+        private void UpdateSearchNewReserve()
+        {
+            currentReserve = FindNearestAvailableReserve();
+            EnterState(currentReserve != null ? State.FlyToReserve : State.NoReserveMode);
+        }
+
+        private void UpdateNoReserveMode()
+        {
+            noReserveRecheckTimer -= Time.deltaTime;
+
+            if (noReserveRecheckTimer <= 0f)
+            {
+                currentReserve = FindNearestAvailableReserve();
+                if (currentReserve != null)
+                {
+                    EnterState(State.FlyToReserve);
+                    return;
+                }
+
+                noReserveRecheckTimer = noReserveRecheckInterval;
+            }
+
+            Vector3 center = HasValidWarrior()
+                ? warrior.transform.position + Vector3.up * (preferredDropHeight + 1f)
+                : idleAnchor;
+
+            Vector3 offset = new Vector3(
+                Mathf.Sin(Time.time * 1.5f) * noReserveHoverRadius,
+                Mathf.Cos(Time.time * 2f) * 0.4f,
+                0f);
+
+            FlyTowards(center + offset, flySpeed * 0.7f);
+        }
+
+        private void DropStone()
+        {
+            if (!hasStone)
+                return;
+
+            hasStone = false;
+            SetCarriedStoneVisible(false);
+
+            if (fallingStonePrefab == null)
+                return;
+
+            Vector3 spawnPosition = holdPoint != null ? holdPoint.position : transform.position;
+            FallingStone stone = Instantiate(fallingStonePrefab, spawnPosition, Quaternion.identity);
+            stone.Launch();
+        }
+
+        private StoneReserve FindNearestAvailableReserve()
+        {
+            StoneReserve best = null;
+            float bestDistanceSqr = float.MaxValue;
+
+            for (int i = reserves.Count - 1; i >= 0; i--)
+            {
+                StoneReserve reserve = reserves[i];
+                if (reserve == null)
+                {
+                    reserves.RemoveAt(i);
+                    continue;
+                }
+
+                if (!reserve.HasStones)
+                    continue;
+
+                float distanceSqr = (reserve.transform.position - transform.position).sqrMagnitude;
+                if (distanceSqr < bestDistanceSqr)
+                {
+                    bestDistanceSqr = distanceSqr;
+                    best = reserve;
+                }
+            }
+
+            return best;
+        }
+
+        private bool WarriorInDetectRange()
+        {
+            return warrior != null &&
+                   Vector2.Distance(transform.position, warrior.transform.position) <= detectRange &&
+                   !warrior.CanDie;
+        }
+
+        private bool HasValidWarrior()
+        {
+            return warrior != null &&
+                   Vector2.Distance(transform.position, warrior.transform.position) <= forgetRange &&
+                   !warrior.CanDie;
+        }
+
+        private void FlyTowards(Vector3 worldTarget, float speed)
+        {
+            Vector3 nextPosition = Vector3.MoveTowards(transform.position, worldTarget, speed * Time.deltaTime);
+            Vector3 delta = nextPosition - transform.position;
+
+            transform.position = nextPosition;
+
+            if (rigidbody2 != null)
+                rigidbody2.linearVelocity = Vector2.zero;
+
+            UpdateFacing(delta.x);
+        }
+
+        private void HoverAround(Vector3 center, float amplitudeMultiplier = 1f, float frequencyMultiplier = 1f)
+        {
+            Vector3 hoverPosition = center + new Vector3(
+                0f,
+                Mathf.Sin(Time.time * idleHoverFrequency * frequencyMultiplier) * idleHoverAmplitude * amplitudeMultiplier,
+                0f);
+
+            FlyTowards(hoverPosition, flySpeed * 0.5f);
+        }
+
+        private Vector3 BuildRetreatTarget()
+        {
+            float direction = 1f;
+
+            if (warrior != null)
+            {
+                float difference = transform.position.x - warrior.transform.position.x;
+                direction = Mathf.Approximately(difference, 0f) ? 1f : Mathf.Sign(difference);
+            }
+
+            return transform.position + new Vector3(retreatOffset.x * direction, retreatOffset.y, 0f);
+        }
+
+        private void UpdateFacing(float xDelta)
+        {
+            if (visualRoot == null || Mathf.Abs(xDelta) < 0.001f)
+                return;
+
+            Vector3 scale = visualRoot.localScale;
+            scale.x = Mathf.Abs(scale.x) * Mathf.Sign(xDelta);
+            visualRoot.localScale = scale;
+        }
+
+        private void SetCarriedStoneVisible(bool visible)
+        {
+            if (carriedStoneVisual != null)
+                carriedStoneVisual.SetActive(visible);
+        }
+
+        private void UpdateCarriedStoneVisualPosition()
+        {
+            if (!hasStone || carriedStoneVisual == null || holdPoint == null)
+                return;
+
+            carriedStoneVisual.transform.position = holdPoint.position;
+        }
+
+        public void ForceRefreshReserves()
+        {
+            DiscoverReserves();
+            currentReserve = FindNearestAvailableReserve();
+        }
+
+        public void ForceSearchNewReserve()
+        {
+            EnterState(State.SearchNewReserve);
+        }
+
+        protected override void OnTriggerEnter2D(Collider2D collision)
+        {
+        }
+
+        protected override void OnTriggerExit2D(Collider2D collision)
+        {
+        }
+
+        protected override void OnTriggerStay2D(Collider2D collision)
+        {
+        }
+
+        public override void OnDrawGizmos()
+        {
+            base.OnDrawGizmos();
+
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawWireSphere(transform.position, detectRange);
+
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawWireSphere(transform.position + Vector3.up * preferredDropHeight, 0.25f);
+
+            if (holdPoint != null)
+            {
+                Gizmos.color = Color.gray;
+                Gizmos.DrawWireSphere(holdPoint.position, 0.15f);
+            }
+        }
+    }
+}

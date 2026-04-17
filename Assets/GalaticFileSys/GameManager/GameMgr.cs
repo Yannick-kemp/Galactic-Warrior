@@ -91,6 +91,7 @@ public class GameMgr : MonoBehaviour, IGame
 
     private bool _isSceneTransitionRunning;
     private bool _level2EntryFlowShownThisLoad;
+    private bool _shouldShowLevel2EntryFlowOnNextLoad;
 
     private bool _bossSlowMoPlaying;
     private bool _bossFinalDeathFlowRunning;
@@ -228,7 +229,16 @@ public class GameMgr : MonoBehaviour, IGame
         if (isLevel2)
         {
             _level2EntryFlowShownThisLoad = false;
-            StartCoroutine(ShowLevel2PostEntryFlow());
+
+            if (_shouldShowLevel2EntryFlowOnNextLoad)
+            {
+                _shouldShowLevel2EntryFlowOnNextLoad = false;
+                StartCoroutine(ShowLevel2PostEntryFlow());
+            }
+        }
+        else
+        {
+            _shouldShowLevel2EntryFlowOnNextLoad = false;
         }
     }
 
@@ -288,6 +298,7 @@ public class GameMgr : MonoBehaviour, IGame
         _bossSlowMoPlaying = false;
         _bossFinalDeathFlowRunning = false;
         _skipNextLevelTransitionSlowMo = false;
+        _shouldShowLevel2EntryFlowOnNextLoad = false;
         Time.timeScale = 1f;
 
         if (Warrior.Instance != null)
@@ -443,7 +454,6 @@ public class GameMgr : MonoBehaviour, IGame
         return true;
     }
 
-    // Wrapper kept for compatibility with your current EnemyMgr calls
     public void HandleLevel1Completed()
     {
         if (_levelCompletionHandledThisScene)
@@ -462,7 +472,6 @@ public class GameMgr : MonoBehaviour, IGame
             return;
         }
 
-        // No next scene = end of campaign (or end of current content)
         if (!HasNextCampaignScene(currentIndex))
         {
             Debug.Log("[GameMgr] No next campaign scene. Returning to menu.");
@@ -470,7 +479,6 @@ public class GameMgr : MonoBehaviour, IGame
             return;
         }
 
-        // Demo gate: first level cleared but campaign not purchased yet
         if (!Level2Unlocked)
         {
             if (currentIndex == 0)
@@ -486,20 +494,17 @@ public class GameMgr : MonoBehaviour, IGame
         int nextIndex = currentIndex + 1;
         string nextSceneName = campaignSceneOrder[nextIndex];
 
-        // Save the newly unlocked / continue target first
         MarkSceneAsReached(nextIndex);
 
-        // Whole-game flow:
-        // show next level title, then return to menu so FullButtonsGroup appears first
         if (returnToMenuAfterPurchasedLevelComplete)
         {
             StartCoroutine(ReturnToMenuAfterLevelCompleteRoutine(nextSceneName));
             return;
         }
 
-        // Old behavior (directly go into next level)
         GoToCampaignSceneByIndex(nextIndex);
     }
+
     private IEnumerator ReturnToMenuAfterLevelCompleteRoutine(string nextSceneName)
     {
         if (_isSceneTransitionRunning)
@@ -528,13 +533,14 @@ public class GameMgr : MonoBehaviour, IGame
             e.StopMoveTowardCoroutine();
         }
 
-        // Show the title of the next scene first
         UIManager.Instance?.PlayLevelTransition(
             NicifySceneName(nextSceneName),
             GetSceneSubtitle(nextSceneName)
         );
 
         yield return new WaitForSecondsRealtime(transitionBeforeLoadDelay);
+
+        _shouldShowLevel2EntryFlowOnNextLoad = false;
 
         WarriorInstance = null;
         SceneManager.LoadScene(mainMenuSceneName);
@@ -631,8 +637,6 @@ public class GameMgr : MonoBehaviour, IGame
 
         int currentIndex = GetCurrentCampaignSceneIndex();
 
-        // Purchase confirmed while already in menu:
-        // refresh immediately to show FullButtonsGroup
         if (currentIndex < 0 || IsMainMenuScene())
         {
             var menu = FindFirstObjectByType<MainMenuUI>(FindObjectsInactive.Include);
@@ -644,8 +648,6 @@ public class GameMgr : MonoBehaviour, IGame
             return;
         }
 
-        // Purchase confirmed from gameplay / boss purchase flow:
-        // save the next scene as continue target, then go to menu first
         if (HasNextCampaignScene(currentIndex))
         {
             int nextIndex = currentIndex + 1;
@@ -664,7 +666,6 @@ public class GameMgr : MonoBehaviour, IGame
 
         int currentIndex = GetCurrentCampaignSceneIndex();
 
-        // Refus depuis le menu : rester sur le menu
         if (currentIndex < 0 || IsMainMenuScene())
         {
             var menu = FindFirstObjectByType<MainMenuUI>(FindObjectsInactive.Include);
@@ -674,12 +675,10 @@ public class GameMgr : MonoBehaviour, IGame
             return;
         }
 
-        // Refus depuis WarriorScene : retour menu
         Debug.Log("[GameMgr] Purchase declined. Returning to main menu.");
         LoadMainMenu();
     }
 
-    // Kept for compatibility with your existing calls
     public void GoToAgeOfGlace()
     {
         int currentIndex = GetCurrentCampaignSceneIndex();
@@ -737,6 +736,8 @@ public class GameMgr : MonoBehaviour, IGame
         );
 
         yield return new WaitForSecondsRealtime(transitionBeforeLoadDelay);
+
+        _shouldShowLevel2EntryFlowOnNextLoad = (targetSceneName == level2SceneName);
 
         WarriorInstance = null;
         SceneManager.LoadScene(targetSceneName);
@@ -847,6 +848,7 @@ public class GameMgr : MonoBehaviour, IGame
         _bossSlowMoPlaying = false;
         _bossFinalDeathFlowRunning = false;
         _skipNextLevelTransitionSlowMo = false;
+        _shouldShowLevel2EntryFlowOnNextLoad = false;
 
         ResetMeteorHazards(true);
 
@@ -923,6 +925,7 @@ public class GameMgr : MonoBehaviour, IGame
         _hasPendingReviveMovingPlatformRespawn = false;
         _pendingReviveMovingPlatformId = null;
         _level2EntryFlowShownThisLoad = false;
+        _shouldShowLevel2EntryFlowOnNextLoad = false;
 
         _levelCompletionHandledThisScene = false;
         _bossSlowMoPlaying = false;
@@ -1110,10 +1113,6 @@ public class GameMgr : MonoBehaviour, IGame
         _hasPendingReviveMovingPlatformRespawn = false;
         _pendingReviveMovingPlatformId = null;
     }
-
-    // -------------------------
-    // Campaign progression
-    // -------------------------
 
     private void NormalizeCampaignSceneOrder()
     {
