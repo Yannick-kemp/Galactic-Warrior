@@ -638,11 +638,13 @@ namespace Assets.Scripts.Characteres.WarriorController
         private void OnDisable()
         {
             ForceStopSprint();
+            ClearArmedIceBall();
         }
 
         private void OnDestroy()
         {
             ForceStopSprint();
+            ClearArmedIceBall();
         }
         private bool IsSprintBlockingShieldUse()
         {

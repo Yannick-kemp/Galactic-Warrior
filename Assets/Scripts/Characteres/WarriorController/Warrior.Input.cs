@@ -18,6 +18,10 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (!InputMgr.Instance.IsScreenTouched())
                 return;
 
+            // ICE BALL RELIC HAS PRIORITY OVER NORMAL WORLD TOUCH
+            if (TryHandleArmedIceBallTouch())
+                return;
+
             // IMPORTANT: must be before CanJump / CanAttack block
             if (activesJumpCoroutine == null
                 && !IsFallingEdge

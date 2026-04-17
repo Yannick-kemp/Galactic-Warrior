@@ -203,6 +203,16 @@ public class RelicUIController : MonoBehaviour
         string relicId = ResolveRelicId(r);
         if (string.IsNullOrEmpty(relicId)) return;
 
+        if (r.slot != null && r.slot.Definition is IceBallRelic iceDef)
+        {
+            if (!TryEnterUseGate(relicId))
+                return;
+
+            bool armed = warrior != null && warrior.TryArmIceBallRelic(iceDef, consumeOnCast: true);
+            RefreshButton(r);
+            return;
+        }
+
         // NEW: hard block before any consume
         if (IsBlockedByMutualExclusion(r))
         {
@@ -421,7 +431,13 @@ public class RelicUIController : MonoBehaviour
         // NEW: block interactable if mutually exclusive state is active
         bool blocked = IsBlockedByMutualExclusion(r);
 
-        r.button.interactable = hasCount && !blocked;
+        bool blockedByIceArmed =
+    r.slot != null &&
+    r.slot.Definition is IceBallRelic &&
+    warrior != null &&
+    warrior.IsIceBallArmed;
+
+        r.button.interactable = hasCount && !blocked && !blockedByIceArmed;
     }
 
     private void StopAllRunningFx()
