@@ -75,7 +75,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (animator.GetBool("IsLosingCtrl"))
                 animator.SetBool("IsLosingCtrl", false);
 
-
+           
             //Sprint relic uses only when movement starts
             TryStartArmedSprintFromMove();
 
@@ -109,7 +109,8 @@ namespace Assets.Scripts.Characteres.WarriorController
                 if (clickedOnPlatform || wantsEdgeExit)
                 {
                     if (shouldRun) RunAnimationDisplay();
-                    else WaitAnimationDisplay();
+                    else 
+                        WaitAnimationDisplay();
                 }
                 else
                 {

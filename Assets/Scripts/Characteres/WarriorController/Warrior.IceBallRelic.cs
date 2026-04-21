@@ -38,6 +38,8 @@ namespace Assets.Scripts.Characteres.WarriorController
         private bool _attack3AimOrbitCached;
         private Quaternion _attack3AimOrbitBaseLocalRotation;
 
+        private bool _attack3Casting;
+
         public bool IsIceBallArmed => _iceBallArmed;
 
         private void AwakeAttack3VisualDefaults()
@@ -52,6 +54,7 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             HideIceChargeVfx();
             ResetAttack3OrbitAim();
+            EndAttack3Lock();
         }
 
         private void ShowDefaultWarriorVisuals()
@@ -64,6 +67,30 @@ namespace Assets.Scripts.Characteres.WarriorController
         {
             if (defaultWarriorSpriteRenderer != null)
                 defaultWarriorSpriteRenderer.enabled = false;
+        }
+
+        private void BeginAttack3Lock()
+        {
+            _attack3Casting = true;
+            CanMove = false;
+
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+
+            if (rigidbody2 != null)
+            {
+                Vector2 v = rigidbody2.linearVelocity;
+                v.x = 0f;
+                rigidbody2.linearVelocity = v;
+            }
+        }
+
+        private void EndAttack3Lock()
+        {
+            _attack3Casting = false;
+
+            if (!CanDie)
+                CanMove = true;
         }
 
         public bool TryArmIceBallRelic(IceBallRelic def, bool consumeOnCast)
@@ -79,6 +106,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (IsDead || CanDie) return false;
             if (_iceBallArmed) return false;
             if (_iceBallShotPending) return false;
+            if (_attack3Casting) return false;
 
             _armedIceBallDef = def;
             _iceBallRelicId = !string.IsNullOrEmpty(def.relicId) ? def.relicId : def.name;
@@ -140,6 +168,7 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             StopMoveTowardCoroutine();
             StopJumpTowardCoroutine();
+            BeginAttack3Lock();
 
             if (animator != null && animator.GetBool("IsLosingCtrl"))
                 animator.SetBool("IsLosingCtrl", false);
@@ -283,6 +312,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             ShowDefaultWarriorVisuals();
             ClearArmedIceBall();
             ResetAttack3OrbitAim();
+            EndAttack3Lock();
 
             SetAttackMode(AttackAnimMode.Attack1);
             ExitAttackToBestState();
@@ -344,6 +374,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             ShowDefaultWarriorVisuals();
             ClearArmedIceBall();
             ResetAttack3OrbitAim();
+            EndAttack3Lock();
         }
 
         private void ClearArmedIceBall()

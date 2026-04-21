@@ -486,6 +486,10 @@ namespace Assets.Scripts.Characteres.WarriorController
         public void RequestPrimaryAttackFromUIButton()
         {
             NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.15f));
+
+            if (_attack3Casting)
+                return;
+
             if (CanDie) return;
             if (!CanMove || !CanAttackWarrior) return;
             if (activesJumpCoroutine != null || IsFalling || IsFallingGrazesEdge) return;
@@ -495,8 +499,6 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             StopMoveTowardCoroutine();
 
-            // Core rule:
-            // If relic Attack2 is still armed/active, use Attack2.
             if (IsRelicAttack2Active)
             {
                 if (!_attack2CooldownStarted)

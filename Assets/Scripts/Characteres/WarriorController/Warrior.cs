@@ -199,7 +199,7 @@ namespace Assets.Scripts.Characteres.WarriorController
         [SerializeField] private float sprintMinDuration = 0.05f;
         [SerializeField] private float sprintMinMultiplier = 1.01f;
         [SerializeField] private float sprintIgnoreRefreshInterval = 0.15f;
-        [SerializeField] private bool consumeSprintStackInsideWarrior = false;
+        [SerializeField] private bool consumeSprintStackInsideWarrior = true;
         // false = UI already consumed relic stack before calling Warrior (recommended for your setup)
 
         #region Max Jump height

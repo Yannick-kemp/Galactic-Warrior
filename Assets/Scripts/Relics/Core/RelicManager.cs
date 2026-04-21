@@ -237,7 +237,8 @@ namespace Assets.Scripts.Relics.Core
 
             int newCount = current - amount;
 
-            if (newCount <= 0) _counts.Remove(relicId);
+            if (newCount <= 0) 
+                _counts.Remove(relicId);
             else _counts[relicId] = newCount;
 
             if (_defsById.TryGetValue(relicId, out var def) && def != null)
@@ -261,5 +262,15 @@ namespace Assets.Scripts.Relics.Core
         {
             return !string.IsNullOrEmpty(relicId) && _ownedIds.Contains(relicId);
         }
+
+        public void RegisterDefinition(RelicDefinition def)
+{
+    if (def == null) return;
+
+    string id = GetId(def);
+    if (string.IsNullOrEmpty(id)) return;
+
+    _defsById[id] = def;
+}
     }
 }

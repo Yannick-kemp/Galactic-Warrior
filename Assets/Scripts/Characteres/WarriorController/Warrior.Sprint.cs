@@ -14,12 +14,8 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (CanDie) return false;
             if (string.IsNullOrEmpty(relicId)) return false;
             if (_sprintActive) return false;
-            // NEW: shield/sprint mutual exclusion
-
+            if (_sprintArmed) return false;   // NEW
             if (IsShieldBlockingSprintUse()) return false;
-
-            //if (Time.time < _nextSprintReadyTime)
-            //    return false;
 
             _sprintArmed = true;
             _sprintRelicId = relicId;
@@ -27,15 +23,9 @@ namespace Assets.Scripts.Characteres.WarriorController
             _sprintDuration = Mathf.Max(sprintMinDuration, duration);
             _sprintCooldown = Mathf.Max(0f, cooldown);
             _sprintConsumeOnUse = consumeOnUse;
-            _sprintArmFrame = Time.frameCount; // NEW
+            _sprintArmFrame = Time.frameCount;
 
             NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.12f));
-
-            if (!_sprintActive && (activesMoveCoroutine != null || Mathf.Abs(rigidbody2.linearVelocity.x) > 0.05f))
-            {
-                TryStartArmedSprintFromMove();
-            }
-
             return true;
         }
 
@@ -54,13 +44,13 @@ namespace Assets.Scripts.Characteres.WarriorController
                 var rm = GetComponent<RelicManager>();
                 if (rm == null)
                 {
-                    _sprintArmed = false;
+                    CancelArmedSprintRelic();
                     return false;
                 }
 
                 if (!rm.TryConsumeById(_sprintRelicId, 1))
                 {
-                    _sprintArmed = false;
+                    CancelArmedSprintRelic();
                     return false;
                 }
             }
@@ -161,6 +151,20 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             _sprintActive = false;
             _sprintArmed = false;
+            _sprintArmFrame = -1;
+        }
+
+        public void CancelArmedSprintRelic()
+        {
+            if (_sprintActive)
+                return;
+
+            _sprintArmed = false;
+            _sprintRelicId = null;
+            _sprintConsumeOnUse = false;
+            _sprintDuration = 0f;
+            _sprintSpeedMultiplier = 0f;
+            _sprintCooldown = 0f;
             _sprintArmFrame = -1;
         }
         #endregion

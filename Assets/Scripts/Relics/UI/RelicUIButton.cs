@@ -132,7 +132,7 @@ namespace Assets.Scripts.Relics.UI
             // NEW: hard guard while dead
             if (warrior.IsDead || warrior.CanDie) return;
             warrior.NotifyUIConsumedInput(worldInputBlockSeconds);
-
+       
             if (!HasResourceToUse())
                 return;
 
