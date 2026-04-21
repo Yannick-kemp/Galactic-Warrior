@@ -180,13 +180,13 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             bool a1 = HasBoolParam("isAttacking") && animator.GetBool("isAttacking");
             bool a2 = HasBoolParam("isAttacking2") && animator.GetBool("isAttacking2");
-            if (a1 || a2)
+            bool a3 = HasBoolParam("isAttacking3") && animator.GetBool("isAttacking3");
+
+            if (a1 || a2 || a3)
                 return true;
 
             var s = animator.GetCurrentAnimatorStateInfo(0);
             var n = animator.GetNextAnimatorStateInfo(0);
-            var b1 = s.IsTag("Attack");
-            var b2 = n.IsTag("Attack");
             return s.IsTag("Attack") || n.IsTag("Attack");
         }
         private void UpdateEcho()
@@ -265,14 +265,18 @@ namespace Assets.Scripts.Characteres.WarriorController
         public void ForceCancelCurrentAttack()
         {
             StopAttack2Sfx();
-            //    StopAttack2NovaFx();           // also kill novas on forced cancel
+
             if (animator == null) return;
 
             if (animator.GetBool("isAttacking"))
-            {
                 animator.SetBool("isAttacking", false);
 
-            }
+            if (animator.GetBool("isAttacking2"))
+                animator.SetBool("isAttacking2", false);
+
+            if (animator.GetBool("isAttacking3"))
+                animator.SetBool("isAttacking3", false);
+
             _attack1HitEventConsumed = true;
         }
 

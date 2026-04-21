@@ -28,7 +28,8 @@ namespace Assets.Scripts.Characteres.WarriorController
         public enum AttackAnimMode
         {
             Attack1,
-            Attack2
+            Attack2,
+            Attack3,
         }
 
         #endregion
@@ -381,6 +382,8 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (warriorMeteorBodyHitbox != null)
                 warriorMeteorBodyHitbox.enabled = true;
 
+            AwakeAttack3VisualDefaults();
+
 
         }
 
@@ -638,12 +641,22 @@ namespace Assets.Scripts.Characteres.WarriorController
         private void OnDisable()
         {
             ForceStopSprint();
+            HideIceChargeVfx();
+            HideAttack3Visuals();
+            HideAttack3Body();
+            ShowDefaultWarriorVisuals();
+            ResetAttack3OrbitAim();
             ClearArmedIceBall();
         }
 
         private void OnDestroy()
         {
             ForceStopSprint();
+            HideIceChargeVfx();
+            HideAttack3Visuals();
+            HideAttack3Body();
+            ShowDefaultWarriorVisuals();
+            ResetAttack3OrbitAim();
             ClearArmedIceBall();
         }
         private bool IsSprintBlockingShieldUse()

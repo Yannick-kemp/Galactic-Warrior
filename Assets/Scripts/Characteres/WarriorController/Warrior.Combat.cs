@@ -402,9 +402,17 @@ namespace Assets.Scripts.Characteres.WarriorController
                 return;
             }
 
-            // Attack2
-            //   PlayAttack2Sfx();          // play zoom/whoosh here
-            AttackAnimation2Display();
+            if (attackMode == AttackAnimMode.Attack2)
+            {
+                AttackAnimation2Display();
+                return;
+            }
+
+            if (attackMode == AttackAnimMode.Attack3)
+            {
+                AttackAnimation3Display();
+                return;
+            }
         }
         // Animation Event on the LAST frame of Attack1 clip
         public void AE_EndAttack1()
