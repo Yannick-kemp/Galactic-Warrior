@@ -7,23 +7,26 @@ namespace Assets.Scripts.Characteres.WarriorController
 {
     public partial class Warrior : CharacterController
     {
-        [Header("Ice Ball Cast")]
-        [SerializeField] private Transform attack3AimOrbit;
+        [Header("Attack3 IK / Ice Ball Cast")]
         [SerializeField] private GameObject bodyFixedRoot;
         [SerializeField] private GameObject attack3VisualsRoot;
-        [SerializeField] private Transform iceBallSpawnSocket;
-        [SerializeField] private Transform orbSocket;
-        [SerializeField] private GameObject iceChargeVfxPrefab;
-        [SerializeField] private float iceTouchGuardDuration = 0.12f;
-        [SerializeField] private float minIceAimDistance = 0.12f;
-        [SerializeField] private bool faceIceTargetWhenCasting = true;
-
-        [Header("Attack3 Orbit Aim")]
-        [SerializeField] private float attack3MinLocalAngle = -85f;
-        [SerializeField] private float attack3MaxLocalAngle = 85f;
-        [SerializeField] private bool resetAttack3AimOnEnd = true;
+        [SerializeField] private Transform attack3IkTarget;      // Attack3AimTarget
+        [SerializeField] private Transform attack3Shoulder;      // Attack3AimOrbit
+        [SerializeField] private Transform iceBallSpawnSocket;   // HandBoneEnd/IceBallSpawnSocket
+        [SerializeField] private Transform orbSocket;            // HandBoneEnd/OrbSocket
 
         [SerializeField] private SpriteRenderer defaultWarriorSpriteRenderer;
+        [SerializeField] private GameObject iceChargeVfxPrefab;
+
+        [Header("Attack3 IK Aim")]
+        [SerializeField] private bool useAttack3IK = true;
+        [SerializeField] private bool faceIceTargetWhenCasting = true;
+        [SerializeField] private float attack3DefaultAimDistance = 1.25f;
+        [SerializeField] private bool resetAttack3AimOnEnd = true;
+
+        [Header("Ice Ball Cast")]
+        [SerializeField] private float iceTouchGuardDuration = 0.12f;
+        [SerializeField] private float minIceAimDistance = 0.12f;
 
         private bool _iceBallArmed;
         private string _iceBallRelicId;
@@ -32,26 +35,19 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private bool _iceBallShotPending;
         private Vector2 _pendingIceBallAimWorld;
+        private bool _attack3Casting;
 
         private GameObject _iceChargeVfxInstance;
 
-        private bool _attack3AimOrbitCached;
-        private Quaternion _attack3AimOrbitBaseLocalRotation;
-
-        private bool _attack3Casting;
-
         public bool IsIceBallArmed => _iceBallArmed;
+        public bool IsAttack3Casting => _attack3Casting;
+        public bool IsIceBallShotPending => _iceBallShotPending;
 
         private void AwakeAttack3VisualDefaults()
         {
             ShowDefaultWarriorVisuals();
-
-            if (bodyFixedRoot != null)
-                bodyFixedRoot.SetActive(false);
-
-            if (attack3VisualsRoot != null)
-                attack3VisualsRoot.SetActive(false);
-
+            HideAttack3Body();
+            HideAttack3Visuals();
             HideIceChargeVfx();
             ResetAttack3OrbitAim();
             EndAttack3Lock();
@@ -67,6 +63,30 @@ namespace Assets.Scripts.Characteres.WarriorController
         {
             if (defaultWarriorSpriteRenderer != null)
                 defaultWarriorSpriteRenderer.enabled = false;
+        }
+
+        private void ShowAttack3Body()
+        {
+            if (bodyFixedRoot != null && !bodyFixedRoot.activeSelf)
+                bodyFixedRoot.SetActive(true);
+        }
+
+        private void HideAttack3Body()
+        {
+            if (bodyFixedRoot != null && bodyFixedRoot.activeSelf)
+                bodyFixedRoot.SetActive(false);
+        }
+
+        private void ShowAttack3Visuals()
+        {
+            if (attack3VisualsRoot != null && !attack3VisualsRoot.activeSelf)
+                attack3VisualsRoot.SetActive(true);
+        }
+
+        private void HideAttack3Visuals()
+        {
+            if (attack3VisualsRoot != null && attack3VisualsRoot.activeSelf)
+                attack3VisualsRoot.SetActive(false);
         }
 
         private void BeginAttack3Lock()
@@ -96,13 +116,7 @@ namespace Assets.Scripts.Characteres.WarriorController
         public bool TryArmIceBallRelic(IceBallRelic def, bool consumeOnCast)
         {
             if (def == null) return false;
-
-            if (def.projectilePrefab == null)
-            {
-                Debug.LogWarning("[Warrior] IceBallRelic has no projectilePrefab assigned.", this);
-                return false;
-            }
-
+            if (def.projectilePrefab == null) return false;
             if (IsDead || CanDie) return false;
             if (_iceBallArmed) return false;
             if (_iceBallShotPending) return false;
@@ -113,24 +127,19 @@ namespace Assets.Scripts.Characteres.WarriorController
             _iceBallConsumeOnCast = consumeOnCast;
             _iceBallArmed = true;
 
-            CacheAttack3AimOrbitIfNeeded();
             NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, iceTouchGuardDuration));
             return true;
         }
 
-        private void CacheAttack3AimOrbitIfNeeded()
-        {
-            if (_attack3AimOrbitCached) return;
-
-            _attack3AimOrbitCached = true;
-
-            if (attack3AimOrbit != null)
-                _attack3AimOrbitBaseLocalRotation = attack3AimOrbit.localRotation;
-        }
-
         private bool TryHandleArmedIceBallTouch()
         {
+            if (_attack3Casting || _iceBallShotPending)
+                return true;
+
             if (!_iceBallArmed)
+                return false;
+
+            if (InputMgr.Instance == null)
                 return false;
 
             BeginArmedIceBallCast(InputMgr.Instance.TouchedVector);
@@ -180,6 +189,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             }
 
             ApplyAttack3OrbitAim(_pendingIceBallAimWorld);
+
             HideDefaultWarriorVisuals();
             ShowAttack3Body();
             ShowAttack3Visuals();
@@ -194,24 +204,14 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void ApplyAttack3OrbitAim(Vector2 targetWorld)
         {
-            CacheAttack3AimOrbitIfNeeded();
-
-            if (attack3AimOrbit == null)
+            if (!useAttack3IK)
                 return;
 
-            Vector3 localTarget = transform.InverseTransformPoint(targetWorld);
-            Vector3 localPivot = transform.InverseTransformPoint(attack3AimOrbit.position);
-            Vector2 localDir = (Vector2)(localTarget - localPivot);
-
-            if (localDir.sqrMagnitude <= 0.0001f)
+            if (attack3IkTarget == null)
                 return;
 
-            float localAngle = Mathf.Atan2(localDir.y, localDir.x) * Mathf.Rad2Deg;
-            localAngle = Mathf.Clamp(localAngle, attack3MinLocalAngle, attack3MaxLocalAngle);
-
-            attack3AimOrbit.localRotation =
-                _attack3AimOrbitBaseLocalRotation *
-                Quaternion.Euler(0f, 0f, localAngle);
+            // Exact alignment: target follows the touched world point directly.
+            attack3IkTarget.position = targetWorld;
         }
 
         private void ResetAttack3OrbitAim()
@@ -219,34 +219,14 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (!resetAttack3AimOnEnd)
                 return;
 
-            CacheAttack3AimOrbitIfNeeded();
+            if (attack3IkTarget == null || attack3Shoulder == null)
+                return;
 
-            if (attack3AimOrbit != null)
-                attack3AimOrbit.localRotation = _attack3AimOrbitBaseLocalRotation;
-        }
+            Vector2 shoulderWorld = attack3Shoulder.position;
+            Vector2 defaultDir = rightFacing ? Vector2.right : Vector2.left;
 
-        private void ShowAttack3Body()
-        {
-            if (bodyFixedRoot != null && !bodyFixedRoot.activeSelf)
-                bodyFixedRoot.SetActive(true);
-        }
-
-        private void HideAttack3Body()
-        {
-            if (bodyFixedRoot != null && bodyFixedRoot.activeSelf)
-                bodyFixedRoot.SetActive(false);
-        }
-
-        private void ShowAttack3Visuals()
-        {
-            if (attack3VisualsRoot != null && !attack3VisualsRoot.activeSelf)
-                attack3VisualsRoot.SetActive(true);
-        }
-
-        private void HideAttack3Visuals()
-        {
-            if (attack3VisualsRoot != null && attack3VisualsRoot.activeSelf)
-                attack3VisualsRoot.SetActive(false);
+            attack3IkTarget.position =
+                shoulderWorld + defaultDir * Mathf.Max(minIceAimDistance, attack3DefaultAimDistance);
         }
 
         public void AE_FireIceBall()
@@ -258,7 +238,7 @@ namespace Assets.Scripts.Characteres.WarriorController
         {
             if (!_iceBallShotPending) return;
 
-            if (_armedIceBallDef == null)
+            if (_armedIceBallDef == null || _armedIceBallDef.projectilePrefab == null)
             {
                 CancelPendingIceBallCast();
                 return;
@@ -271,7 +251,7 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             GameObject go = Instantiate(_armedIceBallDef.projectilePrefab, spawnPos, Quaternion.identity);
 
-            IceBallProjectile projectile = go.GetComponent<IceBallProjectile>();
+            IceBulletProjectile projectile = go.GetComponent<IceBulletProjectile>();
             if (projectile != null)
             {
                 projectile.Init(
@@ -285,9 +265,11 @@ namespace Assets.Scripts.Characteres.WarriorController
             }
             else
             {
+                // Fallback only if prefab was not set up correctly
                 Rigidbody2D rb = go.GetComponent<Rigidbody2D>();
                 if (rb != null)
                 {
+                    go.transform.right = shootDir;
                     rb.gravityScale = 0f;
                     rb.linearVelocity = shootDir * _armedIceBallDef.projectileSpeed;
                 }

@@ -402,6 +402,12 @@ namespace Assets.Scripts.Characteres.WarriorController
             UpdateLowHealthBlink();   // optional safety
 
             _activeSlashEffects.RemoveAll(slash => slash == null);
+            // CRITICAL: Continuous tracking while the Warrior is in the casting state
+            if (_attack3Casting && _iceBallShotPending && InputMgr.Instance != null && InputMgr.Instance.IsScreenTouched())
+            {
+                _pendingIceBallAimWorld = InputMgr.Instance.TouchedVector;
+                ApplyAttack3OrbitAim(_pendingIceBallAimWorld);
+            }
         }
 
         private void FixedUpdate()
