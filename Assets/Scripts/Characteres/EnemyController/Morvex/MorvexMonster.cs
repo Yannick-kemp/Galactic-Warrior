@@ -75,8 +75,26 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         private Vector3 retreatTarget;
         private Vector3 committedDropPosition;
 
+        private Collider2D[] _selfColliders;
+
         public bool HasStone => hasStone;
         public StoneReserve CurrentReserve => currentReserve;
+
+        protected override void Awake()
+        {
+            base.Awake();
+
+            if (visualRoot == null)
+                visualRoot = transform;
+
+            if (holdPoint == null)
+                holdPoint = transform;
+
+            _selfColliders = GetComponentsInChildren<Collider2D>(true);
+
+            idleAnchor = transform.position;
+            SetCarriedStoneVisible(false);
+        }
 
         protected override void Start()
         {
@@ -103,6 +121,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (autoDiscoverReserves)
                 DiscoverReserves();
 
+            IgnoreAllPlatformCollisions(true);
+
             idleAnchor = transform.position;
             SetCarriedStoneVisible(false);
             EnterState(State.Idle);
@@ -110,6 +130,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         protected override void Update()
         {
+            CheckWorldYDeathFallback();
+
             if (StopMovingWhenWarriorDie)
                 return;
 
@@ -155,6 +177,19 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             }
 
             UpdateCarriedStoneVisualPosition();
+        }
+
+        protected override void FixedUpdate()
+        {
+            // Morvex is a flyer: never use grounded platform detection.
+            CurrentplatForm = null;
+
+            if (rigidbody2 != null)
+            {
+                rigidbody2.gravityScale = 0f;
+                rigidbody2.linearVelocity = Vector2.zero;
+                rigidbody2.angularVelocity = 0f;
+            }
         }
 
         public override void TakeDamage(float damage)
@@ -241,10 +276,19 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 return;
             }
 
-            Vector3 targetPosition = currentReserve.GetGrabWorldPosition();
-            FlyTowards(targetPosition, flySpeed);
+            Vector3 approachPos = currentReserve.GetApproachWorldPosition();
+            float approachArriveDistance = Mathf.Max(arriveDistance, 0.2f);
 
-            if (Vector2.Distance(transform.position, targetPosition) <= arriveDistance)
+            if (Vector2.Distance(transform.position, approachPos) > approachArriveDistance)
+            {
+                FlyTowards(approachPos, flySpeed);
+                return;
+            }
+
+            Vector3 grabPos = currentReserve.GetGrabWorldPosition();
+            FlyTowards(grabPos, flySpeed);
+
+            if (Vector2.Distance(transform.position, grabPos) <= arriveDistance)
                 EnterState(State.GrabStone);
         }
 
@@ -403,7 +447,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 if (!reserve.HasStones)
                     continue;
 
-                float distanceSqr = (reserve.transform.position - transform.position).sqrMagnitude;
+                float distanceSqr = (reserve.GetApproachWorldPosition() - transform.position).sqrMagnitude;
                 if (distanceSqr < bestDistanceSqr)
                 {
                     bestDistanceSqr = distanceSqr;
@@ -497,6 +541,41 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         public void ForceSearchNewReserve()
         {
             EnterState(State.SearchNewReserve);
+        }
+
+        private void IgnoreAllPlatformCollisions(bool ignore)
+        {
+            if (_selfColliders == null || _selfColliders.Length == 0)
+                return;
+
+            var platforms = FindObjectsByType<PlatFormColliderTrigger>(FindObjectsSortMode.None);
+
+            foreach (var platform in platforms)
+            {
+                if (platform == null)
+                    continue;
+
+                if (platform.platformCollider != null)
+                    SetIgnoreAgainst(platform.platformCollider, ignore);
+
+                if (platform.platformTrigger != null)
+                    SetIgnoreAgainst(platform.platformTrigger, ignore);
+            }
+        }
+
+        private void SetIgnoreAgainst(Collider2D other, bool ignore)
+        {
+            if (other == null || _selfColliders == null)
+                return;
+
+            for (int i = 0; i < _selfColliders.Length; i++)
+            {
+                var self = _selfColliders[i];
+                if (self == null)
+                    continue;
+
+                Physics2D.IgnoreCollision(self, other, ignore);
+            }
         }
 
         protected override void OnTriggerEnter2D(Collider2D collision)

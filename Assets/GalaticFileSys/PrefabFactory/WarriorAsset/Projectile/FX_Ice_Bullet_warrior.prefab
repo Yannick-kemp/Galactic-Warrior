@@ -187,3 +187,8 @@ MonoBehaviour:
   hitFxDestroyAfter: 0.8
   hitFxOffset: {x: 0, y: 0, z: 0}
   rotateToTravelDirection: 1
+  hitSfxClip: {fileID: 8300000, guid: 0d077a44fc72b9a478b2e351088730ea, type: 3}
+  hitSfxVolume: 0.9
+  hitSfxPitchRange: {x: 0.98, y: 1.02}
+  hitSfxSpatialBlend: 0
+  hitSfxMaxDistance: 20

@@ -1,7 +1,7 @@
 ﻿using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Characteres.WarriorController;
 using Assets.Scripts.Relics.Events;
-using System.Collections;
+using Assets.Scripts.Tools;
 using UnityEngine;
 
 namespace Assets.Scripts.Relics.Projectiles
@@ -23,6 +23,13 @@ namespace Assets.Scripts.Relics.Projectiles
 
         [Header("Orientation")]
         [SerializeField] private bool rotateToTravelDirection = true;
+
+        [Header("Hit SFX")]
+        [SerializeField] private AudioClip hitSfxClip; // assign arrow-impact-87260
+        [SerializeField, Range(0f, 1f)] private float hitSfxVolume = 0.9f;
+        [SerializeField] private Vector2 hitSfxPitchRange = new Vector2(0.98f, 1.02f);
+        [SerializeField] private float hitSfxSpatialBlend = 0f;
+        [SerializeField] private float hitSfxMaxDistance = 20f;
 
         private Warrior _owner;
         private PlayerEventHub _hub;
@@ -179,20 +186,31 @@ namespace Assets.Scripts.Relics.Projectiles
 
         private void SpawnHitFx(Vector3 hitPoint)
         {
-            if (hitFxPrefab == null) return;
+            Vector3 fxPos = hitPoint + hitFxOffset;
 
-            GameObject fx = Instantiate(
-                hitFxPrefab,
-                hitPoint + hitFxOffset,
-                Quaternion.identity);
+            GameObject fx = null;
 
-            ParticleSystem[] systems = fx.GetComponentsInChildren<ParticleSystem>(true);
-            for (int i = 0; i < systems.Length; i++)
+            if (hitFxPrefab != null)
             {
-                systems[i].Play(true);
+                fx = Instantiate(hitFxPrefab, fxPos, Quaternion.identity);
+
+                ParticleSystem[] systems = fx.GetComponentsInChildren<ParticleSystem>(true);
+                for (int i = 0; i < systems.Length; i++)
+                {
+                    systems[i].Play(true);
+                }
+
+                Destroy(fx, Mathf.Max(0.1f, hitFxDestroyAfter));
             }
 
-            Destroy(fx, Mathf.Max(0.1f, hitFxDestroyAfter));
+            OneShotAudio.Play(
+                hitSfxClip,
+                fxPos,
+                hitSfxVolume,
+                hitSfxPitchRange,
+                hitSfxSpatialBlend,
+                hitSfxMaxDistance
+            );
         }
 
         private void SpendAndDestroy()

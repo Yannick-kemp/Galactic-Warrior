@@ -179,6 +179,8 @@ namespace Assets.Scripts.Characteres.WarriorController
             StopJumpTowardCoroutine();
             BeginAttack3Lock();
 
+            PlayAttack3CastSfx();
+
             if (animator != null && animator.GetBool("IsLosingCtrl"))
                 animator.SetBool("IsLosingCtrl", false);
 
