@@ -28,7 +28,8 @@ namespace Assets.Scripts.Characteres.WarriorController
         public enum AttackAnimMode
         {
             Attack1,
-            Attack2
+            Attack2,
+            Attack3,
         }
 
         #endregion
@@ -198,7 +199,7 @@ namespace Assets.Scripts.Characteres.WarriorController
         [SerializeField] private float sprintMinDuration = 0.05f;
         [SerializeField] private float sprintMinMultiplier = 1.01f;
         [SerializeField] private float sprintIgnoreRefreshInterval = 0.15f;
-        [SerializeField] private bool consumeSprintStackInsideWarrior = false;
+        [SerializeField] private bool consumeSprintStackInsideWarrior = true;
         // false = UI already consumed relic stack before calling Warrior (recommended for your setup)
 
         #region Max Jump height
@@ -381,6 +382,8 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (warriorMeteorBodyHitbox != null)
                 warriorMeteorBodyHitbox.enabled = true;
 
+            AwakeAttack3VisualDefaults();
+
 
         }
 
@@ -399,6 +402,12 @@ namespace Assets.Scripts.Characteres.WarriorController
             UpdateLowHealthBlink();   // optional safety
 
             _activeSlashEffects.RemoveAll(slash => slash == null);
+            // CRITICAL: Continuous tracking while the Warrior is in the casting state
+            if (_attack3Casting && _iceBallShotPending && InputMgr.Instance != null && InputMgr.Instance.IsScreenTouched())
+            {
+                _pendingIceBallAimWorld = InputMgr.Instance.TouchedVector;
+                ApplyAttack3OrbitAim(_pendingIceBallAimWorld);
+            }
         }
 
         private void FixedUpdate()
@@ -638,11 +647,23 @@ namespace Assets.Scripts.Characteres.WarriorController
         private void OnDisable()
         {
             ForceStopSprint();
+            HideIceChargeVfx();
+            HideAttack3Visuals();
+            HideAttack3Body();
+            ShowDefaultWarriorVisuals();
+            ResetAttack3OrbitAim();
+            ClearArmedIceBall();
         }
 
         private void OnDestroy()
         {
             ForceStopSprint();
+            HideIceChargeVfx();
+            HideAttack3Visuals();
+            HideAttack3Body();
+            ShowDefaultWarriorVisuals();
+            ResetAttack3OrbitAim();
+            ClearArmedIceBall();
         }
         private bool IsSprintBlockingShieldUse()
         {

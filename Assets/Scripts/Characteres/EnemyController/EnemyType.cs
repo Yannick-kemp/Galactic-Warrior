@@ -8,4 +8,5 @@
     P39,
     Raka,
     BeeEretic,
+    Morvex
 }

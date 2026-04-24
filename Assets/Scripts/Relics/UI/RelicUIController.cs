@@ -194,7 +194,6 @@ public class RelicUIController : MonoBehaviour
     {
         if (index < 0 || index >= rules.Count) return;
         if (relicManager == null) return;
-
         if (IsWarriorUnavailable()) return;
 
         var r = rules[index];
@@ -203,7 +202,7 @@ public class RelicUIController : MonoBehaviour
         string relicId = ResolveRelicId(r);
         if (string.IsNullOrEmpty(relicId)) return;
 
-        // NEW: hard block before any consume
+        // hard block before any consume
         if (IsBlockedByMutualExclusion(r))
         {
             RefreshButton(r);
@@ -215,43 +214,61 @@ public class RelicUIController : MonoBehaviour
 
         int consume = Mathf.Max(1, r.consumeStacks);
 
-        // Optional pre-check to avoid effect trigger with no resource
+        // pre-check resource
         if (relicManager.GetCountById(relicId) < consume)
         {
             RefreshButton(r);
             return;
         }
 
-        // ---- APPLY EFFECT FIRST FOR SHIELD (because it can fail due to sprint) ----
+        // ICE BALL: arm now, consume later on world touch
+        if (r.slot != null && r.slot.Definition is IceBallRelic iceDef)
+        {
+            bool armed = warrior != null && warrior.TryArmIceBallRelic(iceDef, consumeOnCast: true);
+            RefreshButton(r);
+            return;
+        }
+
+        // SPRINT: arm now, consume later on world touch / actual sprint start
+        if (r.slot != null && r.slot.Definition is SprintRelic sprintDef)
+        {
+            bool armed = warrior != null && warrior.TryArmSprintRelic(
+                relicId: relicId,
+                speedMultiplier: sprintDef.speedMultiplier,
+                duration: sprintDef.sprintDuration,
+                cooldown: sprintDef.sprintCooldown,
+                consumeOnUse: true);
+
+            RefreshButton(r);
+            return;
+        }
+
+        // SHIELD: activate first, consume only if activation succeeds
         if (r.effect == RelicUseEffect.ShieldTimed)
         {
             float duration = ResolveShieldDuration(r);
 
-            // Actually ask Warrior to activate shield (will fail if sprint active/armed or cooldown)
             bool used = warrior != null && warrior.TryUseShieldRelic(duration);
             if (!used)
             {
                 RefreshButton(r);
-                return; // IMPORTANT: no consume
+                return;
             }
 
-            // Only now consume + visuals
             bool consumed = relicManager.TryConsumeById(relicId, consume);
             if (!consumed)
             {
-                // If this happens, it's usually a double-click/double-handler issue
-                // (see note below)
                 RefreshButton(r);
                 return;
             }
 
             StartTimedVisual(r, duration);
-            r.onUsed?.Invoke(); // optional if you still need extra callbacks
+            r.onUsed?.Invoke();
             RefreshButton(r);
             return;
         }
 
-        // ---- Existing flow for non-shield effects ----
+        // Other relics: instant consume + effect
         bool consumedDefault = relicManager.TryConsumeById(relicId, consume);
         if (!consumedDefault)
         {
@@ -421,7 +438,13 @@ public class RelicUIController : MonoBehaviour
         // NEW: block interactable if mutually exclusive state is active
         bool blocked = IsBlockedByMutualExclusion(r);
 
-        r.button.interactable = hasCount && !blocked;
+        bool blockedByIceArmed =
+    r.slot != null &&
+    r.slot.Definition is IceBallRelic &&
+    warrior != null &&
+    warrior.IsIceBallArmed;
+
+        r.button.interactable = hasCount && !blocked && !blockedByIceArmed;
     }
 
     private void StopAllRunningFx()
@@ -461,7 +484,7 @@ public class RelicUIController : MonoBehaviour
         // Sprint button blocked while shield is up
         bool isSprintRule = (r.slot != null && r.slot.Definition is SprintRelic);
         if (isSprintRule)
-            return warrior.ShieldIsUp;
+            return warrior.ShieldIsUp || warrior.IsSprintArmed || warrior.IsDodging;
 
         return false;
     }

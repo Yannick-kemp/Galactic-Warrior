@@ -402,9 +402,17 @@ namespace Assets.Scripts.Characteres.WarriorController
                 return;
             }
 
-            // Attack2
-            //   PlayAttack2Sfx();          // play zoom/whoosh here
-            AttackAnimation2Display();
+            if (attackMode == AttackAnimMode.Attack2)
+            {
+                AttackAnimation2Display();
+                return;
+            }
+
+            if (attackMode == AttackAnimMode.Attack3)
+            {
+                AttackAnimation3Display();
+                return;
+            }
         }
         // Animation Event on the LAST frame of Attack1 clip
         public void AE_EndAttack1()
@@ -478,6 +486,10 @@ namespace Assets.Scripts.Characteres.WarriorController
         public void RequestPrimaryAttackFromUIButton()
         {
             NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.15f));
+
+            if (_attack3Casting)
+                return;
+
             if (CanDie) return;
             if (!CanMove || !CanAttackWarrior) return;
             if (activesJumpCoroutine != null || IsFalling || IsFallingGrazesEdge) return;
@@ -487,8 +499,6 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             StopMoveTowardCoroutine();
 
-            // Core rule:
-            // If relic Attack2 is still armed/active, use Attack2.
             if (IsRelicAttack2Active)
             {
                 if (!_attack2CooldownStarted)

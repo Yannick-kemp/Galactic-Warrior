@@ -73,7 +73,8 @@ namespace Assets.Scripts.Relics.UI
             bool hasResource = _rm.GetCount(definition) > 0;
             bool canUseNow = !warrior.IsDead && !warrior.CanDie;
 
-            _btn.interactable = hasResource && canUseNow;
+            bool blockedByIceArmed = definition is IceBallRelic && warrior != null && warrior.IsIceBallArmed;
+            _btn.interactable = hasResource && canUseNow && !blockedByIceArmed;
         }
 
         private void OnDestroy()
@@ -131,7 +132,7 @@ namespace Assets.Scripts.Relics.UI
             // NEW: hard guard while dead
             if (warrior.IsDead || warrior.CanDie) return;
             warrior.NotifyUIConsumedInput(worldInputBlockSeconds);
-
+       
             if (!HasResourceToUse())
                 return;
 
@@ -158,6 +159,19 @@ namespace Assets.Scripts.Relics.UI
                     consumeOnUse: ShouldConsumeOnUse());
 
                 if (!armed) return;
+                return;
+            }
+
+            // Ice Ball relic branch (arm now, consume on next world touch)
+            if (definition is IceBallRelic iceDef)
+            {
+                bool armed = warrior.TryArmIceBallRelic(
+                    iceDef,
+                    consumeOnCast: ShouldConsumeOnUse());
+
+                if (!armed)
+                    return;
+
                 return;
             }
             // 2) Attack2 relic branch

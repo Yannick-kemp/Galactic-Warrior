@@ -75,8 +75,26 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         private Vector3 retreatTarget;
         private Vector3 committedDropPosition;
 
+        private Collider2D[] _selfColliders;
+
         public bool HasStone => hasStone;
         public StoneReserve CurrentReserve => currentReserve;
+
+        protected override void Awake()
+        {
+            base.Awake();
+
+            if (visualRoot == null)
+                visualRoot = transform;
+
+            if (holdPoint == null)
+                holdPoint = transform;
+
+            _selfColliders = GetComponentsInChildren<Collider2D>(true);
+
+            idleAnchor = transform.position;
+            SetHasStone(false);
+        }
 
         protected override void Start()
         {
@@ -96,20 +114,40 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             {
                 rigidbody2.gravityScale = 0f;
                 rigidbody2.linearVelocity = Vector2.zero;
+                rigidbody2.angularVelocity = 0f;
             }
+
+            CurrentplatForm = null;
 
             FindWarriorIfMissing();
 
             if (autoDiscoverReserves)
                 DiscoverReserves();
 
+            IgnoreAllPlatformCollisions(true);
+
             idleAnchor = transform.position;
-            SetCarriedStoneVisible(false);
+            SetHasStone(false);
             EnterState(State.Idle);
+        }
+
+        protected override void FixedUpdate()
+        {
+            // Morvex is a flyer: never use grounded platform detection.
+            CurrentplatForm = null;
+
+            if (rigidbody2 != null)
+            {
+                rigidbody2.gravityScale = 0f;
+                rigidbody2.linearVelocity = Vector2.zero;
+                rigidbody2.angularVelocity = 0f;
+            }
         }
 
         protected override void Update()
         {
+            CheckWorldYDeathFallback();
+
             if (StopMovingWhenWarriorDie)
                 return;
 
@@ -131,24 +169,31 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 case State.Idle:
                     UpdateIdle();
                     break;
+
                 case State.FlyToReserve:
                     UpdateFlyToReserve();
                     break;
+
                 case State.GrabStone:
                     UpdateGrabStone();
                     break;
+
                 case State.FlyAboveWarrior:
                     UpdateFlyAboveWarrior();
                     break;
+
                 case State.DropStone:
                     UpdateDropStone();
                     break;
+
                 case State.Retreat:
                     UpdateRetreat();
                     break;
+
                 case State.SearchNewReserve:
                     UpdateSearchNewReserve();
                     break;
+
                 case State.NoReserveMode:
                     UpdateNoReserveMode();
                     break;
@@ -164,8 +209,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (hasStone)
                 DropStone();
 
+            if (IsDeadOrDying)
+                return;
+
             stunTimer = hitStunDuration;
             LosingBalanceAnimationDisplay();
+            RefreshCarryAnimator();
         }
 
         private void FindWarriorIfMissing()
@@ -191,28 +240,34 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             {
                 case State.Idle:
                     idleAnchor = transform.position;
-                    WaitAnimationDisplay();
+                    PlayFlyAnimation();
                     break;
+
                 case State.GrabStone:
                     stateTimer = grabDuration;
-                    WaitAnimationDisplay();
+                    PlayFlyAnimation();
                     break;
+
                 case State.DropStone:
                     stateTimer = dropWindup;
-                    committedDropPosition = new Vector3(transform.position.x, transform.position.y, transform.position.z);
+                    committedDropPosition = transform.position;
                     AttackAnimationDisplay();
+                    RefreshCarryAnimator();
                     break;
+
                 case State.Retreat:
                     stateTimer = retreatDuration;
                     retreatTarget = BuildRetreatTarget();
-                    RunAnimationDisplay();
+                    PlayFlyAnimation();
                     break;
+
                 case State.NoReserveMode:
                     noReserveRecheckTimer = 0f;
-                    RunAnimationDisplay();
+                    PlayFlyAnimation();
                     break;
+
                 default:
-                    RunAnimationDisplay();
+                    PlayFlyAnimation();
                     break;
             }
         }
@@ -241,10 +296,19 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 return;
             }
 
-            Vector3 targetPosition = currentReserve.GetGrabWorldPosition();
-            FlyTowards(targetPosition, flySpeed);
+            Vector3 approachPos = currentReserve.GetApproachWorldPosition();
+            float approachArriveDistance = Mathf.Max(arriveDistance, 0.2f);
 
-            if (Vector2.Distance(transform.position, targetPosition) <= arriveDistance)
+            if (Vector2.Distance(transform.position, approachPos) > approachArriveDistance)
+            {
+                FlyTowards(approachPos, flySpeed);
+                return;
+            }
+
+            Vector3 grabPos = currentReserve.GetGrabWorldPosition();
+            FlyTowards(grabPos, flySpeed);
+
+            if (Vector2.Distance(transform.position, grabPos) <= arriveDistance)
                 EnterState(State.GrabStone);
         }
 
@@ -268,8 +332,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 return;
             }
 
-            hasStone = true;
-            SetCarriedStoneVisible(true);
+            SetHasStone(true);
             EnterState(State.FlyAboveWarrior);
         }
 
@@ -320,6 +383,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 return;
 
             DropStone();
+
+            // Immediately after the release, Morvex is now in no-stone flight.
             EnterState(State.Retreat);
         }
 
@@ -375,13 +440,17 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (!hasStone)
                 return;
 
-            hasStone = false;
-            SetCarriedStoneVisible(false);
+            Vector3 spawnPosition = holdPoint != null ? holdPoint.position : transform.position;
+
+            SetHasStone(false);
+
+            // Force immediate switch to the no-stone flying animation
+            // the exact moment the stone is released.
+            PlayFlyAnimation();
 
             if (fallingStonePrefab == null)
                 return;
 
-            Vector3 spawnPosition = holdPoint != null ? holdPoint.position : transform.position;
             FallingStone stone = Instantiate(fallingStonePrefab, spawnPosition, Quaternion.identity);
             stone.Launch();
         }
@@ -403,7 +472,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 if (!reserve.HasStones)
                     continue;
 
-                float distanceSqr = (reserve.transform.position - transform.position).sqrMagnitude;
+                float distanceSqr = (reserve.GetApproachWorldPosition() - transform.position).sqrMagnitude;
                 if (distanceSqr < bestDistanceSqr)
                 {
                     bestDistanceSqr = distanceSqr;
@@ -434,9 +503,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             Vector3 delta = nextPosition - transform.position;
 
             transform.position = nextPosition;
+            CurrentplatForm = null;
 
             if (rigidbody2 != null)
+            {
+                rigidbody2.gravityScale = 0f;
                 rigidbody2.linearVelocity = Vector2.zero;
+                rigidbody2.angularVelocity = 0f;
+            }
 
             UpdateFacing(delta.x);
         }
@@ -474,10 +548,40 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             visualRoot.localScale = scale;
         }
 
-        private void SetCarriedStoneVisible(bool visible)
+        private void SetHasStone(bool value)
         {
+            hasStone = value;
+
             if (carriedStoneVisual != null)
-                carriedStoneVisual.SetActive(visible);
+                carriedStoneVisual.SetActive(hasStone);
+
+            RefreshCarryAnimator();
+        }
+
+        private void RefreshCarryAnimator()
+        {
+            if (animator == null)
+                return;
+
+            animator.SetBool("hasStone", hasStone);
+        }
+
+        private void PlayFlyAnimation()
+        {
+            if (animator == null)
+                return;
+
+            animator.SetBool("isWaiting", false);
+            animator.SetBool("isJumping", false);
+            animator.SetBool("isRunning", true);
+            animator.SetBool("isWalking", false);
+            animator.SetBool("isAttacking", false);
+            animator.SetBool("isAttacking2", false);
+            animator.SetBool("isAttacking3", false);
+            animator.SetBool("isDying", false);
+            animator.SetBool("IsLosingCtrl", false);
+
+            RefreshCarryAnimator();
         }
 
         private void UpdateCarriedStoneVisualPosition()
@@ -497,6 +601,41 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         public void ForceSearchNewReserve()
         {
             EnterState(State.SearchNewReserve);
+        }
+
+        private void IgnoreAllPlatformCollisions(bool ignore)
+        {
+            if (_selfColliders == null || _selfColliders.Length == 0)
+                return;
+
+            var platforms = FindObjectsByType<PlatFormColliderTrigger>(FindObjectsSortMode.None);
+
+            foreach (var platform in platforms)
+            {
+                if (platform == null)
+                    continue;
+
+                if (platform.platformCollider != null)
+                    SetIgnoreAgainst(platform.platformCollider, ignore);
+
+                if (platform.platformTrigger != null)
+                    SetIgnoreAgainst(platform.platformTrigger, ignore);
+            }
+        }
+
+        private void SetIgnoreAgainst(Collider2D other, bool ignore)
+        {
+            if (other == null || _selfColliders == null)
+                return;
+
+            for (int i = 0; i < _selfColliders.Length; i++)
+            {
+                var self = _selfColliders[i];
+                if (self == null)
+                    continue;
+
+                Physics2D.IgnoreCollision(self, other, ignore);
+            }
         }
 
         protected override void OnTriggerEnter2D(Collider2D collision)

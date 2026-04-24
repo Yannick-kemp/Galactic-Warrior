@@ -52,8 +52,8 @@ public class CharacterController : Character, ICharacterController
         Speed = 6;
         base.Start();
     }
-    public void
-    WaitAnimationDisplay()
+
+    public void WaitAnimationDisplay()
     {
         animator.SetBool("isWaiting", true);
         animator.SetBool("isJumping", false);
@@ -61,9 +61,11 @@ public class CharacterController : Character, ICharacterController
         animator.SetBool("isDying", false);
         animator.SetBool("isAttacking", false);
         animator.SetBool("isAttacking2", false);
+        animator.SetBool("isAttacking3", false);
         animator.SetBool("IsLosingCtrl", false);
         animator.SetBool("isWalking", false);
     }
+
     public void JumpAnimationDisplay()
     {
         animator.SetBool("isWaiting", false);
@@ -72,8 +74,11 @@ public class CharacterController : Character, ICharacterController
         animator.SetBool("isAttacking", false);
         animator.SetBool("IsLosingCtrl", false);
         animator.SetBool("isAttacking2", false);
+        animator.SetBool("isAttacking3", false);
         animator.SetBool("isDying", false);
+        animator.SetBool("isWalking", false);
     }
+
     public void RunAnimationDisplay()
     {
         animator.SetBool("isWaiting", false);
@@ -83,9 +88,10 @@ public class CharacterController : Character, ICharacterController
         animator.SetBool("isWalking", false);
         animator.SetBool("isDying", false);
         animator.SetBool("isAttacking2", false);
+        animator.SetBool("isAttacking3", false);
         animator.SetBool("IsLosingCtrl", false);
-
     }
+
     public void WalkAnimationDisplay()
     {
         animator.SetBool("isWaiting", false);
@@ -95,7 +101,10 @@ public class CharacterController : Character, ICharacterController
         animator.SetBool("isDying", false);
         animator.SetBool("isWalking", true);
         animator.SetBool("isAttacking2", false);
+        animator.SetBool("isAttacking3", false);
+        animator.SetBool("IsLosingCtrl", false);
     }
+
     public void AttackAnimationDisplay()
     {
         animator.SetBool("isWaiting", false);
@@ -105,6 +114,8 @@ public class CharacterController : Character, ICharacterController
         animator.SetBool("isAttacking", true);
         animator.SetBool("isDying", false);
         animator.SetBool("isAttacking2", false);
+        animator.SetBool("isAttacking3", false);
+        animator.SetBool("IsLosingCtrl", false);
     }
 
     public void AttackAnimation2Display()
@@ -116,8 +127,23 @@ public class CharacterController : Character, ICharacterController
         animator.SetBool("isAttacking", false);
         animator.SetBool("isDying", false);
         animator.SetBool("isAttacking2", true);
-
+        animator.SetBool("isAttacking3", false);
+        animator.SetBool("IsLosingCtrl", false);
     }
+
+    public void AttackAnimation3Display()
+    {
+        animator.SetBool("isWaiting", false);
+        animator.SetBool("isWalking", false);
+        animator.SetBool("isRunning", false);
+        animator.SetBool("isJumping", false);
+        animator.SetBool("isAttacking", false);
+        animator.SetBool("isAttacking2", false);
+        animator.SetBool("isAttacking3", true);
+        animator.SetBool("isDying", false);
+        animator.SetBool("IsLosingCtrl", false);
+    }
+
     public void DeathAnimationDisplay()
     {
         animator.SetBool("isWaiting", false);
@@ -126,14 +152,21 @@ public class CharacterController : Character, ICharacterController
         animator.SetBool("isAttacking", false);
         animator.SetBool("isDying", true);
         animator.SetBool("isAttacking2", false);
+        animator.SetBool("isAttacking3", false);
+        animator.SetBool("isWalking", false);
+        animator.SetBool("IsLosingCtrl", false);
     }
+
     public void LosingBalanceAnimationDisplay()
     {
         animator.SetBool("isWaiting", false);
         animator.SetBool("isRunning", false);
         animator.SetBool("isJumping", false);
         animator.SetBool("isAttacking", false);
+        animator.SetBool("isAttacking2", false);
+        animator.SetBool("isAttacking3", false);
         animator.SetBool("isDying", false);
+        animator.SetBool("isWalking", false);
         animator.SetBool("IsLosingCtrl", true);
     }
 
@@ -189,10 +222,11 @@ public class CharacterController : Character, ICharacterController
         while (Mathf.Abs(targetX - transform.position.x) > 0.1f)
         {
             if (animator == null ||
-                (!animator.GetBool("isAttacking") &&
-                 !animator.GetBool("isAttacking2") &&
-                 !animator.GetBool("isDying") &&
-                 !animator.GetBool("IsLosingCtrl")))
+      (!animator.GetBool("isAttacking") &&
+       !animator.GetBool("isAttacking2") &&
+       !animator.GetBool("isAttacking3") &&
+       !animator.GetBool("isDying") &&
+       !animator.GetBool("IsLosingCtrl")))
             {
                 FlipCharacter(targetX);
             }
@@ -374,6 +408,6 @@ public class CharacterController : Character, ICharacterController
             // Die(); Todo be handled by derived classes
         }
     }
- 
+
 
 }

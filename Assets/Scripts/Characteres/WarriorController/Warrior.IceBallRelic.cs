@@ -1,0 +1,372 @@
+﻿using Assets.Scripts.Relics.Core;
+using Assets.Scripts.Relics.Definitions;
+using Assets.Scripts.Relics.Projectiles;
+using UnityEngine;
+
+namespace Assets.Scripts.Characteres.WarriorController
+{
+    public partial class Warrior : CharacterController
+    {
+        [Header("Attack3 IK / Ice Ball Cast")]
+        [SerializeField] private GameObject bodyFixedRoot;
+        [SerializeField] private GameObject attack3VisualsRoot;
+        [SerializeField] private Transform attack3IkTarget;      // Attack3AimTarget
+        [SerializeField] private Transform attack3Shoulder;      // Attack3AimOrbit
+        [SerializeField] private Transform iceBallSpawnSocket;   // HandBoneEnd/IceBallSpawnSocket
+        [SerializeField] private Transform orbSocket;            // HandBoneEnd/OrbSocket
+
+        [SerializeField] private SpriteRenderer defaultWarriorSpriteRenderer;
+        [SerializeField] private GameObject iceChargeVfxPrefab;
+
+        [Header("Attack3 IK Aim")]
+        [SerializeField] private bool useAttack3IK = true;
+        [SerializeField] private bool faceIceTargetWhenCasting = true;
+        [SerializeField] private float attack3DefaultAimDistance = 1.25f;
+        [SerializeField] private bool resetAttack3AimOnEnd = true;
+
+        [Header("Ice Ball Cast")]
+        [SerializeField] private float iceTouchGuardDuration = 0.12f;
+        [SerializeField] private float minIceAimDistance = 0.12f;
+
+        private bool _iceBallArmed;
+        private string _iceBallRelicId;
+        private bool _iceBallConsumeOnCast;
+        private IceBallRelic _armedIceBallDef;
+
+        private bool _iceBallShotPending;
+        private Vector2 _pendingIceBallAimWorld;
+        private bool _attack3Casting;
+
+        private GameObject _iceChargeVfxInstance;
+
+        public bool IsIceBallArmed => _iceBallArmed;
+        public bool IsAttack3Casting => _attack3Casting;
+        public bool IsIceBallShotPending => _iceBallShotPending;
+
+        private void AwakeAttack3VisualDefaults()
+        {
+            ShowDefaultWarriorVisuals();
+            HideAttack3Body();
+            HideAttack3Visuals();
+            HideIceChargeVfx();
+            ResetAttack3OrbitAim();
+            EndAttack3Lock();
+        }
+
+        private void ShowDefaultWarriorVisuals()
+        {
+            if (defaultWarriorSpriteRenderer != null)
+                defaultWarriorSpriteRenderer.enabled = true;
+        }
+
+        private void HideDefaultWarriorVisuals()
+        {
+            if (defaultWarriorSpriteRenderer != null)
+                defaultWarriorSpriteRenderer.enabled = false;
+        }
+
+        private void ShowAttack3Body()
+        {
+            if (bodyFixedRoot != null && !bodyFixedRoot.activeSelf)
+                bodyFixedRoot.SetActive(true);
+        }
+
+        private void HideAttack3Body()
+        {
+            if (bodyFixedRoot != null && bodyFixedRoot.activeSelf)
+                bodyFixedRoot.SetActive(false);
+        }
+
+        private void ShowAttack3Visuals()
+        {
+            if (attack3VisualsRoot != null && !attack3VisualsRoot.activeSelf)
+                attack3VisualsRoot.SetActive(true);
+        }
+
+        private void HideAttack3Visuals()
+        {
+            if (attack3VisualsRoot != null && attack3VisualsRoot.activeSelf)
+                attack3VisualsRoot.SetActive(false);
+        }
+
+        private void BeginAttack3Lock()
+        {
+            _attack3Casting = true;
+            CanMove = false;
+
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+
+            if (rigidbody2 != null)
+            {
+                Vector2 v = rigidbody2.linearVelocity;
+                v.x = 0f;
+                rigidbody2.linearVelocity = v;
+            }
+        }
+
+        private void EndAttack3Lock()
+        {
+            _attack3Casting = false;
+
+            if (!CanDie)
+                CanMove = true;
+        }
+
+        public bool TryArmIceBallRelic(IceBallRelic def, bool consumeOnCast)
+        {
+            if (def == null) return false;
+            if (def.projectilePrefab == null) return false;
+            if (IsDead || CanDie) return false;
+            if (_iceBallArmed) return false;
+            if (_iceBallShotPending) return false;
+            if (_attack3Casting) return false;
+
+            _armedIceBallDef = def;
+            _iceBallRelicId = !string.IsNullOrEmpty(def.relicId) ? def.relicId : def.name;
+            _iceBallConsumeOnCast = consumeOnCast;
+            _iceBallArmed = true;
+
+            NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, iceTouchGuardDuration));
+            return true;
+        }
+
+        private bool TryHandleArmedIceBallTouch()
+        {
+            if (_attack3Casting || _iceBallShotPending)
+                return true;
+
+            if (!_iceBallArmed)
+                return false;
+
+            if (InputMgr.Instance == null)
+                return false;
+
+            BeginArmedIceBallCast(InputMgr.Instance.TouchedVector);
+            return true;
+        }
+
+        private void BeginArmedIceBallCast(Vector2 touchWorld)
+        {
+            if (_armedIceBallDef == null)
+            {
+                ClearArmedIceBall();
+                return;
+            }
+
+            if (IsDead || CanDie)
+            {
+                CancelPendingIceBallCast();
+                return;
+            }
+
+            if (_iceBallConsumeOnCast)
+            {
+                var rm = GetComponent<RelicManager>();
+                if (rm == null || !rm.TryConsumeById(_iceBallRelicId, 1))
+                {
+                    CancelPendingIceBallCast();
+                    return;
+                }
+            }
+
+            _pendingIceBallAimWorld = touchWorld;
+            _iceBallShotPending = true;
+
+            NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, iceTouchGuardDuration));
+
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+            BeginAttack3Lock();
+
+            PlayAttack3CastSfx();
+
+            if (animator != null && animator.GetBool("IsLosingCtrl"))
+                animator.SetBool("IsLosingCtrl", false);
+
+            if (faceIceTargetWhenCasting)
+            {
+                SetDirectionVariables(_pendingIceBallAimWorld.x);
+                FlipCharacter(_pendingIceBallAimWorld.x);
+            }
+
+            ApplyAttack3OrbitAim(_pendingIceBallAimWorld);
+
+            HideDefaultWarriorVisuals();
+            ShowAttack3Body();
+            ShowAttack3Visuals();
+            ShowIceChargeVfx();
+
+            SetAttackMode(AttackAnimMode.Attack3);
+
+            _attack1HitEventConsumed = false;
+            GuardIdleAfterAttackRequest();
+            PlayCurrentAttackAnimation();
+        }
+
+        private void ApplyAttack3OrbitAim(Vector2 targetWorld)
+        {
+            if (!useAttack3IK)
+                return;
+
+            if (attack3IkTarget == null)
+                return;
+
+            // Exact alignment: target follows the touched world point directly.
+            attack3IkTarget.position = targetWorld;
+        }
+
+        private void ResetAttack3OrbitAim()
+        {
+            if (!resetAttack3AimOnEnd)
+                return;
+
+            if (attack3IkTarget == null || attack3Shoulder == null)
+                return;
+
+            Vector2 shoulderWorld = attack3Shoulder.position;
+            Vector2 defaultDir = rightFacing ? Vector2.right : Vector2.left;
+
+            attack3IkTarget.position =
+                shoulderWorld + defaultDir * Mathf.Max(minIceAimDistance, attack3DefaultAimDistance);
+        }
+
+        public void AE_FireIceBall()
+        {
+            FirePendingIceBall();
+        }
+
+        private void FirePendingIceBall()
+        {
+            if (!_iceBallShotPending) return;
+
+            if (_armedIceBallDef == null || _armedIceBallDef.projectilePrefab == null)
+            {
+                CancelPendingIceBallCast();
+                return;
+            }
+
+            ApplyAttack3OrbitAim(_pendingIceBallAimWorld);
+
+            Vector3 spawnPos = GetIceBallSpawnPosition(_armedIceBallDef);
+            Vector2 shootDir = GetIceBallDirection(spawnPos);
+
+            GameObject go = Instantiate(_armedIceBallDef.projectilePrefab, spawnPos, Quaternion.identity);
+
+            IceBulletProjectile projectile = go.GetComponent<IceBulletProjectile>();
+            if (projectile != null)
+            {
+                projectile.Init(
+                    this,
+                    shootDir,
+                    _armedIceBallDef.projectileSpeed,
+                    _armedIceBallDef.damage,
+                    _armedIceBallDef.stunSeconds,
+                    _armedIceBallDef.lifeTime
+                );
+            }
+            else
+            {
+                // Fallback only if prefab was not set up correctly
+                Rigidbody2D rb = go.GetComponent<Rigidbody2D>();
+                if (rb != null)
+                {
+                    go.transform.right = shootDir;
+                    rb.gravityScale = 0f;
+                    rb.linearVelocity = shootDir * _armedIceBallDef.projectileSpeed;
+                }
+
+                Destroy(go, Mathf.Max(0.1f, _armedIceBallDef.lifeTime));
+            }
+
+            _iceBallShotPending = false;
+            HideIceChargeVfx();
+            ClearArmedIceBall();
+        }
+
+        public void AE_EndAttack3()
+        {
+            if (animator != null)
+                animator.SetBool("isAttacking3", false);
+
+            _iceBallShotPending = false;
+            HideIceChargeVfx();
+            HideAttack3Visuals();
+            HideAttack3Body();
+            ShowDefaultWarriorVisuals();
+            ClearArmedIceBall();
+            ResetAttack3OrbitAim();
+            EndAttack3Lock();
+
+            SetAttackMode(AttackAnimMode.Attack1);
+            ExitAttackToBestState();
+        }
+
+        private Vector3 GetIceBallSpawnPosition(IceBallRelic def)
+        {
+            if (iceBallSpawnSocket != null)
+                return iceBallSpawnSocket.position;
+
+            Vector3 offset = def != null ? def.spawnLocalOffset : Vector3.zero;
+            offset.x = rightFacing ? Mathf.Abs(offset.x) : -Mathf.Abs(offset.x);
+            return transform.position + offset;
+        }
+
+        private Vector2 GetIceBallDirection(Vector3 spawnPos)
+        {
+            Vector2 dir = _pendingIceBallAimWorld - (Vector2)spawnPos;
+
+            if (dir.sqrMagnitude <= minIceAimDistance * minIceAimDistance)
+                dir = rightFacing ? Vector2.right : Vector2.left;
+
+            return dir.normalized;
+        }
+
+        private void ShowIceChargeVfx()
+        {
+            if (orbSocket == null || iceChargeVfxPrefab == null)
+                return;
+
+            HideIceChargeVfx();
+
+            _iceChargeVfxInstance = Instantiate(
+                iceChargeVfxPrefab,
+                orbSocket.position,
+                Quaternion.identity,
+                orbSocket);
+
+            _iceChargeVfxInstance.transform.localPosition = Vector3.zero;
+            _iceChargeVfxInstance.transform.localRotation = Quaternion.identity;
+            _iceChargeVfxInstance.transform.localScale = Vector3.one;
+        }
+
+        private void HideIceChargeVfx()
+        {
+            if (_iceChargeVfxInstance != null)
+            {
+                Destroy(_iceChargeVfxInstance);
+                _iceChargeVfxInstance = null;
+            }
+        }
+
+        private void CancelPendingIceBallCast()
+        {
+            _iceBallShotPending = false;
+            HideIceChargeVfx();
+            HideAttack3Visuals();
+            HideAttack3Body();
+            ShowDefaultWarriorVisuals();
+            ClearArmedIceBall();
+            ResetAttack3OrbitAim();
+            EndAttack3Lock();
+        }
+
+        private void ClearArmedIceBall()
+        {
+            _iceBallArmed = false;
+            _iceBallRelicId = null;
+            _iceBallConsumeOnCast = false;
+            _armedIceBallDef = null;
+        }
+    }
+}

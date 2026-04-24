@@ -8,20 +8,21 @@ public class RelicTutorialGate : MonoBehaviour
     [SerializeField] private GameObject tutorialPowerCombo;
     [SerializeField] private GameObject tutorialShield;
     [SerializeField] private GameObject tutorialSprint;
+    [SerializeField] private GameObject tutorialIceBall;
 
     [Header("Relic IDs (must match RelicDefinition.relicId, or SO name if relicId empty)")]
     [SerializeField] private string powerComboId;
     [SerializeField] private string shieldId;
     [SerializeField] private string sprintId;
+    [SerializeField] private string iceBallId = "relic-ice-evolve";
 
     [Header("Rule")]
-    [SerializeField] private int showWhenCountAtLeast = 2; // >1
+    [SerializeField] private int showWhenCountAtLeast = 2;
 
     private RelicManager _rm;
 
     IEnumerator Start()
     {
-        // wait until Warrior + RelicManager exist
         while (_rm == null)
         {
             var w = Assets.Scripts.Characteres.WarriorController.Warrior.Instance
@@ -32,8 +33,6 @@ public class RelicTutorialGate : MonoBehaviour
         }
 
         _rm.OnRelicCountChanged += OnRelicCountChanged;
-
-        // initial refresh (important if startingRelics were collected before we subscribed)
         RefreshAll();
     }
 
@@ -49,6 +48,7 @@ public class RelicTutorialGate : MonoBehaviour
         if (id == powerComboId) SetVisible(tutorialPowerCombo, newCount >= showWhenCountAtLeast);
         if (id == shieldId) SetVisible(tutorialShield, newCount >= showWhenCountAtLeast);
         if (id == sprintId) SetVisible(tutorialSprint, newCount >= showWhenCountAtLeast);
+        if (id == iceBallId) SetVisible(tutorialIceBall, newCount >= showWhenCountAtLeast);
     }
 
     private void RefreshAll()
@@ -56,6 +56,7 @@ public class RelicTutorialGate : MonoBehaviour
         SetVisible(tutorialPowerCombo, _rm.GetCountById(powerComboId) >= showWhenCountAtLeast);
         SetVisible(tutorialShield, _rm.GetCountById(shieldId) >= showWhenCountAtLeast);
         SetVisible(tutorialSprint, _rm.GetCountById(sprintId) >= showWhenCountAtLeast);
+        SetVisible(tutorialIceBall, _rm.GetCountById(iceBallId) >= showWhenCountAtLeast);
     }
 
     private static void SetVisible(GameObject go, bool visible)
