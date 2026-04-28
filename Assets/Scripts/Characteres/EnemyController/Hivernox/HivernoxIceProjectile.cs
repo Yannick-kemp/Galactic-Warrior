@@ -69,15 +69,24 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private void OnTriggerEnter2D(Collider2D other)
         {
-            ResolveHit(other);
+            Vector2 hitPoint = other != null
+                ? other.ClosestPoint(transform.position)
+                : (Vector2)transform.position;
+
+            ResolveHit(other, hitPoint);
         }
 
         private void OnCollisionEnter2D(Collision2D collision)
         {
-            ResolveHit(collision.collider);
+            Vector2 hitPoint = transform.position;
+
+            if (collision != null && collision.contactCount > 0)
+                hitPoint = collision.GetContact(0).point;
+
+            ResolveHit(collision.collider, hitPoint);
         }
 
-        private void ResolveHit(Collider2D other)
+        private void ResolveHit(Collider2D other, Vector2 hitPoint)
         {
             if (_resolved || other == null)
                 return;
@@ -103,12 +112,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 bool frozen = warrior.TryFreezeFromHivernox(
                     source: _owner,
                     seconds: _freezeSeconds,
-                    hitWorldPosition: transform.position);
+                    hitWorldPosition: hitPoint);
 
                 if (frozen && _owner != null)
                     _owner.NotifyWarriorFrozen(warrior);
 
-                SpawnImpactFx();
+                SpawnImpactFx(hitPoint);
                 Destroy(gameObject);
                 return;
             }
@@ -120,9 +129,22 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (IsObstacle(other.gameObject.layer) || destroyOnAnyEnemy)
             {
                 _resolved = true;
-                SpawnImpactFx();
+                SpawnImpactFx(hitPoint);
                 Destroy(gameObject);
             }
+        }
+
+        private void SpawnImpactFx(Vector2 hitPoint)
+        {
+            if (impactFxPrefab == null)
+                return;
+
+            GameObject fx = Instantiate(
+                impactFxPrefab,
+                hitPoint,
+                Quaternion.identity);
+
+            Destroy(fx, 2f);
         }
 
         private bool IsObstacle(int layer)

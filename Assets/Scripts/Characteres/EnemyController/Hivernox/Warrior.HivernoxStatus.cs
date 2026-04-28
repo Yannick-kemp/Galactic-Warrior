@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace Assets.Scripts.Characteres.WarriorController
 {
-    public partial class Warrior
+    public partial class Warrior : CharacterController
     {
         [Header("Hivernox Freeze / Boss Damage")]
         [SerializeField] private bool shieldBlocksHivernoxIceProjectile = false;
@@ -15,6 +15,8 @@ namespace Assets.Scripts.Characteres.WarriorController
         [SerializeField] private float hivernoxFreezeRecoveryImmunity = 0.25f;
         [SerializeField] private float blockedHivernoxHitStunSeconds = 0.12f;
         [SerializeField] private float blockedHivernoxHitKnockbackVelocity = 3.5f;
+
+        [SerializeField] private WarriorRootIceOverlay warriorIceOverlay;
 
         private bool _frozenByHivernox;
         private Coroutine _hivernoxFreezeRoutine;
@@ -183,6 +185,9 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void ShowHivernoxFreezeVfx()
         {
+            if (warriorIceOverlay != null)
+                warriorIceOverlay.Show();
+
             if (hivernoxFreezeVfxPrefab == null)
                 return;
 
@@ -190,6 +195,7 @@ namespace Assets.Scripts.Characteres.WarriorController
                 Destroy(_hivernoxFreezeVfxInstance);
 
             Transform parent = hivernoxFreezeVfxSocket != null ? hivernoxFreezeVfxSocket : transform;
+
             _hivernoxFreezeVfxInstance = Instantiate(
                 hivernoxFreezeVfxPrefab,
                 parent.position + hivernoxFreezeVfxOffset,
@@ -199,6 +205,9 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void HideHivernoxFreezeVfx()
         {
+            if (warriorIceOverlay != null)
+                warriorIceOverlay.Hide();
+
             if (_hivernoxFreezeVfxInstance == null)
                 return;
 

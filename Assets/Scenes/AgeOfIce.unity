@@ -531,7 +531,7 @@ Transform:
   m_GameObject: {fileID: 322083906}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1.53, y: -0.48, z: 0}
+  m_LocalPosition: {x: -1.6, y: -0.2, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1038,23 +1038,26 @@ MonoBehaviour:
   debugStateChanges: 0
   detectionRange: 9
   requireSamePlatformForIceAttack: 0
-  iceProjectilePrefab: {fileID: 1973752797466364135, guid: 8fdcc63a1e232cf4a8d281962659c178, type: 3}
+  iceProjectilePrefab: {fileID: 6485883015953634182, guid: 452ee04d351b723469250dc5f4d62c2b, type: 3}
   projectileOrigin: {fileID: 322083907}
   iceAttackRange: 8
   minIceAttackDistance: 1.25
-  iceAttackCooldown: 2.2
-  iceAttackAnimationSeconds: 1.5
+  iceAttackCooldown: 1.7
+  iceAttackAnimationSeconds: 3.5
   autoFireProjectileDelay: 0.5
   autoFireIfNoAnimationEvent: 1
   aimProjectileAtWarrior: 1
   horizontalProjectileOnly: 1
   projectileSpeed: 8
   projectileLifetime: 4
-  warriorFreezeSeconds: 2.2
+  warriorFreezeSeconds: 5
   iceProjectileDamage: 0
   projectileObstacleMask:
     serializedVersion: 2
     m_Bits: 0
+  alignProjectileTailToOrigin: 1
+  projectilePivotToTailDistance: 1.61
+  debugProjectileAlignment: 0
   moveToFrozenWarriorSpeed: 2
   finisherRange: 1.3
   maxFinisherChaseSeconds: 2.2
@@ -1081,18 +1084,8 @@ MonoBehaviour:
   maxRetreatSeconds: 1.4
   recoveryCooldownSeconds: 0.9
   stateIntParameter: hivernoxState
-  iceBreakerHitFxPrefab: {fileID: 0}
-  handSmashHitFxPrefab: {fileID: 0}
---- !u!1 &697633706 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 6301876223582453106, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-  m_PrefabInstance: {fileID: 1026561026}
-  m_PrefabAsset: {fileID: 0}
---- !u!4 &697633707 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 559969229284002422, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-  m_PrefabInstance: {fileID: 1026561026}
-  m_PrefabAsset: {fileID: 0}
+  iceBreakerHitFxPrefab: {fileID: 1917416599337900318, guid: 49a9dd10c31259c4c92f47421b00d747, type: 3}
+  handSmashHitFxPrefab: {fileID: 70640184695839022, guid: b0a69e49a4aa490408ce562145c46d3d, type: 3}
 --- !u!1 &804635801
 GameObject:
   m_ObjectHideFlags: 0
@@ -1218,38 +1211,6 @@ PrefabInstance:
       propertyPath: m_Name
       value: Warrior
       objectReference: {fileID: 0}
-    - target: {fileID: 2375869154341470219, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-      propertyPath: orbSocket
-      value: 
-      objectReference: {fileID: 1027814891}
-    - target: {fileID: 2375869154341470219, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-      propertyPath: bodyFixedRoot
-      value: 
-      objectReference: {fileID: 1084109694}
-    - target: {fileID: 2375869154341470219, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-      propertyPath: attack3CastClip
-      value: 
-      objectReference: {fileID: 8300000, guid: e9fef018762cadb428b2c609a65f7075, type: 3}
-    - target: {fileID: 2375869154341470219, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-      propertyPath: attack3IkTarget
-      value: 
-      objectReference: {fileID: 2084034868}
-    - target: {fileID: 2375869154341470219, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-      propertyPath: attack3Shoulder
-      value: 
-      objectReference: {fileID: 697633707}
-    - target: {fileID: 2375869154341470219, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-      propertyPath: attack3VisualsRoot
-      value: 
-      objectReference: {fileID: 697633706}
-    - target: {fileID: 2375869154341470219, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-      propertyPath: iceBallSpawnSocket
-      value: 
-      objectReference: {fileID: 1114943822}
-    - target: {fileID: 2375869154341470219, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-      propertyPath: defaultWarriorSpriteRenderer
-      value: 
-      objectReference: {fileID: 2115767817}
     - target: {fileID: 4918953235271323384, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
       propertyPath: m_LocalPosition.x
       value: -3.3
@@ -1295,21 +1256,6 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
---- !u!4 &1027814891 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 3585781817689164815, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-  m_PrefabInstance: {fileID: 1026561026}
-  m_PrefabAsset: {fileID: 0}
---- !u!1 &1084109694 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 5243092639528187462, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-  m_PrefabInstance: {fileID: 1026561026}
-  m_PrefabAsset: {fileID: 0}
---- !u!4 &1114943822 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 1096762355942544593, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-  m_PrefabInstance: {fileID: 1026561026}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1151017510
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -2163,16 +2109,6 @@ Transform:
   - {fileID: 328130121}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!4 &2084034868 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 6928599468553939688, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-  m_PrefabInstance: {fileID: 1026561026}
-  m_PrefabAsset: {fileID: 0}
---- !u!212 &2115767817 stripped
-SpriteRenderer:
-  m_CorrespondingSourceObject: {fileID: 1705217382689275525, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
-  m_PrefabInstance: {fileID: 1026561026}
-  m_PrefabAsset: {fileID: 0}
 --- !u!114 &2115767827 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 2375869154341470219, guid: bce61a31d57d18e46acb500df951a64d, type: 3}

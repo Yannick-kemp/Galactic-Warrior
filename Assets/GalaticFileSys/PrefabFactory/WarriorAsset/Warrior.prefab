@@ -408,6 +408,14 @@ MonoBehaviour:
   DescendentPhase: 0
   _isJumping: 0
   _isMoving: 0
+  shieldBlocksHivernoxIceProjectile: 0
+  hivernoxFrozenAnimatorBool: isFrozen
+  hivernoxFreezeVfxPrefab: {fileID: 0}
+  hivernoxFreezeVfxSocket: {fileID: 0}
+  hivernoxFreezeVfxOffset: {x: 0, y: 0.75, z: 0}
+  hivernoxFreezeRecoveryImmunity: 0.25
+  blockedHivernoxHitStunSeconds: 0.12
+  blockedHivernoxHitKnockbackVelocity: 3.5
   attack3CastClip: {fileID: 8300000, guid: e9fef018762cadb428b2c609a65f7075, type: 3}
   attack3CastVolume: 0.95
   attack3CastPitchRange: {x: 0.98, y: 1.02}

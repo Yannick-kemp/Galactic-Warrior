@@ -33,7 +33,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private bool horizontalProjectileOnly = true;
         [SerializeField] private float projectileSpeed = 8f;
         [SerializeField] private float projectileLifetime = 4f;
-        [SerializeField] private float warriorFreezeSeconds = 2.2f;
+        [SerializeField] private float warriorFreezeSeconds = 5f;
         [SerializeField] private float iceProjectileDamage = 0f;
         [SerializeField] private LayerMask projectileObstacleMask;
 
@@ -85,6 +85,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [Header("Impact FX")]
         [SerializeField] private GameObject iceBreakerHitFxPrefab;
         [SerializeField] private GameObject handSmashHitFxPrefab;
+
+
 
         private Coroutine _actionRoutine;
         private bool _bossActivated;
@@ -407,11 +409,20 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             CanMove = false;
             FaceWarrior();
 
-            yield return new WaitForSeconds(0.08f);
+            // Small readable pause before Hivernox starts moving.
+            yield return new WaitForSecondsRealtime(0.08f);
+
+            if (warrior == null || !warrior.IsFrozenByHivernox)
+            {
+                _actionRoutine = null;
+                StartExclusiveRoutine(RetreatRoutine());
+                yield break;
+            }
 
             SetState(HivernoxState.MoveToWarrior);
 
             float chaseTimer = 0f;
+
             while (warrior != null &&
                    warrior.IsFrozenByHivernox &&
                    GetHorizontalDistanceTo(warrior.transform) > finisherRange &&
@@ -443,6 +454,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 yield break;
             }
 
+            // Important: do not require perfect distance here.
+            // If Hivernox chased but did not reach exact finisherRange,
+            // allow the attack anyway while Warrior is still frozen.
             yield return StartCoroutine(IceBreakerAttackRoutine(warrior));
         }
 
@@ -644,7 +658,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             while (Mathf.Abs(transform.position.x - retreatTarget.x) > retreatArriveDistance &&
                    timer < maxRetreatSeconds)
             {
-                RunAnimationDisplay();
+                WalkAnimationDisplay();
                 FaceAwayFrom(warrior);
 
                 float nextX = Mathf.MoveTowards(
