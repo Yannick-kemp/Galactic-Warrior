@@ -167,7 +167,19 @@ namespace Assets.Scripts.Characteres.WarriorController
             shieldMaxDurability <= 0 ? 0 : Mathf.Clamp01(_shieldDurability / shieldMaxDurability);
 
         #endregion
+        #region Hard Action Lock
 
+        private bool _platformStoneRepulseActive;
+
+        public bool IsPlatformStoneRepulseActive => _platformStoneRepulseActive;
+
+        private bool IsHardActionLocked =>
+            _platformStoneRepulseActive ||
+            _deathStarted ||
+            CanDie ||
+            IsDeadOrDying;
+
+        #endregion
         #region Bounce / Collision Anti-Loop
 
         [Header("Bounce Landing Away (Anti-Double-Landing)")]
@@ -403,7 +415,11 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             _activeSlashEffects.RemoveAll(slash => slash == null);
             // CRITICAL: Continuous tracking while the Warrior is in the casting state
-            if (_attack3Casting && _iceBallShotPending && InputMgr.Instance != null && InputMgr.Instance.IsScreenTouched())
+            if (!IsHardActionLocked &&
+     _attack3Casting &&
+     _iceBallShotPending &&
+     InputMgr.Instance != null &&
+     InputMgr.Instance.IsScreenTouched())
             {
                 _pendingIceBallAimWorld = InputMgr.Instance.TouchedVector;
                 ApplyAttack3OrbitAim(_pendingIceBallAimWorld);

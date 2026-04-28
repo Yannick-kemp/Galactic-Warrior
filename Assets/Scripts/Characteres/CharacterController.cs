@@ -185,6 +185,60 @@ public class CharacterController : Character, ICharacterController
 
         return Mathf.Clamp(targetX, minSafeX, maxSafeX);
     }
+    protected bool TryGetOppositePlatformTargetFromEdge(
+    Transform groundCheckPoint,
+    LayerMask platformLayer,
+    float rayLength,
+    ref float targetX,
+    float forwardProbeDistance = 0.35f,
+    float oppositePadding = 0.65f,
+    float edgeEpsilon = 0.015f)
+    {
+        if (CurrentplatForm == null || CurrentplatForm.platformCollider == null)
+            return false;
+
+        if (groundCheckPoint == null)
+            return false;
+
+        float direction = Mathf.Sign(targetX - transform.position.x);
+
+        if (Mathf.Approximately(direction, 0f))
+            direction = rightFacing ? 1f : -1f;
+
+        Vector2 aheadOrigin =
+            (Vector2)groundCheckPoint.position +
+            Vector2.right * direction * forwardProbeDistance;
+
+        RaycastHit2D hitAhead = Physics2D.Raycast(
+            aheadOrigin,
+            Vector2.down,
+            rayLength,
+            platformLayer
+        );
+
+        bool noPlatformAhead =
+            hitAhead.collider == null ||
+            hitAhead.collider != CurrentplatForm.platformCollider;
+
+        float testX = transform.position.x + direction * forwardProbeDistance;
+        bool nextStepWouldBeClamped =
+            Mathf.Abs(ClampToCurrentPlatform(testX) - testX) > edgeEpsilon;
+
+        if (!noPlatformAhead && !nextStepWouldBeClamped)
+            return false;
+
+        Bounds bounds = CurrentplatForm.platformCollider.bounds;
+
+        targetX = direction > 0f
+            ? bounds.min.x + oppositePadding
+            : bounds.max.x - oppositePadding;
+
+        targetX = ClampToCurrentPlatform(targetX);
+
+        FlipCharacter(targetX);
+
+        return true;
+    }
 
     protected bool IsTargetOutsideCurrentPlatformSafeRange(float x)
     {

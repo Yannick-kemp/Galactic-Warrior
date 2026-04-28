@@ -10,6 +10,8 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void HandleInput()
         {
+            if (IsHardActionLocked)
+                return;
 
             if (Time.time < _uiInputBlockUntil) 
                 return;
@@ -59,7 +61,14 @@ namespace Assets.Scripts.Characteres.WarriorController
                 return;
             }
 
-            if (CanAttackWarrior && CanAttack && !_sprintArmed && !_sprintActive)
+            bool shouldAttackFromWorldTouch =
+       CanAttackWarrior &&
+       CanAttack &&
+       !_sprintArmed &&
+       !_sprintActive &&
+       HasEnemyInAttackRange();
+
+            if (shouldAttackFromWorldTouch)
             {
                 if (attackMode == AttackAnimMode.Attack2 && _attack2ArmedByRelic)
                     return;

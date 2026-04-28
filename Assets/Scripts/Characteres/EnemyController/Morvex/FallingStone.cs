@@ -20,6 +20,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private AudioClip impactSfx;
         [SerializeField] private float impactSfxVolume = 1f;
 
+        [Header("Platform Miss Repulse")]
+        [SerializeField] private bool repulseWarriorWhenStoneHitsHisPlatform = true;
+        [SerializeField] private float platformRepulseDistance = 2.25f;
+        [SerializeField] private float platformRepulseDuration = 0.18f;
+        [SerializeField] private float platformRepulseControlLock = 0.25f;
+
         private Rigidbody2D rb;
         private bool launched;
 
@@ -49,17 +55,60 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (!launched)
                 return;
 
-            Warrior warrior = collision.collider.GetComponentInParent<Warrior>();
-            if (warrior != null)
-                warrior.TakeDamage(damage);
+            Warrior warriorHit = collision.collider.GetComponentInParent<Warrior>();
 
+            if (warriorHit != null)
+            {
+                warriorHit.TakeDamage(damage);
+            }
+            else
+            {
+                TryRepulseWarriorIfStoneHitHisPlatform(collision);
+            }
+
+            SpawnImpactFeedback();
+
+            Destroy(gameObject);
+        }
+
+        private void TryRepulseWarriorIfStoneHitHisPlatform(Collision2D collision)
+        {
+            if (!repulseWarriorWhenStoneHitsHisPlatform)
+                return;
+
+            PlatFormColliderTrigger platform =
+                collision.collider.GetComponentInParent<PlatFormColliderTrigger>();
+
+            if (platform == null)
+                return;
+
+            Warrior warrior = GameMgr.Instance != null
+                ? GameMgr.Instance.WarriorInstance
+                : Warrior.Instance;
+
+            if (warrior == null)
+                return;
+
+            Vector2 impactPoint = collision.contactCount > 0
+                ? collision.GetContact(0).point
+                : (Vector2)transform.position;
+
+            warrior.TryRepulseFromPlatformStoneImpact(
+                platform,
+                impactPoint,
+                platformRepulseDistance,
+                platformRepulseDuration,
+                platformRepulseControlLock
+            );
+        }
+
+        private void SpawnImpactFeedback()
+        {
             if (impactVfxPrefab != null)
                 Instantiate(impactVfxPrefab, transform.position, Quaternion.identity);
 
             if (impactSfx != null)
                 AudioSource.PlayClipAtPoint(impactSfx, transform.position, impactSfxVolume);
-
-            Destroy(gameObject);
         }
     }
 }

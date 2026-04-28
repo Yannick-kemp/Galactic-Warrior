@@ -1,4 +1,5 @@
 ﻿using Assets.Scripts.Characteres.EnemyContoller;
+
 using Assets.Scripts.Relics.Events;
 using System.Collections;
 using System.Collections.Generic;
@@ -22,7 +23,9 @@ namespace Assets.Scripts.Characteres.WarriorController
         private Coroutine _hitReactRoutine;
 
         #endregion
-
+        private bool _canMoveBeforeStoneRepulse;
+        private bool _canAttackWarriorBeforeStoneRepulse;
+        private bool _canAttackBeforeStoneRepulse;
         #region Attack / FX / Damage
 
         public void AE_Attack1_HitExplosion_Fist() => DoAttack1HitExplosion(HitFxPoint.FistSocket);
@@ -334,7 +337,19 @@ namespace Assets.Scripts.Characteres.WarriorController
         public bool HasEnemyInAttackRange()
         {
             Collider2D[] hits = Physics2D.OverlapCircleAll(GetAttackCenter(), attackRadius, enemyLayer);
-            return hits.Length > 0;
+
+            for (int i = 0; i < hits.Length; i++)
+            {
+                if (hits[i] == null)
+                    continue;
+
+                Enemy enemy = hits[i].GetComponent<Enemy>() ?? hits[i].GetComponentInParent<Enemy>();
+
+                if (enemy != null && !enemy.IsDeadOrDying)
+                    return true;
+            }
+
+            return false;
         }
 
         private Vector2 GetAttackCenter()
@@ -352,10 +367,16 @@ namespace Assets.Scripts.Characteres.WarriorController
             Collider2D[] hits = Physics2D.OverlapCircleAll(GetAttackCenter(), attackRadius, enemyLayer);
 
             var enemies = new List<Enemy>(hits.Length);
+
             foreach (Collider2D hit in hits)
             {
-                Enemy enemy = hit.GetComponent<Enemy>();
-                if (enemy != null) enemies.Add(enemy);
+                if (hit == null)
+                    continue;
+
+                Enemy enemy = hit.GetComponent<Enemy>() ?? hit.GetComponentInParent<Enemy>();
+
+                if (enemy != null && !enemy.IsDeadOrDying && !enemies.Contains(enemy))
+                    enemies.Add(enemy);
             }
 
             return enemies.ToArray();
@@ -485,6 +506,9 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         public void RequestPrimaryAttackFromUIButton()
         {
+            if (IsHardActionLocked)
+                return;
+
             NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.15f));
 
             if (_attack3Casting)
@@ -579,6 +603,8 @@ namespace Assets.Scripts.Characteres.WarriorController
         /// </summary>
         public bool TryUseRelicAttack2(float duration, float cooldownOverride = -1f, bool triggerNow = false)
         {
+            if (IsHardActionLocked)
+                return false;
             if (CanDie) return false;
             if (!CanMove || !CanAttackWarrior) return false;
             if (activesJumpCoroutine != null || IsFalling || IsFallingGrazesEdge) return false;
@@ -663,6 +689,231 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             PlayJumpSfx(); // <-- NEW
         }
+        #endregion
+
+        #region Falling Stone Platform Repulse
+
+        private Coroutine _platformStoneRepulseRoutine;
+
+        public void TryRepulseFromPlatformStoneImpact(
+            PlatFormColliderTrigger impactPlatform,
+            Vector2 impactWorldPosition,
+            float distance,
+            float duration,
+            float controlLockSeconds)
+        {
+            if (impactPlatform == null)
+                return;
+
+            if (_deathStarted || CanDie || IsDeadOrDying)
+                return;
+
+            if (CurrentplatForm != impactPlatform)
+                return;
+
+            // Warrior must be grounded. If airborne, jumping, or falling, no repulse.
+            if (CountGroundPoints() <= 0)
+                return;
+
+            if (activesJumpCoroutine != null || IsJumping)
+                return;
+
+            if (IsFallingEdge || IsFallingPlfExit || IsFallingHitEnemy || IsFallingGrazesEdge)
+                return;
+
+            if (collider2 == null)
+                return;
+
+            float repulseDirection = GetRepulseDirectionFromImpact(impactWorldPosition.x);
+
+            if (_platformStoneRepulseRoutine != null)
+            {
+                StopCoroutine(_platformStoneRepulseRoutine);
+                _platformStoneRepulseRoutine = null;
+
+                // Important: prevents the old stopped coroutine from leaving the Warrior locked.
+                EndPlatformStoneRepulseLock(false);
+            }
+
+            _platformStoneRepulseRoutine = StartCoroutine(
+                PlatformStoneRepulseRoutine(
+                    impactPlatform,
+                    repulseDirection,
+                    distance,
+                    duration,
+                    controlLockSeconds
+                )
+            );
+        }
+
+        private IEnumerator PlatformStoneRepulseRoutine(
+            PlatFormColliderTrigger platform,
+            float direction,
+            float distance,
+            float duration,
+            float controlLockSeconds)
+        {
+            BeginPlatformStoneRepulseLock();
+
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+            ForceCancelCurrentAttack();
+
+            // Cancel Attack3 / Ice Ball if armed or casting.
+            CancelPendingIceBallCast();
+
+            IsFallingEdge = false;
+            IsFallingPlfExit = false;
+            IsFallingHitEnemy = false;
+            IsFallingGrazesEdge = false;
+
+            LosingBalanceAnimationDisplay();
+
+            if (rigidbody2 != null)
+            {
+                rigidbody2.linearVelocity = Vector2.zero;
+                rigidbody2.angularVelocity = 0f;
+            }
+
+            Vector3 start = transform.position;
+            float targetX = start.x + direction * Mathf.Abs(distance);
+
+            if (platform != null && platform.platformCollider != null && collider2 != null)
+            {
+                Bounds pb = platform.platformCollider.bounds;
+                float safePad = collider2.bounds.extents.x + 0.05f;
+
+                float minX = pb.min.x + safePad;
+                float maxX = pb.max.x - safePad;
+
+                targetX = Mathf.Clamp(targetX, minX, maxX);
+            }
+
+            Vector3 end = new Vector3(targetX, start.y, start.z);
+
+            float elapsed = 0f;
+            duration = Mathf.Max(0.01f, duration);
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+
+                float t = Mathf.Clamp01(elapsed / duration);
+                t = Mathf.SmoothStep(0f, 1f, t);
+
+                transform.position = Vector3.Lerp(start, end, t);
+
+                yield return null;
+            }
+
+            transform.position = end;
+
+            float remainingLock = Mathf.Max(0f, controlLockSeconds - duration);
+            if (remainingLock > 0f)
+                yield return new WaitForSeconds(remainingLock);
+
+            EndPlatformStoneRepulseLock(true);
+
+            _platformStoneRepulseRoutine = null;
+        }
+
+        private void BeginPlatformStoneRepulseLock()
+        {
+            _canMoveBeforeStoneRepulse = CanMove;
+            _canAttackWarriorBeforeStoneRepulse = CanAttackWarrior;
+            _canAttackBeforeStoneRepulse = CanAttack;
+
+            _platformStoneRepulseActive = true;
+
+            CanMove = false;
+            CanAttackWarrior = false;
+            CanAttack = false;
+
+            _blockAction = true;
+
+            _blockedByEnemyContact = false;
+            _blockingEnemy = null;
+        }
+
+        private void EndPlatformStoneRepulseLock(bool playIdleAnimation)
+        {
+            _platformStoneRepulseActive = false;
+            _blockAction = false;
+
+            _blockedByEnemyContact = false;
+            _blockingEnemy = null;
+
+            if (_deathStarted || CanDie || IsDeadOrDying)
+                return;
+
+            StopMoveTowardCoroutine();
+
+            if (rigidbody2 != null)
+            {
+                Vector2 v = rigidbody2.linearVelocity;
+                v.x = 0f;
+                rigidbody2.linearVelocity = v;
+            }
+
+            // Restore movement.
+            CanMove = true;
+
+            // Restore attack permission to what it was before repulse.
+            // Important: do NOT force CanAttack = true.
+            CanAttackWarrior = _canAttackWarriorBeforeStoneRepulse;
+            CanAttack = _canAttackBeforeStoneRepulse;
+
+            if (playIdleAnimation && animator != null)
+            {
+                if (animator.GetBool("IsLosingCtrl"))
+                    animator.SetBool("IsLosingCtrl", false);
+
+                WaitAnimationDisplay();
+            }
+
+            Debug.Log(
+                $"[StoneRepulse END] CanMove={CanMove}, CanAttackWarrior={CanAttackWarrior}, CanAttack={CanAttack}, HardLock={IsHardActionLocked}"
+            );
+        }
+
+        private float GetRepulseDirectionFromImpact(float impactX)
+        {
+            float warriorX = collider2 != null
+                ? collider2.bounds.center.x
+                : transform.position.x;
+
+            float diff = warriorX - impactX;
+
+            // Stone hit left side of Warrior/platform area -> push Warrior right.
+            if (diff > 0.05f)
+                return 1f;
+
+            // Stone hit right side -> push Warrior left.
+            if (diff < -0.05f)
+                return -1f;
+
+            // If the stone hit almost exactly under the Warrior,
+            // fallback to opposite facing direction.
+            return GetOppositeFacingDirectionX();
+        }
+
+        private float GetOppositeFacingDirectionX()
+        {
+            if (Front != null && Back != null)
+            {
+                bool facingRight = Front.position.x > Back.position.x;
+                bool facingLeft = Front.position.x < Back.position.x;
+
+                if (facingRight)
+                    return -1f;
+
+                if (facingLeft)
+                    return 1f;
+            }
+
+            return transform.localScale.x >= 0f ? -1f : 1f;
+        }
+
         #endregion
     }
 }

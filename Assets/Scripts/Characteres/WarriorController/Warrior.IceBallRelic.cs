@@ -109,12 +109,14 @@ namespace Assets.Scripts.Characteres.WarriorController
         {
             _attack3Casting = false;
 
-            if (!CanDie)
+            if (!CanDie && !_platformStoneRepulseActive)
                 CanMove = true;
         }
 
         public bool TryArmIceBallRelic(IceBallRelic def, bool consumeOnCast)
         {
+            if (IsHardActionLocked) return false;
+
             if (def == null) return false;
             if (def.projectilePrefab == null) return false;
             if (IsDead || CanDie) return false;
@@ -133,6 +135,9 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private bool TryHandleArmedIceBallTouch()
         {
+            if (IsHardActionLocked)
+                return false;
+
             if (_attack3Casting || _iceBallShotPending)
                 return true;
 
@@ -148,6 +153,11 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void BeginArmedIceBallCast(Vector2 touchWorld)
         {
+            if (IsHardActionLocked)
+            {
+                CancelPendingIceBallCast();
+                return;
+            }
             if (_armedIceBallDef == null)
             {
                 ClearArmedIceBall();
@@ -238,6 +248,11 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void FirePendingIceBall()
         {
+            if (IsHardActionLocked)
+            {
+                CancelPendingIceBallCast();
+                return;
+            }
             if (!_iceBallShotPending) return;
 
             if (_armedIceBallDef == null || _armedIceBallDef.projectilePrefab == null)
