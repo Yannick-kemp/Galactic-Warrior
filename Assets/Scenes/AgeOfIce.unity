@@ -1044,7 +1044,7 @@ MonoBehaviour:
   iceAttackRange: 8
   minIceAttackDistance: 1.25
   iceAttackCooldown: 1.7
-  iceAttackAnimationSeconds: 3.5
+  iceAttackAnimationSeconds: 0.95
   autoFireProjectileDelay: 0.5
   autoFireIfNoAnimationEvent: 1
   aimProjectileAtWarrior: 1

@@ -22,6 +22,7 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private bool _isShowing;
         private bool _sourceRendererWasEnabled;
+        private bool _hasSourceRendererSnapshot;
 
         private void Reset()
         {
@@ -31,13 +32,23 @@ namespace Assets.Scripts.Characteres.WarriorController
         private void Awake()
         {
             TryAutoAssign();
-            Hide();
+
+            // Important:
+            // Do NOT call Hide() here, because Hide() restores the source renderer
+            // from a runtime snapshot. At Awake there is no valid snapshot yet.
+            HideOverlayOnly();
         }
 
         private void OnEnable()
         {
             if (!_isShowing)
-                Hide();
+                HideOverlayOnly();
+        }
+
+        private void OnDisable()
+        {
+            // If the object is disabled while frozen, restore the source renderer safely.
+            Hide();
         }
 
         private void LateUpdate()
@@ -52,9 +63,10 @@ namespace Assets.Scripts.Characteres.WarriorController
         {
             TryAutoAssign();
 
-            if (sourceRenderer != null)
+            if (!_isShowing && sourceRenderer != null)
             {
                 _sourceRendererWasEnabled = sourceRenderer.enabled;
+                _hasSourceRendererSnapshot = true;
 
                 if (hideSourceRendererWhileFrozen)
                     sourceRenderer.enabled = false;
@@ -69,28 +81,43 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         public void Hide()
         {
-            _isShowing = false;
+            bool shouldRestoreSource =
+                _isShowing &&
+                _hasSourceRendererSnapshot &&
+                sourceRenderer != null &&
+                hideSourceRendererWhileFrozen;
 
+            _isShowing = false;
+            HideOverlayOnly();
+
+            if (shouldRestoreSource)
+                sourceRenderer.enabled = _sourceRendererWasEnabled;
+
+            _hasSourceRendererSnapshot = false;
+        }
+
+        private void HideOverlayOnly()
+        {
             if (overlayRenderer != null)
                 overlayRenderer.enabled = false;
-
-            if (sourceRenderer != null && hideSourceRendererWhileFrozen)
-                sourceRenderer.enabled = _sourceRendererWasEnabled;
         }
 
         private void SyncOverlay()
         {
-            if (sourceRenderer == null || overlayRenderer == null)
+            if (overlayRenderer == null)
                 return;
 
-            if (!useOverlaySpriteAsAssigned)
-                overlayRenderer.sprite = sourceRenderer.sprite;
+            if (sourceRenderer != null)
+            {
+                if (!useOverlaySpriteAsAssigned)
+                    overlayRenderer.sprite = sourceRenderer.sprite;
 
-            overlayRenderer.flipX = sourceRenderer.flipX;
-            overlayRenderer.flipY = sourceRenderer.flipY;
+                overlayRenderer.flipX = sourceRenderer.flipX;
+                overlayRenderer.flipY = sourceRenderer.flipY;
 
-            overlayRenderer.sortingLayerID = sourceRenderer.sortingLayerID;
-            overlayRenderer.sortingOrder = sourceRenderer.sortingOrder + sortingOrderOffset;
+                overlayRenderer.sortingLayerID = sourceRenderer.sortingLayerID;
+                overlayRenderer.sortingOrder = sourceRenderer.sortingOrder + sortingOrderOffset;
+            }
 
             overlayRenderer.color = iceTint;
 
@@ -106,6 +133,11 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (overlayRenderer == null)
             {
                 Transform overlay = transform.Find("WarriorSprite_IceOverlay");
+
+                // Allows the script to be placed on BodyFixedRoot while
+                // WarriorSprite_IceOverlay is a sibling under Warrior.
+                if (overlay == null && transform.parent != null)
+                    overlay = transform.parent.Find("WarriorSprite_IceOverlay");
 
                 if (overlay != null)
                     overlayRenderer = overlay.GetComponent<SpriteRenderer>();

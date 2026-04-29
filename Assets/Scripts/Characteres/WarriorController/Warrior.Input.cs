@@ -13,9 +13,9 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (IsHardActionLocked)
                 return;
 
-            if (Time.time < _uiInputBlockUntil) 
+            if (Time.time < _uiInputBlockUntil)
                 return;
-            if (blockWorldInputWhenPointerOverUI && IsPointerOverUI()) 
+            if (blockWorldInputWhenPointerOverUI && IsPointerOverUI())
                 return;
             if (!InputMgr.Instance.IsScreenTouched())
                 return;
@@ -84,7 +84,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (animator.GetBool("IsLosingCtrl"))
                 animator.SetBool("IsLosingCtrl", false);
 
-           
+
             //Sprint relic uses only when movement starts
             TryStartArmedSprintFromMove();
 
@@ -118,7 +118,7 @@ namespace Assets.Scripts.Characteres.WarriorController
                 if (clickedOnPlatform || wantsEdgeExit)
                 {
                     if (shouldRun) RunAnimationDisplay();
-                    else 
+                    else
                         WaitAnimationDisplay();
                 }
                 else
@@ -274,18 +274,43 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         public void ForceCancelCurrentAttack()
         {
+            ForceCancelCurrentAttackInternal(restoreMovementAfterAttack3Cancel: true);
+        }
+
+        private void ForceCancelCurrentAttackForExternalLock()
+        {
+            ForceCancelCurrentAttackInternal(restoreMovementAfterAttack3Cancel: false);
+        }
+
+        private void ForceCancelCurrentAttackInternal(bool restoreMovementAfterAttack3Cancel)
+        {
             StopAttack2Sfx();
 
-            if (animator == null) return;
+            // Important fix:
+            // If Hivernox freezes Warrior during Attack3, the Attack3 animation event
+            // AE_EndAttack3 may never run. So we clean the Attack3 body/VFX/state here.
+            if (HasAnyIceBallCastState())
+            {
+                if (restoreMovementAfterAttack3Cancel)
+                    CancelPendingIceBallCast();
+                else
+                    CancelIceBallCastForExternalLock();
+            }
 
-            if (animator.GetBool("isAttacking"))
-                animator.SetBool("isAttacking", false);
+            if (animator != null)
+            {
+                if (HasBoolParam("isAttacking") && animator.GetBool("isAttacking"))
+                    animator.SetBool("isAttacking", false);
 
-            if (animator.GetBool("isAttacking2"))
-                animator.SetBool("isAttacking2", false);
+                if (HasBoolParam("isAttacking2") && animator.GetBool("isAttacking2"))
+                    animator.SetBool("isAttacking2", false);
 
-            if (animator.GetBool("isAttacking3"))
-                animator.SetBool("isAttacking3", false);
+                if (HasBoolParam("isAttacking3") && animator.GetBool("isAttacking3"))
+                    animator.SetBool("isAttacking3", false);
+
+                if (HasBoolParam("IsLosingCtrl") && animator.GetBool("IsLosingCtrl"))
+                    animator.SetBool("IsLosingCtrl", false);
+            }
 
             _attack1HitEventConsumed = true;
         }

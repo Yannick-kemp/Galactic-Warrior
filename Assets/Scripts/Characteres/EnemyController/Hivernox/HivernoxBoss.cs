@@ -452,13 +452,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (warrior == null || !warrior.IsFrozenByHivernox)
             {
                 _actionRoutine = null;
-                StartExclusiveRoutine(RetreatRoutine());
+                
+                //StartExclusiveRoutine(RetreatRoutine());
                 yield break;
             }
 
             SetState(HivernoxState.MoveToWarrior);
-
-            float chaseTimer = 0f;
 
             while (warrior != null &&
                    warrior.IsFrozenByHivernox &&
@@ -492,7 +491,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 // If Hivernox moves during finisher chase, he must run.
                 MoveHivernoxHorizontallyWithLocomotionAnimation(nextX, useRunAnimation: true);
 
-                chaseTimer += Time.deltaTime;
                 yield return null;
             }
 
@@ -502,7 +500,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             {
                 WaitAnimationDisplay();
                 _actionRoutine = null;
-                StartExclusiveRoutine(RetreatRoutine());
+              //  StartExclusiveRoutine(RetreatRoutine());
                 yield break;
             }
 
@@ -817,10 +815,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             StartExclusiveRoutine(CooldownRoutine());
         }
 
-        //public void AE_EndIceBreakerAttack()
-        //{
-        //    WaitAnimationDisplay();
-        //}
+
 
         private IEnumerator RetreatRoutine()
         {
@@ -874,6 +869,27 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private Vector3 GetBestRetreatPosition(Warrior warrior)
         {
+            float currentX = transform.position.x;
+
+            // If no warrior, go back to home position.
+            if (warrior == null)
+            {
+                return new Vector3(
+                    ClampToCurrentPlatform(_homePosition.x),
+                    transform.position.y,
+                    transform.position.z);
+            }
+
+            float warriorX = warrior.transform.position.x;
+
+            // TRUE  = Hivernox is on the left side of the Warrior.
+            // FALSE = Hivernox is on the right side of the Warrior.
+            bool hivernoxIsLeftOfWarrior = currentX < warriorX;
+
+            // ------------------------------------------------------------
+            // 1. First priority: use safe retreat points from the Inspector.
+            //    But only choose points on the SAME SIDE as Hivernox.
+            // ------------------------------------------------------------
             if (safeRetreatPoints != null && safeRetreatPoints.Length > 0)
             {
                 Transform best = null;
@@ -885,9 +901,16 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                     if (candidate == null)
                         continue;
 
-                    float score = warrior != null
-                        ? Mathf.Abs(candidate.position.x - warrior.transform.position.x)
-                        : Mathf.Abs(candidate.position.x - transform.position.x);
+                    float candidateX = candidate.position.x;
+
+                    // Keep only retreat points on Hivernox's side.
+                    bool candidateIsLeftOfWarrior = candidateX < warriorX;
+
+                    if (candidateIsLeftOfWarrior != hivernoxIsLeftOfWarrior)
+                        continue;
+
+                    // Among same-side points, choose the one farthest from the Warrior.
+                    float score = Mathf.Abs(candidateX - warriorX);
 
                     if (score > bestScore)
                     {
@@ -897,25 +920,41 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 }
 
                 if (best != null)
-                    return new Vector3(ClampToCurrentPlatform(best.position.x), transform.position.y, transform.position.z);
-            }
-
-            if (CurrentplatForm != null && CurrentplatForm.platformCollider != null)
-            {
-                Bounds platformBounds = CurrentplatForm.platformCollider.bounds;
-                float leftX = platformBounds.min.x + 0.7f;
-                float rightX = platformBounds.max.x - 0.7f;
-
-                if (warrior != null)
                 {
-                    float warriorX = warrior.transform.position.x;
-                    float leftScore = Mathf.Abs(leftX - warriorX);
-                    float rightScore = Mathf.Abs(rightX - warriorX);
-                    return new Vector3(leftScore > rightScore ? leftX : rightX, transform.position.y, transform.position.z);
+                    return new Vector3(
+                        ClampToCurrentPlatform(best.position.x),
+                        transform.position.y,
+                        transform.position.z);
                 }
             }
 
-            return new Vector3(ClampToCurrentPlatform(_homePosition.x), transform.position.y, transform.position.z);
+            // ------------------------------------------------------------
+            // 2. Second priority: use the platform side.
+            //    If Hivernox is left of the Warrior, retreat to left edge.
+            //    If Hivernox is right of the Warrior, retreat to right edge.
+            // ------------------------------------------------------------
+            if (CurrentplatForm != null && CurrentplatForm.platformCollider != null)
+            {
+                Bounds platformBounds = CurrentplatForm.platformCollider.bounds;
+
+                float leftX = platformBounds.min.x + 0.7f;
+                float rightX = platformBounds.max.x - 0.7f;
+
+                float targetX = hivernoxIsLeftOfWarrior ? leftX : rightX;
+
+                return new Vector3(
+                    ClampToCurrentPlatform(targetX),
+                    transform.position.y,
+                    transform.position.z);
+            }
+
+            // ------------------------------------------------------------
+            // 3. Last fallback: go back to home position.
+            // ------------------------------------------------------------
+            return new Vector3(
+                ClampToCurrentPlatform(_homePosition.x),
+                transform.position.y,
+                transform.position.z);
         }
 
         private void StopHivernoxMotionNow()

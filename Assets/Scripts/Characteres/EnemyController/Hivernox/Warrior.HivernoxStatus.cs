@@ -132,7 +132,7 @@ namespace Assets.Scripts.Characteres.WarriorController
         {
             _frozenByHivernox = true;
 
-            ForceCancelCurrentAttack();
+            ForceCancelCurrentAttackForExternalLock();
             StopMoveTowardCoroutine();
             StopJumpTowardCoroutine();
             WaitAnimationDisplay();
@@ -270,7 +270,7 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private IEnumerator HivernoxHitLockRoutine(Vector2 fromWorldPosition, float seconds, float knockbackVelocity)
         {
-            ForceCancelCurrentAttack();
+            ForceCancelCurrentAttackForExternalLock();
             StopMoveTowardCoroutine();
             StopJumpTowardCoroutine();
 
