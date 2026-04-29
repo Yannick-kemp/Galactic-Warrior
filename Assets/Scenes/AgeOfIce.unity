@@ -775,6 +775,7 @@ Transform:
   - {fileID: 939548492}
   - {fileID: 529432406}
   - {fileID: 322083907}
+  - {fileID: 1732714558}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &620724207
@@ -1067,6 +1068,12 @@ MonoBehaviour:
   iceBreakerAnimationSeconds: 0.95
   autoIceBreakerHitDelay: 0.38
   autoResolveIceBreakerIfNoAnimationEvent: 0
+  frozenWarriorHitBoxLayer:
+    serializedVersion: 2
+    m_Bits: 0
+  hivernoxBodyColliderForFrozenContact: {fileID: 0}
+  frozenHitBoxContactSkin: 0.02
+  retreatOnFrozenWarriorHitBoxContact: 1
   enableCounterOnDirectHit: 1
   counterReactionRange: 1.85
   counterCooldown: 1.1
@@ -1084,8 +1091,14 @@ MonoBehaviour:
   maxRetreatSeconds: 1.4
   recoveryCooldownSeconds: 0.9
   stateIntParameter: hivernoxState
+  attack2ImpactFxPrefab: {fileID: 6168434756526098217, guid: 4a5e6cb6ca6011a43b6e1471cccb43ff, type: 3}
+  attack2ImpactFxPoint: {fileID: 1732714558}
+  attack2ImpactFxUseWarriorHitBoxCenter: 1
+  attack2ImpactFxWorldOffset: {x: 0, y: 0, z: 0}
+  attack2ImpactFxLifetime: 2
+  attack2ImpactFxOnlyOncePerAttack: 1
   iceBreakerHitFxPrefab: {fileID: 1917416599337900318, guid: 49a9dd10c31259c4c92f47421b00d747, type: 3}
-  handSmashHitFxPrefab: {fileID: 70640184695839022, guid: b0a69e49a4aa490408ce562145c46d3d, type: 3}
+  handSmashHitFxPrefab: {fileID: 0}
 --- !u!1 &656723815 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 2119685233829817584, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
@@ -1724,6 +1737,37 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 804635802}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1732714557
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1732714558}
+  m_Layer: 7
+  m_Name: Attack2ImpactFxPoint
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1732714558
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1732714557}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 620724206}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1793615764
 GameObject:

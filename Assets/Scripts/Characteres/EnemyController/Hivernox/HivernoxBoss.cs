@@ -58,6 +58,19 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private float autoIceBreakerHitDelay = 0.38f;
         [SerializeField] private bool autoResolveIceBreakerIfNoAnimationEvent = false;
 
+        [Header("Freeze Finisher - Warrior Hit Box Contact")]
+        [Tooltip("Use the WarriorHitbox child layer only. Leave empty to auto-use the Unity layer named 'Hit Box'.")]
+        [SerializeField] private LayerMask frozenWarriorHitBoxLayer;
+
+        [Tooltip("The Hivernox body collider that must be checked against the WarriorHitbox. Leave empty to use collider2 / first non-trigger collider.")]
+        [SerializeField] private Collider2D hivernoxBodyColliderForFrozenContact;
+
+        [Tooltip("Small safety distance before the Hivernox body collider touches the WarriorHitbox.")]
+        [SerializeField, Min(0f)] private float frozenHitBoxContactSkin = 0.02f;
+
+        [Tooltip("ON = when Hivernox touches the frozen WarriorHitbox during IceBreakerAttack, resolve the hit and retreat immediately.")]
+        [SerializeField] private bool retreatOnFrozenWarriorHitBoxContact = true;
+
         [Header("Counterattack / Hand Smash")]
         [SerializeField] private bool enableCounterOnDirectHit = true;
         [SerializeField] private float counterReactionRange = 1.85f;
@@ -83,7 +96,27 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private string stateIntParameter = "";
 
         [Header("Impact FX")]
+        [Tooltip("Dedicated prefab for AttackAnimation2Display / IceBreaker impact. Assign vfx_Impact_hivernox.prefab here.")]
+        [SerializeField] private GameObject attack2ImpactFxPrefab;
+
+        [Tooltip("Optional exact spawn point for the Attack2 impact FX. Leave empty to spawn on the WarriorHitbox center.")]
+        [SerializeField] private Transform attack2ImpactFxPoint;
+
+        [Tooltip("ON = Attack2 impact FX spawns at the WarriorHitbox center. OFF = use Warrior collider/transform fallback.")]
+        [SerializeField] private bool attack2ImpactFxUseWarriorHitBoxCenter = true;
+
+        [Tooltip("Optional world offset for the Attack2 impact FX. Use Y > 0 if the FX must appear slightly above the hitbox.")]
+        [SerializeField] private Vector3 attack2ImpactFxWorldOffset = Vector3.zero;
+
+        [Tooltip("Destroy spawned Attack2 impact FX after this many seconds. Set <= 0 if the prefab destroys itself.")]
+        [SerializeField, Min(0f)] private float attack2ImpactFxLifetime = 2f;
+
+        [Tooltip("ON = one Attack2 impact FX per IceBreaker attack.")]
+        [SerializeField] private bool attack2ImpactFxOnlyOncePerAttack = true;
+
+        [Tooltip("Old field kept as fallback. Prefer assigning Attack 2 Impact Fx Prefab above.")]
         [SerializeField] private GameObject iceBreakerHitFxPrefab;
+
         [SerializeField] private GameObject handSmashHitFxPrefab;
 
 
@@ -92,6 +125,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         private bool _bossActivated;
         private bool _projectileFiredThisAttack;
         private bool _iceBreakerHitResolved;
+        private bool _attack2ImpactFxPlayed;
         private bool _handSmashHitResolved;
         private float _nextIceAttackTime = -999f;
         private float _nextCounterTime = -999f;
@@ -172,6 +206,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             }
 
             WaitAnimationDisplay();
+
         }
 
         public void ActivateBoss()
@@ -405,11 +440,13 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         private IEnumerator FreezeFinisherRoutine(Warrior warrior)
         {
             SetState(HivernoxState.FreezeWarrior);
-            StopMoveTowardCoroutine();
+            StopHivernoxMotionNow();
             CanMove = false;
             FaceWarrior();
 
-            // Small readable pause before Hivernox starts moving.
+            // Hivernox is not moving during this small pause.
+            // Wait animation is allowed here, but never during X movement.
+            // WaitAnimationDisplay();
             yield return new WaitForSecondsRealtime(0.08f);
 
             if (warrior == null || !warrior.IsFrozenByHivernox)
@@ -425,11 +462,16 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             while (warrior != null &&
                    warrior.IsFrozenByHivernox &&
-                   GetHorizontalDistanceTo(warrior.transform) > finisherRange &&
-                   chaseTimer < maxFinisherChaseSeconds)
+                   GetHorizontalDistanceTo(warrior.transform) > finisherRange)
             {
                 FaceWarrior();
-                RunAnimationDisplay();
+
+                if (retreatOnFrozenWarriorHitBoxContact && IsTouchingWarriorHitBoxLayer(warrior))
+                {
+                    StopHivernoxMotionNow();
+                    yield return StartCoroutine(IceBreakerAttackRoutine(warrior));
+                    yield break;
+                }
 
                 float targetX = warrior.transform.position.x;
                 float nextX = Mathf.MoveTowards(
@@ -438,25 +480,32 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                     moveToFrozenWarriorSpeed * Time.deltaTime);
 
                 nextX = ClampToCurrentPlatform(nextX);
-                transform.position = new Vector3(nextX, transform.position.y, transform.position.z);
+
+                if (retreatOnFrozenWarriorHitBoxContact && WouldTouchWarriorHitBoxLayerAtX(warrior, nextX))
+                {
+                    StopHivernoxMotionNow();
+                    yield return StartCoroutine(IceBreakerAttackRoutine(warrior));
+                    yield break;
+                }
+
+                // Movement + animation are linked here.
+                // If Hivernox moves during finisher chase, he must run.
+                MoveHivernoxHorizontallyWithLocomotionAnimation(nextX, useRunAnimation: true);
 
                 chaseTimer += Time.deltaTime;
                 yield return null;
             }
 
-            StopMoveTowardCoroutine();
-            WaitAnimationDisplay();
+            StopHivernoxMotionNow();
 
             if (warrior == null || !warrior.IsFrozenByHivernox)
             {
+                WaitAnimationDisplay();
                 _actionRoutine = null;
                 StartExclusiveRoutine(RetreatRoutine());
                 yield break;
             }
 
-            // Important: do not require perfect distance here.
-            // If Hivernox chased but did not reach exact finisherRange,
-            // allow the attack anyway while Warrior is still frozen.
             yield return StartCoroutine(IceBreakerAttackRoutine(warrior));
         }
 
@@ -464,26 +513,60 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             SetState(HivernoxState.IceBreakerAttack);
             FaceWarrior();
+            StopHivernoxMotionNow();
             CanMove = false;
 
             _iceBreakerHitResolved = false;
+            _attack2ImpactFxPlayed = false;
             // Uses your existing CharacterController animation-display method.
             // This sets isAttacking2 = true.
             AttackAnimation2Display();
 
-            if (autoResolveIceBreakerIfNoAnimationEvent)
-            {
-                yield return new WaitForSeconds(autoIceBreakerHitDelay);
+            float timer = 0f;
 
-                if (!_iceBreakerHitResolved)
+            while (timer < iceBreakerAnimationSeconds)
+            {
+                if (warrior == null)
+                    break;
+
+                // Main fix: use the WarriorHitbox child collider/layer, not Warrior's default BoxCollider2D.
+                // As soon as Hivernox touches that hit box during IceBreakerAttack, resolve the hit
+                // and retreat immediately so the boss cannot keep pushing the frozen Warrior.
+                if (retreatOnFrozenWarriorHitBoxContact &&
+                    warrior.IsFrozenByHivernox &&
+                    IsTouchingWarriorHitBoxLayer(warrior))
+                {
+                    if (!_iceBreakerHitResolved)
+                    {
+                        // Play the dedicated Attack2 impact prefab at the real contact moment.
+                        TryPlayAttack2ImpactFx(warrior, requireTouchOrResolved: false);
+                        AE_IceBreakerHit();
+                    }
+
+                    StopHivernoxMotionNow();
+                    WaitAnimationDisplay();
+                    CanMove = false;
+
+                    _actionRoutine = null;
+                    StartExclusiveRoutine(RetreatRoutine());
+                    yield break;
+                }
+
+                // If the freeze expired before the attack connected, just stop the attack and retreat.
+                if (!warrior.IsFrozenByHivernox && !_iceBreakerHitResolved)
+                    break;
+
+                if (autoResolveIceBreakerIfNoAnimationEvent &&
+                    !_iceBreakerHitResolved &&
+                    timer >= autoIceBreakerHitDelay)
+                {
+                    // Fallback path when you did not add an animation event.
+                    TryPlayAttack2ImpactFx(warrior, requireTouchOrResolved: false);
                     AE_IceBreakerHit();
+                }
 
-                float remaining = Mathf.Max(0f, iceBreakerAnimationSeconds - autoIceBreakerHitDelay);
-                yield return new WaitForSeconds(remaining);
-            }
-            else
-            {
-                yield return new WaitForSeconds(iceBreakerAnimationSeconds);
+                timer += Time.deltaTime;
+                yield return null;
             }
 
             WaitAnimationDisplay();
@@ -494,11 +577,17 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         }
 
         /// <summary>
-        /// Put this animation event on the frame where Hivernox breaks the ice around the Warrior.
+        /// Damage / freeze-break logic only.
+        /// Do not use this as the Attack2 visual prefab event anymore.
+        /// Use AE_Attack2ImpactFx on the Attack2 animation impact frame.
         /// </summary>
         public void AE_IceBreakerHit()
         {
             if (_iceBreakerHitResolved)
+                return;
+
+            // Ignore late animation events after the attack was aborted and Hivernox started retreating.
+            if (state != HivernoxState.IceBreakerAttack)
                 return;
 
             _iceBreakerHitResolved = true;
@@ -520,7 +609,94 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 stunSeconds: iceBreakerStunSeconds,
                 knockbackVelocity: iceBreakerKnockbackVelocity);
 
-            SpawnFx(iceBreakerHitFxPrefab, warrior.transform.position);
+        }
+
+        /// <summary>
+        /// Put this animation event on AttackAnimation2's exact impact frame.
+        /// This plays vfx_Impact_hivernox.prefab without doing damage.
+        /// </summary>
+        public void AE_Attack2ImpactFx()
+        {
+            // Animation Event used by AttackAnimation2Display().
+            // Visual only. AE_IceBreakerHit() still does the damage/freeze-break.
+            // Do not require Physics2D contact here; the event frame can happen slightly
+            // before/after the exact collider overlap frame.
+            Warrior warrior = _finisherTarget != null
+                ? _finisherTarget
+                : (GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null);
+
+            TryPlayAttack2ImpactFx(warrior, requireTouchOrResolved: false);
+        }
+
+        private bool TryPlayAttack2ImpactFx(Warrior warrior, bool requireTouchOrResolved)
+        {
+            if (attack2ImpactFxOnlyOncePerAttack && _attack2ImpactFxPlayed)
+                return false;
+
+            if (state != HivernoxState.IceBreakerAttack)
+                return false;
+
+            if (warrior == null)
+                return false;
+
+            GameObject prefab = attack2ImpactFxPrefab != null
+                ? attack2ImpactFxPrefab
+                : iceBreakerHitFxPrefab;
+
+            if (prefab == null)
+                return false;
+
+            if (requireTouchOrResolved &&
+                !_iceBreakerHitResolved &&
+                !IsTouchingWarriorHitBoxLayer(warrior))
+            {
+                return false;
+            }
+
+            _attack2ImpactFxPlayed = true;
+            SpawnFx(prefab, GetAttack2ImpactFxPosition(warrior), attack2ImpactFxLifetime);
+            return true;
+        }
+
+        private Vector3 GetAttack2ImpactFxPosition(Warrior warrior)
+        {
+            if (attack2ImpactFxPoint != null)
+                return attack2ImpactFxPoint.position + attack2ImpactFxWorldOffset;
+
+            if (warrior == null)
+                return transform.position + attack2ImpactFxWorldOffset;
+
+            if (attack2ImpactFxUseWarriorHitBoxCenter)
+            {
+                Collider2D warriorHitBox = GetFirstWarriorHitBoxCollider(warrior);
+                if (warriorHitBox != null)
+                    return warriorHitBox.bounds.center + attack2ImpactFxWorldOffset;
+            }
+
+            if (warrior.collider2 != null)
+                return warrior.collider2.bounds.center + attack2ImpactFxWorldOffset;
+
+            return warrior.transform.position + attack2ImpactFxWorldOffset;
+        }
+
+        private Collider2D GetFirstWarriorHitBoxCollider(Warrior warrior)
+        {
+            if (warrior == null)
+                return null;
+
+            int mask = GetFrozenWarriorHitBoxMaskValue();
+            if (mask == 0)
+                return null;
+
+            Collider2D[] warriorColliders = warrior.GetComponentsInChildren<Collider2D>(true);
+            for (int i = 0; i < warriorColliders.Length; i++)
+            {
+                Collider2D candidate = warriorColliders[i];
+                if (IsValidWarriorHitBoxCollider(candidate, warrior, mask))
+                    return candidate;
+            }
+
+            return null;
         }
 
         protected override void OnDamaged(float damage, bool killed)
@@ -641,10 +817,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             StartExclusiveRoutine(CooldownRoutine());
         }
 
-        public void AE_EndIceBreakerAttack()
-        {
-            WaitAnimationDisplay();
-        }
+        //public void AE_EndIceBreakerAttack()
+        //{
+        //    WaitAnimationDisplay();
+        //}
 
         private IEnumerator RetreatRoutine()
         {
@@ -658,7 +834,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             while (Mathf.Abs(transform.position.x - retreatTarget.x) > retreatArriveDistance &&
                    timer < maxRetreatSeconds)
             {
-                WalkAnimationDisplay();
                 FaceAwayFrom(warrior);
 
                 float nextX = Mathf.MoveTowards(
@@ -666,13 +841,15 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                     retreatTarget.x,
                     retreatSpeed * Time.deltaTime);
 
-                nextX = ClampToCurrentPlatform(nextX);
-                transform.position = new Vector3(nextX, transform.position.y, transform.position.z);
+                // Movement + animation are linked here.
+                // If Hivernox moves during retreat, he must walk.
+                MoveHivernoxHorizontallyWithLocomotionAnimation(nextX, useRunAnimation: false);
 
                 timer += Time.deltaTime;
                 yield return null;
             }
 
+            StopHivernoxMotionNow();
             WaitAnimationDisplay();
             CanMove = true;
 
@@ -741,13 +918,156 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             return new Vector3(ClampToCurrentPlatform(_homePosition.x), transform.position.y, transform.position.z);
         }
 
+        private void StopHivernoxMotionNow()
+        {
+            StopMoveTowardCoroutine();
+
+            if (rigidbody2 != null)
+                rigidbody2.linearVelocity = Vector2.zero;
+        }
+
+        private bool MoveHivernoxHorizontallyWithLocomotionAnimation(float nextX, bool useRunAnimation)
+        {
+            nextX = ClampToCurrentPlatform(nextX);
+
+            float currentX = transform.position.x;
+            float deltaX = nextX - currentX;
+
+            // No real X movement. Do NOT call WaitAnimationDisplay() here.
+            // This helper is used inside movement loops, so the owning routine
+            // decides when Hivernox is truly stopped.
+            if (Mathf.Abs(deltaX) <= 0.0005f)
+            {
+                StopHivernoxMotionNow();
+                return false;
+            }
+
+            // While the transform moves, force the correct locomotion animation.
+            if (useRunAnimation)
+                RunAnimationDisplay();
+            else
+                WalkAnimationDisplay();
+
+            transform.position = new Vector3(nextX, transform.position.y, transform.position.z);
+            return true;
+        }
+
+
+        private bool IsTouchingWarriorHitBoxLayer(Warrior warrior)
+        {
+            Collider2D hivernoxCollider = GetHivernoxBodyColliderForFrozenContact();
+            if (hivernoxCollider == null || warrior == null)
+                return false;
+
+            int mask = GetFrozenWarriorHitBoxMaskValue();
+            if (mask == 0)
+                return false;
+
+            Collider2D[] warriorColliders = warrior.GetComponentsInChildren<Collider2D>(true);
+            for (int i = 0; i < warriorColliders.Length; i++)
+            {
+                Collider2D warriorCollider = warriorColliders[i];
+                if (!IsValidWarriorHitBoxCollider(warriorCollider, warrior, mask))
+                    continue;
+
+                ColliderDistance2D distance = hivernoxCollider.Distance(warriorCollider);
+                if (distance.isOverlapped || distance.distance <= frozenHitBoxContactSkin)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool WouldTouchWarriorHitBoxLayerAtX(Warrior warrior, float nextX)
+        {
+            Collider2D hivernoxCollider = GetHivernoxBodyColliderForFrozenContact();
+            if (hivernoxCollider == null || warrior == null)
+                return false;
+
+            int mask = GetFrozenWarriorHitBoxMaskValue();
+            if (mask == 0)
+                return false;
+
+            Bounds movedHivernoxBounds = hivernoxCollider.bounds;
+            movedHivernoxBounds.center += new Vector3(nextX - transform.position.x, 0f, 0f);
+            movedHivernoxBounds.Expand(frozenHitBoxContactSkin * 2f);
+
+            Collider2D[] warriorColliders = warrior.GetComponentsInChildren<Collider2D>(true);
+            for (int i = 0; i < warriorColliders.Length; i++)
+            {
+                Collider2D warriorCollider = warriorColliders[i];
+                if (!IsValidWarriorHitBoxCollider(warriorCollider, warrior, mask))
+                    continue;
+
+                Bounds warriorHitBoxBounds = warriorCollider.bounds;
+                warriorHitBoxBounds.Expand(frozenHitBoxContactSkin * 2f);
+
+                if (movedHivernoxBounds.Intersects(warriorHitBoxBounds))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool IsValidWarriorHitBoxCollider(Collider2D candidate, Warrior warrior, int mask)
+        {
+            if (candidate == null || !candidate.enabled)
+                return false;
+
+            if ((mask & (1 << candidate.gameObject.layer)) == 0)
+                return false;
+
+            return candidate.GetComponentInParent<Warrior>() == warrior;
+        }
+
+        private int GetFrozenWarriorHitBoxMaskValue()
+        {
+            if (frozenWarriorHitBoxLayer.value != 0)
+                return frozenWarriorHitBoxLayer.value;
+
+            int hitBoxLayer = LayerMask.NameToLayer("Hit Box");
+            if (hitBoxLayer < 0)
+                hitBoxLayer = LayerMask.NameToLayer("Hit Box");
+
+            return hitBoxLayer >= 0 ? 1 << hitBoxLayer : 0;
+        }
+
+        private Collider2D GetHivernoxBodyColliderForFrozenContact()
+        {
+            if (hivernoxBodyColliderForFrozenContact != null && hivernoxBodyColliderForFrozenContact.enabled)
+                return hivernoxBodyColliderForFrozenContact;
+
+            if (collider2 != null && collider2.enabled)
+                return collider2;
+
+            Collider2D[] colliders = GetComponentsInChildren<Collider2D>(true);
+
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                Collider2D candidate = colliders[i];
+                if (candidate != null && candidate.enabled && !candidate.isTrigger)
+                    return candidate;
+            }
+
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                Collider2D candidate = colliders[i];
+                if (candidate != null && candidate.enabled)
+                    return candidate;
+            }
+
+            return null;
+        }
+
         private void StartExclusiveRoutine(IEnumerator routine)
         {
-            StopActionRoutine();
+            // Do not force WaitAnimationDisplay() when switching to a new action.
+            // The new action decides whether it should run, walk, attack, or wait.
+            StopActionRoutine(forceWaitAnimation: false);
             _actionRoutine = StartCoroutine(routine);
         }
 
-        private void StopActionRoutine()
+        private void StopActionRoutine(bool forceWaitAnimation = true)
         {
             if (_actionRoutine != null)
             {
@@ -755,7 +1075,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 _actionRoutine = null;
             }
 
-            WaitAnimationDisplay();
+            if (forceWaitAnimation)
+                WaitAnimationDisplay();
         }
 
         private void SetState(HivernoxState nextState)
@@ -820,13 +1141,42 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             return CurrentplatForm == warrior.CurrentplatForm;
         }
 
-        private void SpawnFx(GameObject prefab, Vector3 position)
+        private void SpawnFx(GameObject prefab, Vector3 position, float lifetime = 2f)
         {
             if (prefab == null)
                 return;
 
             GameObject fx = Instantiate(prefab, position, Quaternion.identity);
-            Destroy(fx, 2f);
+            fx.SetActive(true);
+
+            // Safety: some FX prefabs have Particle Systems with Play On Awake disabled.
+            // This forces the impact to play when it is spawned.
+            ParticleSystem[] particles = fx.GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < particles.Length; i++)
+            {
+                if (particles[i] == null)
+                    continue;
+
+                particles[i].gameObject.SetActive(true);
+                particles[i].Clear(true);
+                particles[i].Play(true);
+            }
+
+            // Safety for animated sprite/VFX prefabs.
+            Animator[] fxAnimators = fx.GetComponentsInChildren<Animator>(true);
+            for (int i = 0; i < fxAnimators.Length; i++)
+            {
+                if (fxAnimators[i] == null)
+                    continue;
+
+                fxAnimators[i].gameObject.SetActive(true);
+                fxAnimators[i].enabled = true;
+                fxAnimators[i].speed = 1f;
+                fxAnimators[i].Play(0, 0, 0f);
+            }
+
+            if (lifetime > 0f)
+                Destroy(fx, lifetime);
         }
 
         protected override void OnDeath()
