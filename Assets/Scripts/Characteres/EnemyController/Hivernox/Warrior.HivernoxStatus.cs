@@ -132,7 +132,7 @@ namespace Assets.Scripts.Characteres.WarriorController
         {
             _frozenByHivernox = true;
 
-            ForceCancelCurrentAttackForExternalLock();
+            ForceCancelCurrentAttack();
             StopMoveTowardCoroutine();
             StopJumpTowardCoroutine();
             WaitAnimationDisplay();
@@ -178,9 +178,23 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             if (!IsDeadOrDying && !_deathStarted)
             {
+                RestoreNormalWarriorVisualsAfterHivernoxFreeze();
+
                 CanMove = true;
                 CanAttackWarrior = true;
             }
+        }
+
+        private void RestoreNormalWarriorVisualsAfterHivernoxFreeze()
+        {
+            HideIceChargeVfx();
+            HideAttack3Visuals();
+            HideAttack3Body();
+            ShowDefaultWarriorVisuals();
+            ResetAttack3OrbitAim();
+
+            if (warriorIceOverlay != null)
+                warriorIceOverlay.ForceRestoreDefaultRendererAfterFreeze();
         }
 
         private void ShowHivernoxFreezeVfx()
@@ -270,7 +284,7 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private IEnumerator HivernoxHitLockRoutine(Vector2 fromWorldPosition, float seconds, float knockbackVelocity)
         {
-            ForceCancelCurrentAttackForExternalLock();
+            ForceCancelCurrentAttack();
             StopMoveTowardCoroutine();
             StopJumpTowardCoroutine();
 

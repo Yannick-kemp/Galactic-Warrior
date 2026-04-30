@@ -71,7 +71,11 @@ namespace Assets.Scripts.Relics.UI
             if (_btn == null || _rm == null || definition == null || warrior == null) return;
 
             bool hasResource = _rm.GetCount(definition) > 0;
-            bool canUseNow = !warrior.IsDead && !warrior.CanDie;
+            bool canUseNow =
+                !warrior.IsDead &&
+                !warrior.CanDie &&
+                warrior.CanAttackWarrior &&
+                !warrior.IsFrozenByHivernox;
 
             bool blockedByIceArmed = definition is IceBallRelic && warrior != null && warrior.IsIceBallArmed;
             _btn.interactable = hasResource && canUseNow && !blockedByIceArmed;
@@ -129,10 +133,12 @@ namespace Assets.Scripts.Relics.UI
         private void OnClicked()
         {
             if (definition == null || warrior == null || _rm == null) return;
-            // NEW: hard guard while dead
-            if (warrior.IsDead || warrior.CanDie) return;
+            // Hard guard: do not arm or use relics while dead, frozen, or action-locked by Hivernox.
+            if (warrior.IsDead || warrior.CanDie || !warrior.CanAttackWarrior || warrior.IsFrozenByHivernox)
+                return;
+
             warrior.NotifyUIConsumedInput(worldInputBlockSeconds);
-       
+
             if (!HasResourceToUse())
                 return;
 

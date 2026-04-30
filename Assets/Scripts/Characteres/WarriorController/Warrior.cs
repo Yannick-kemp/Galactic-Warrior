@@ -175,6 +175,8 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private bool IsHardActionLocked =>
             _platformStoneRepulseActive ||
+            _frozenByHivernox ||
+            _hivernoxHitLockRoutine != null ||
             _deathStarted ||
             CanDie ||
             IsDeadOrDying;
@@ -408,7 +410,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             HandleFallingAndDeath();
 
             CheckWorldYDeathFallback();
-           // CheckOutOfViewportDeath();
+            // CheckOutOfViewportDeath();
             CheckEnemiesLeavingRange();
             UpdateEcho();
             UpdateLowHealthBlink();   // optional safety
@@ -583,7 +585,7 @@ namespace Assets.Scripts.Characteres.WarriorController
         public override void TakeDamage(float damage)
         {
 
-            if (IsDeadOrDying)return;
+            if (IsDeadOrDying) return;
             if (_sprintActive) return;
             if (_reviveInvulnerable) return; // prevents instant re-death
             if (_deathStarted) return;
@@ -694,7 +696,7 @@ namespace Assets.Scripts.Characteres.WarriorController
         [SerializeField] private float stunRecoveryImmunity = 0.25f;
         private float _stunImmuneUntil = -999f;
 
-      
+
 
     }
 }

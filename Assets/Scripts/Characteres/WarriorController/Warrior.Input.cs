@@ -10,7 +10,8 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void HandleInput()
         {
-            if (IsHardActionLocked)
+            // Hivernox freeze/hit-lock must stop world input before IceBallRelic touch handling.
+            if (IsHardActionLocked || _frozenByHivernox || !CanAttackWarrior)
                 return;
 
             if (Time.time < _uiInputBlockUntil)
