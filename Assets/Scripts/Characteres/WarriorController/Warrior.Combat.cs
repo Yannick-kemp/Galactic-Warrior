@@ -695,6 +695,16 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private Coroutine _platformStoneRepulseRoutine;
 
+        [Header("Falling Stone Platform Repulse - Enemy Stop")]
+        [Tooltip("ON = when the falling-stone platform repulse moves the Warrior into any Enemy, the repulse stops immediately.")]
+        [SerializeField] private bool stopPlatformStoneRepulseOnEnemyContact = true;
+
+        [Tooltip("Small overlap margin used while the repulse moves the Warrior by transform.position.")]
+        [SerializeField, Min(0f)] private float platformStoneEnemyContactSkin = 0.03f;
+
+        private bool _platformStoneRepulseStoppedByEnemyContact;
+        private Enemy _platformStoneRepulseBlockingEnemy;
+
         public void TryRepulseFromPlatformStoneImpact(
             PlatFormColliderTrigger impactPlatform,
             Vector2 impactWorldPosition,
@@ -723,6 +733,9 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             if (collider2 == null)
                 return;
+
+            _platformStoneRepulseStoppedByEnemyContact = false;
+            _platformStoneRepulseBlockingEnemy = null;
 
             float repulseDirection = GetRepulseDirectionFromImpact(impactWorldPosition.x);
 
@@ -802,11 +815,29 @@ namespace Assets.Scripts.Characteres.WarriorController
                 t = Mathf.SmoothStep(0f, 1f, t);
 
                 transform.position = Vector3.Lerp(start, end, t);
+                Physics2D.SyncTransforms();
+
+                Enemy touchedEnemy = GetEnemyTouchedDuringPlatformStoneRepulse();
+                if (touchedEnemy != null)
+                {
+                    StopPlatformStoneRepulseBecauseEnemyContact(touchedEnemy, false);
+                    _platformStoneRepulseRoutine = null;
+                    yield break;
+                }
 
                 yield return null;
             }
 
             transform.position = end;
+            Physics2D.SyncTransforms();
+
+            Enemy finalTouchedEnemy = GetEnemyTouchedDuringPlatformStoneRepulse();
+            if (finalTouchedEnemy != null)
+            {
+                StopPlatformStoneRepulseBecauseEnemyContact(finalTouchedEnemy, false);
+                _platformStoneRepulseRoutine = null;
+                yield break;
+            }
 
             float remainingLock = Mathf.Max(0f, controlLockSeconds - duration);
             if (remainingLock > 0f)
@@ -824,6 +855,8 @@ namespace Assets.Scripts.Characteres.WarriorController
             _canAttackBeforeStoneRepulse = CanAttack;
 
             _platformStoneRepulseActive = true;
+            _platformStoneRepulseStoppedByEnemyContact = false;
+            _platformStoneRepulseBlockingEnemy = null;
 
             CanMove = false;
             CanAttackWarrior = false;
@@ -835,9 +868,120 @@ namespace Assets.Scripts.Characteres.WarriorController
             _blockingEnemy = null;
         }
 
+        public bool TryStopPlatformStoneRepulseOnEnemyContact(Enemy enemy)
+        {
+            if (!_platformStoneRepulseActive)
+                return false;
+
+            if (!stopPlatformStoneRepulseOnEnemyContact)
+                return false;
+
+            if (enemy == null)
+                return false;
+
+            StopPlatformStoneRepulseBecauseEnemyContact(enemy, true);
+            return true;
+        }
+
+        private void StopPlatformStoneRepulseBecauseEnemyContact(Enemy enemy, bool stopRunningCoroutine)
+        {
+            if (!_platformStoneRepulseActive)
+                return;
+
+            _platformStoneRepulseStoppedByEnemyContact = true;
+            _platformStoneRepulseBlockingEnemy = enemy;
+
+            if (stopRunningCoroutine && _platformStoneRepulseRoutine != null)
+            {
+                StopCoroutine(_platformStoneRepulseRoutine);
+                _platformStoneRepulseRoutine = null;
+            }
+
+            _platformStoneRepulseActive = false;
+            _blockAction = false;
+
+            _blockedByEnemyContact = true;
+            _blockingEnemy = enemy;
+
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+
+            if (rigidbody2 != null)
+            {
+                Vector2 v = rigidbody2.linearVelocity;
+                v.x = 0f;
+                rigidbody2.linearVelocity = v;
+                rigidbody2.angularVelocity = 0f;
+            }
+
+            if (_deathStarted || CanDie || IsDeadOrDying)
+                return;
+
+            CanMove = true;
+            CanAttackWarrior = _canAttackWarriorBeforeStoneRepulse;
+            CanAttack = _canAttackBeforeStoneRepulse;
+
+            if (animator != null)
+            {
+                if (animator.GetBool("IsLosingCtrl"))
+                    animator.SetBool("IsLosingCtrl", false);
+
+                if (CountGroundPoints() <= 1)
+                    ShowLosingBalance();
+                else
+                    WaitAnimationDisplay();
+            }
+
+            Debug.Log($"[StoneRepulse STOPPED BY ENEMY] enemy={enemy.name}, CanMove={CanMove}, CanAttackWarrior={CanAttackWarrior}, CanAttack={CanAttack}");
+        }
+
+        private Enemy GetEnemyTouchedDuringPlatformStoneRepulse()
+        {
+            if (!stopPlatformStoneRepulseOnEnemyContact)
+                return null;
+
+            if (!_platformStoneRepulseActive)
+                return null;
+
+            if (collider2 == null)
+                return null;
+
+            Bounds b = collider2.bounds;
+            b.Expand(platformStoneEnemyContactSkin);
+
+            Collider2D[] hits = Physics2D.OverlapBoxAll(b.center, b.size, 0f);
+
+            for (int i = 0; i < hits.Length; i++)
+            {
+                Collider2D hit = hits[i];
+                if (hit == null)
+                    continue;
+
+                if (hit == collider2)
+                    continue;
+
+                // Use solid enemy colliders only. This avoids stopping on detection/attack trigger zones.
+                if (hit.isTrigger)
+                    continue;
+
+                Enemy enemy = hit.GetComponentInParent<Enemy>();
+                if (enemy == null)
+                    continue;
+
+                if (enemy.IsDeadOrDying)
+                    continue;
+
+                return enemy;
+            }
+
+            return null;
+        }
+
         private void EndPlatformStoneRepulseLock(bool playIdleAnimation)
         {
             _platformStoneRepulseActive = false;
+            _platformStoneRepulseStoppedByEnemyContact = false;
+            _platformStoneRepulseBlockingEnemy = null;
             _blockAction = false;
 
             _blockedByEnemyContact = false;

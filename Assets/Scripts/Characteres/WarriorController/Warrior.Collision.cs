@@ -14,6 +14,9 @@ namespace Assets.Scripts.Characteres.WarriorController
         {
             var enemy = collision.collider.GetComponentInParent<Enemy>();
 
+            if (enemy != null && TryStopPlatformStoneRepulseOnEnemyContact(enemy))
+                return;
+
             if (_sprintActive && enemy != null && collision.collider != null)
             {
                 if (_ignoredEnemyCollidersDuringSprint.Add(collision.collider))
@@ -66,6 +69,9 @@ namespace Assets.Scripts.Characteres.WarriorController
         private void OnCollisionStay2D(Collision2D collision)
         {
             var enemy = collision.collider.GetComponentInParent<Enemy>();
+
+            if (enemy != null && TryStopPlatformStoneRepulseOnEnemyContact(enemy))
+                return;
 
             if (_sprintActive && collision.collider != null)
             {
@@ -283,7 +289,7 @@ namespace Assets.Scripts.Characteres.WarriorController
                 rigidbody2.linearVelocity = v;
             }
 
-            if (CountGroundPoints() <= 1) 
+            if (CountGroundPoints() <= 1)
                 ShowLosingBalance();
             else
                 WaitAnimationDisplay();

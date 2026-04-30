@@ -452,7 +452,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (warrior == null || !warrior.IsFrozenByHivernox)
             {
                 _actionRoutine = null;
-                
+
                 //StartExclusiveRoutine(RetreatRoutine());
                 yield break;
             }
@@ -500,7 +500,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             {
                 WaitAnimationDisplay();
                 _actionRoutine = null;
-              //  StartExclusiveRoutine(RetreatRoutine());
+                //  StartExclusiveRoutine(RetreatRoutine());
                 yield break;
             }
 
