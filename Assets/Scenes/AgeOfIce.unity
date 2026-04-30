@@ -344,6 +344,63 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6e81682d4a780534098c4967bfe8eb1e, type: 3}
+--- !u!1001 &21321439
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1455931786518333997, guid: 5d233b0e41601cf4f81a36df7d20e8fd, type: 3}
+      propertyPath: m_Name
+      value: relic-rare-sprint
+      objectReference: {fileID: 0}
+    - target: {fileID: 2153098705602892351, guid: 5d233b0e41601cf4f81a36df7d20e8fd, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -8.273837
+      objectReference: {fileID: 0}
+    - target: {fileID: 2153098705602892351, guid: 5d233b0e41601cf4f81a36df7d20e8fd, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -0.7795176
+      objectReference: {fileID: 0}
+    - target: {fileID: 2153098705602892351, guid: 5d233b0e41601cf4f81a36df7d20e8fd, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2153098705602892351, guid: 5d233b0e41601cf4f81a36df7d20e8fd, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2153098705602892351, guid: 5d233b0e41601cf4f81a36df7d20e8fd, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2153098705602892351, guid: 5d233b0e41601cf4f81a36df7d20e8fd, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2153098705602892351, guid: 5d233b0e41601cf4f81a36df7d20e8fd, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2153098705602892351, guid: 5d233b0e41601cf4f81a36df7d20e8fd, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2153098705602892351, guid: 5d233b0e41601cf4f81a36df7d20e8fd, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2153098705602892351, guid: 5d233b0e41601cf4f81a36df7d20e8fd, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 5d233b0e41601cf4f81a36df7d20e8fd, type: 3}
 --- !u!1001 &123630733
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1074,6 +1131,9 @@ MonoBehaviour:
   hivernoxBodyColliderForFrozenContact: {fileID: 0}
   frozenHitBoxContactSkin: 0.02
   retreatOnFrozenWarriorHitBoxContact: 1
+  shieldLaserBlocksIceBreaker: 1
+  shieldLaserContactSkin: 0.03
+  retreatWhenIceBreakerHitsShieldLaser: 1
   enableCounterOnDirectHit: 1
   counterReactionRange: 1.85
   counterCooldown: 1.1
@@ -1571,6 +1631,63 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 6443865070129483170, guid: 38f72dc0bbd30db458a26b9a6a135dbe, type: 3}
   m_PrefabInstance: {fileID: 1986522116}
   m_PrefabAsset: {fileID: 0}
+--- !u!1001 &1562276382
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 621017492259733938, guid: 6b620ec863f38bf4bbbd45abc588bb24, type: 3}
+      propertyPath: m_Name
+      value: relic-com-shield
+      objectReference: {fileID: 0}
+    - target: {fileID: 8662747562549627995, guid: 6b620ec863f38bf4bbbd45abc588bb24, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -2.7337415
+      objectReference: {fileID: 0}
+    - target: {fileID: 8662747562549627995, guid: 6b620ec863f38bf4bbbd45abc588bb24, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -0.807218
+      objectReference: {fileID: 0}
+    - target: {fileID: 8662747562549627995, guid: 6b620ec863f38bf4bbbd45abc588bb24, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8662747562549627995, guid: 6b620ec863f38bf4bbbd45abc588bb24, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8662747562549627995, guid: 6b620ec863f38bf4bbbd45abc588bb24, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8662747562549627995, guid: 6b620ec863f38bf4bbbd45abc588bb24, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8662747562549627995, guid: 6b620ec863f38bf4bbbd45abc588bb24, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8662747562549627995, guid: 6b620ec863f38bf4bbbd45abc588bb24, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8662747562549627995, guid: 6b620ec863f38bf4bbbd45abc588bb24, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8662747562549627995, guid: 6b620ec863f38bf4bbbd45abc588bb24, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 6b620ec863f38bf4bbbd45abc588bb24, type: 3}
 --- !u!1 &1676218943
 GameObject:
   m_ObjectHideFlags: 0
@@ -2283,10 +2400,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 95117a9e893f6cd47b30896c6c0a29ce, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  sourceRenderer: {fileID: 0}
+  warriorRoot: {fileID: 0}
   overlayRenderer: {fileID: 0}
+  defaultWarriorSpriteRenderer: {fileID: 0}
+  forceDefaultRendererEnabledAfterFreeze: 1
+  sortingReferenceRenderer: {fileID: 0}
+  bodyFixedRoot: {fileID: 0}
+  hideEveryOtherSpriteRendererWhileFrozen: 1
+  forceBodyFixedRootInactiveWhileFrozen: 1
+  forceBodyFixedRootInactiveAfterFreeze: 1
   useOverlaySpriteAsAssigned: 1
-  hideSourceRendererWhileFrozen: 1
   iceMaterial: {fileID: 0}
   iceTint: {r: 0.47, g: 0.9, b: 1, a: 0.66}
   sortingOrderOffset: 20
@@ -2832,3 +2955,5 @@ SceneRoots:
   - {fileID: 1151017510}
   - {fileID: 804635802}
   - {fileID: 620724206}
+  - {fileID: 1562276382}
+  - {fileID: 21321439}
