@@ -492,9 +492,24 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private bool HasValidWarrior()
         {
-            return warrior != null &&
-                   Vector2.Distance(transform.position, warrior.transform.position) <= forgetRange &&
-                   !warrior.CanDie;
+            if (!HasLivingWarrior())
+                return false;
+
+            // IMPORTANT:
+            // Once Morvex already has a stone, do NOT use forgetRange anymore.
+            // The reserve can be far from Warrior, so Vector2.Distance(...) can be
+            // greater than forgetRange immediately after pickup. If we return false
+            // there, UpdateFlyAboveWarrior() calls DropStone() too early and the
+            // stone explodes near the reserve/platform.
+            if (hasStone)
+                return true;
+
+            return Vector2.Distance(transform.position, warrior.transform.position) <= forgetRange;
+        }
+
+        private bool HasLivingWarrior()
+        {
+            return warrior != null && !warrior.CanDie;
         }
 
         private void FlyTowards(Vector3 worldTarget, float speed)

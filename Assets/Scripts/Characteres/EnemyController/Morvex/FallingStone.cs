@@ -38,6 +38,22 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [Tooltip("When true, collision with Warrior is restored after sprint ends. Restoration waits until the stone is no longer overlapping Warrior.")]
         [SerializeField] private bool restoreWarriorCollisionAfterSprint = true;
 
+        [Header("Carry / Reserve Safety")]
+        [Tooltip("When true, this FallingStone can never resolve impact or destroy itself while Morvex is carrying it.")]
+        [SerializeField] private bool ignoreAllImpactsWhileCarried = true;
+
+        [Tooltip("When true, a carried visual stone disables its Rigidbody2D simulation while held by Morvex.")]
+        [SerializeField] private bool disableRigidbodySimulationWhileCarried = true;
+
+        [Tooltip("When true, a carried visual stone disables all of its Collider2D components while held by Morvex.")]
+        [SerializeField] private bool disableCollidersWhileCarried = true;
+
+        [Tooltip("Extra safety if you keep colliders enabled: the carried stone ignores every platform collider until Launch() is called.")]
+        [SerializeField] private bool ignorePlatformsWhileCarried = true;
+
+        [Tooltip("When true, platform trigger colliders are also ignored while the stone is carried/unlaunched.")]
+        [SerializeField] private bool includePlatformTriggersWhileCarried = true;
+
         [Header("Platform Miss Repulse")]
         [SerializeField] private bool repulseWarriorWhenStoneHitsHisPlatform = true;
         [SerializeField] private float platformRepulseDistance = 2.25f;
@@ -46,20 +62,25 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private Rigidbody2D rb;
         private Collider2D[] stoneColliders;
+        private bool[] originalColliderEnabledStates;
 
         private bool launched;
         private bool impactResolved;
+        private bool carriedByMorvex;
         private int shieldLaserLayer = -1;
 
         private bool ignoringWarriorBecauseSprint;
         private readonly List<Collider2D> sprintIgnoredWarriorColliders = new List<Collider2D>();
 
+        private bool ignoringPlatformsBecauseCarried;
+        private readonly List<Collider2D> carriedIgnoredPlatformColliders = new List<Collider2D>();
+
         private void Awake()
         {
-            rb = GetComponent<Rigidbody2D>();
-            rb.gravityScale = 0f;
+            CacheOwnPhysicsReferences();
 
-            stoneColliders = GetComponentsInChildren<Collider2D>(true);
+            if (rb != null)
+                rb.gravityScale = 0f;
 
             shieldLaserLayer = LayerMask.NameToLayer("Shield Laser");
             if (shieldLaserBlocksStone && shieldLaserLayer < 0)
@@ -71,19 +92,73 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             }
         }
 
+        /// <summary>
+        /// Call this ONLY for the stone object that Morvex visually holds.
+        /// This makes the carried object completely safe: no platform hit, no shield hit,
+        /// no Warrior hit, no impact VFX, and no Destroy() while it is attached to Morvex.
+        /// </summary>
+        public void BeginMorvexCarry()
+        {
+            CacheOwnPhysicsReferences();
+
+            carriedByMorvex = true;
+            launched = false;
+            impactResolved = false;
+
+            ClearSprintWarriorCollisionIgnore();
+
+            if (rb != null)
+            {
+                rb.gravityScale = 0f;
+                rb.linearVelocity = Vector2.zero;
+                rb.angularVelocity = 0f;
+
+                if (disableRigidbodySimulationWhileCarried)
+                    rb.simulated = false;
+            }
+
+            if (disableCollidersWhileCarried)
+                SetStoneCollidersEnabled(false);
+            else if (ignorePlatformsWhileCarried)
+                SetPlatformCollisionIgnoredWhileCarried(true);
+        }
+
+        /// <summary>
+        /// Use this if the same object must be released instead of only hidden.
+        /// Morvex currently instantiates a fresh fallingStonePrefab on release, so the held visual usually stays hidden.
+        /// </summary>
+        public void EndMorvexCarryWithoutLaunch()
+        {
+            carriedByMorvex = false;
+            RestorePhysicsBeforeLaunchOrReuse();
+            ClearPlatformCollisionIgnoredWhileCarried();
+        }
+
         public void Launch()
         {
+            CacheOwnPhysicsReferences();
+
+            carriedByMorvex = false;
             launched = true;
-            rb.gravityScale = gravityScale;
+            impactResolved = false;
+
+            RestorePhysicsBeforeLaunchOrReuse();
+            ClearPlatformCollisionIgnoredWhileCarried();
+
+            if (rb != null)
+            {
+                rb.simulated = true;
+                rb.gravityScale = gravityScale;
+            }
 
             RefreshSprintCollisionIgnore();
-
+            
             Destroy(gameObject, lifeTime);
         }
 
         private void Update()
         {
-            if (!launched)
+            if (carriedByMorvex || !launched)
                 return;
 
             transform.Rotate(0f, 0f, spinSpeed * Time.deltaTime);
@@ -91,6 +166,21 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private void FixedUpdate()
         {
+            if (carriedByMorvex)
+            {
+                if (rb != null)
+                {
+                    rb.gravityScale = 0f;
+                    rb.linearVelocity = Vector2.zero;
+                    rb.angularVelocity = 0f;
+                }
+
+                if (!disableCollidersWhileCarried && ignorePlatformsWhileCarried)
+                    SetPlatformCollisionIgnoredWhileCarried(true);
+
+                return;
+            }
+
             if (!launched || impactResolved)
                 return;
 
@@ -99,7 +189,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private void OnCollisionEnter2D(Collision2D collision)
         {
-            if (!launched || impactResolved)
+            if (ShouldIgnoreImpactCallbacks())
                 return;
 
             // IMPORTANT:
@@ -136,7 +226,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private void OnTriggerEnter2D(Collider2D other)
         {
-            if (!launched || impactResolved)
+            if (ShouldIgnoreImpactCallbacks())
                 return;
 
             // Sprint relic means the stone passes through Warrior trigger colliders too.
@@ -145,6 +235,148 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             // Supports shieldHitbox configured as Is Trigger.
             TryBlockWithShieldLaserCollider(other);
+        }
+
+        private bool ShouldIgnoreImpactCallbacks()
+        {
+            if (impactResolved)
+                return true;
+
+            if (carriedByMorvex && ignoreAllImpactsWhileCarried)
+                return true;
+
+            return !launched;
+        }
+
+        private void CacheOwnPhysicsReferences()
+        {
+            if (rb == null)
+                rb = GetComponent<Rigidbody2D>();
+
+            if (stoneColliders == null || stoneColliders.Length == 0)
+            {
+                stoneColliders = GetComponentsInChildren<Collider2D>(true);
+                originalColliderEnabledStates = new bool[stoneColliders.Length];
+
+                for (int i = 0; i < stoneColliders.Length; i++)
+                    originalColliderEnabledStates[i] = stoneColliders[i] != null && stoneColliders[i].enabled;
+            }
+        }
+
+        private void SetStoneCollidersEnabled(bool enabled)
+        {
+            if (stoneColliders == null)
+                return;
+
+            for (int i = 0; i < stoneColliders.Length; i++)
+            {
+                Collider2D stoneCollider = stoneColliders[i];
+                if (stoneCollider == null)
+                    continue;
+
+                stoneCollider.enabled = enabled;
+            }
+        }
+
+        private void RestorePhysicsBeforeLaunchOrReuse()
+        {
+            CacheOwnPhysicsReferences();
+
+            if (rb != null)
+                rb.simulated = true;
+
+            if (stoneColliders == null)
+                return;
+
+            for (int i = 0; i < stoneColliders.Length; i++)
+            {
+                Collider2D stoneCollider = stoneColliders[i];
+                if (stoneCollider == null)
+                    continue;
+
+                bool shouldBeEnabled = true;
+
+                if (originalColliderEnabledStates != null && i < originalColliderEnabledStates.Length)
+                    shouldBeEnabled = originalColliderEnabledStates[i];
+
+                stoneCollider.enabled = shouldBeEnabled;
+            }
+        }
+
+        private void SetPlatformCollisionIgnoredWhileCarried(bool ignore)
+        {
+            if (!ignore)
+            {
+                ClearPlatformCollisionIgnoredWhileCarried();
+                return;
+            }
+
+            CacheOwnPhysicsReferences();
+
+            if (stoneColliders == null || stoneColliders.Length == 0)
+                return;
+
+            PlatFormColliderTrigger[] platforms = FindObjectsByType<PlatFormColliderTrigger>(FindObjectsSortMode.None);
+
+            for (int i = 0; i < platforms.Length; i++)
+            {
+                PlatFormColliderTrigger platform = platforms[i];
+                if (platform == null)
+                    continue;
+
+                RegisterPlatformColliderIgnoredWhileCarried(platform.platformCollider);
+
+                if (includePlatformTriggersWhileCarried)
+                    RegisterPlatformColliderIgnoredWhileCarried(platform.platformTrigger);
+            }
+
+            ignoringPlatformsBecauseCarried = carriedIgnoredPlatformColliders.Count > 0;
+        }
+
+        private void RegisterPlatformColliderIgnoredWhileCarried(Collider2D platformCollider)
+        {
+            if (platformCollider == null || stoneColliders == null)
+                return;
+
+            for (int i = 0; i < stoneColliders.Length; i++)
+            {
+                Collider2D stoneCollider = stoneColliders[i];
+                if (stoneCollider == null)
+                    continue;
+
+                Physics2D.IgnoreCollision(stoneCollider, platformCollider, true);
+            }
+
+            if (!carriedIgnoredPlatformColliders.Contains(platformCollider))
+                carriedIgnoredPlatformColliders.Add(platformCollider);
+        }
+
+        private void ClearPlatformCollisionIgnoredWhileCarried()
+        {
+            if (!ignoringPlatformsBecauseCarried && carriedIgnoredPlatformColliders.Count == 0)
+                return;
+
+            if (stoneColliders != null)
+            {
+                for (int s = 0; s < stoneColliders.Length; s++)
+                {
+                    Collider2D stoneCollider = stoneColliders[s];
+                    if (stoneCollider == null)
+                        continue;
+
+                    for (int p = 0; p < carriedIgnoredPlatformColliders.Count; p++)
+                    {
+                        Collider2D platformCollider = carriedIgnoredPlatformColliders[p];
+                        if (platformCollider == null)
+                            continue;
+
+                        Physics2D.IgnoreCollision(stoneCollider, platformCollider, false);
+                    }
+                }
+            }
+
+            carriedIgnoredPlatformColliders.Clear();
+            ignoringPlatformsBecauseCarried = false;
         }
 
         private bool TryIgnoreWarriorCollisionBecauseSprint(Collider2D touchedCollider)
@@ -206,6 +438,11 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (warrior == null)
                 return;
 
+            CacheOwnPhysicsReferences();
+
+            if (stoneColliders == null)
+                return;
+
             Collider2D[] warriorColliders = warrior.GetComponentsInChildren<Collider2D>(true);
 
             for (int s = 0; s < stoneColliders.Length; s++)
@@ -227,12 +464,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 }
             }
 
-            if (ignore)
-                ignoringWarriorBecauseSprint = true;
+            ignoringWarriorBecauseSprint = ignore;
         }
 
         private bool IsStillOverlappingIgnoredWarrior()
         {
+            if (stoneColliders == null)
+                return false;
+
             for (int s = 0; s < stoneColliders.Length; s++)
             {
                 Collider2D stoneCollider = stoneColliders[s];
@@ -255,6 +494,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private void ClearSprintWarriorCollisionIgnore()
         {
+            if (stoneColliders == null)
+                return;
+
             for (int s = 0; s < stoneColliders.Length; s++)
             {
                 Collider2D stoneCollider = stoneColliders[s];
@@ -349,6 +591,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (impactResolved)
                 return;
 
+            // Absolute safety: the held reserve/carry visual is never allowed to destroy itself.
+            if (carriedByMorvex && ignoreAllImpactsWhileCarried)
+                return;
+
             impactResolved = true;
             SpawnImpactFeedback();
             Destroy(gameObject);
@@ -366,11 +612,13 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         private void OnDisable()
         {
             ClearSprintWarriorCollisionIgnore();
+            ClearPlatformCollisionIgnoredWhileCarried();
         }
 
         private void OnDestroy()
         {
             ClearSprintWarriorCollisionIgnore();
+            ClearPlatformCollisionIgnoredWhileCarried();
         }
     }
 }

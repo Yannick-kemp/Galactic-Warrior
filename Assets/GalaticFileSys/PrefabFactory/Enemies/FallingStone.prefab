@@ -172,6 +172,16 @@ MonoBehaviour:
   impactVfxPrefab: {fileID: 552370597973603005, guid: 8804afddfc0939941be18269276fd18e, type: 3}
   impactSfx: {fileID: 0}
   impactSfxVolume: 1
+  shieldLaserBlocksStone: 1
+  shieldUpFallbackBlocksStone: 1
+  shieldBlockCost: 5
+  ignoreWarriorCollisionDuringSprint: 1
+  restoreWarriorCollisionAfterSprint: 1
+  ignoreAllImpactsWhileCarried: 1
+  disableRigidbodySimulationWhileCarried: 1
+  disableCollidersWhileCarried: 1
+  ignorePlatformsWhileCarried: 1
+  includePlatformTriggersWhileCarried: 1
   repulseWarriorWhenStoneHitsHisPlatform: 1
   platformRepulseDistance: 3.25
   platformRepulseDuration: 0.48
