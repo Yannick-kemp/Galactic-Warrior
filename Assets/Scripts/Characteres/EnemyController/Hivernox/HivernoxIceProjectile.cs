@@ -11,8 +11,20 @@ namespace Assets.Scripts.Characteres.EnemyContoller
     [RequireComponent(typeof(Rigidbody2D))]
     public class HivernoxIceProjectile : MonoBehaviour
     {
+        private const string ShieldLaserLayerName = "Shield Laser";
+
         [SerializeField] private GameObject impactFxPrefab;
         [SerializeField] private bool destroyOnAnyEnemy = false;
+
+        [Header("Shield Laser Blocking")]
+        [Tooltip("ON = collision with the Warrior shield collider layer named 'Shield Laser' blocks this projectile before it can freeze the Warrior.")]
+        [SerializeField] private bool shieldLaserBlocksProjectile = true;
+
+        [Tooltip("Small control lock applied when the shield blocks this projectile.")]
+        [SerializeField] private float shieldBlockStunSeconds = 0.12f;
+
+        [Tooltip("Small pushback applied when the shield blocks this projectile.")]
+        [SerializeField] private float shieldBlockKnockbackVelocity = 3.5f;
 
         private HivernoxBoss _owner;
         private Vector2 _direction = Vector2.right;
@@ -94,6 +106,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (_owner != null && other.transform.IsChildOf(_owner.transform))
                 return;
 
+            if (TryResolveShieldLaserBlock(other, hitPoint))
+                return;
+
             Warrior warrior = other.GetComponent<Warrior>() ?? other.GetComponentInParent<Warrior>();
             if (warrior != null)
             {
@@ -104,7 +119,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                     warrior.TryReceiveHivernoxDamage(
                         source: _owner,
                         damage: _projectileDamage,
-                        canBeBlockedByShield: false,
+                        canBeBlockedByShield: true,
                         stunSeconds: 0f,
                         knockbackVelocity: 0f);
                 }
@@ -132,6 +147,38 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 SpawnImpactFx(hitPoint);
                 Destroy(gameObject);
             }
+        }
+
+        private bool TryResolveShieldLaserBlock(Collider2D other, Vector2 hitPoint)
+        {
+            if (!shieldLaserBlocksProjectile || other == null)
+                return false;
+
+            int shieldLaserLayer = LayerMask.NameToLayer(ShieldLaserLayerName);
+            if (shieldLaserLayer < 0)
+                return false;
+
+            if (other.gameObject.layer != shieldLaserLayer)
+                return false;
+
+            Warrior warrior = other.GetComponentInParent<Warrior>();
+            if (warrior == null || !warrior.ShieldIsUp)
+                return false;
+
+            _resolved = true;
+
+            Vector2 sourcePosition = _owner != null
+                ? (Vector2)_owner.transform.position
+                : (Vector2)transform.position;
+
+            warrior.TryBlockHivernoxAttackWithShieldLaser(
+                fromWorldPosition: sourcePosition,
+                stunSeconds: shieldBlockStunSeconds,
+                knockbackVelocity: shieldBlockKnockbackVelocity);
+
+            SpawnImpactFx(hitPoint);
+            Destroy(gameObject);
+            return true;
         }
 
         private void SpawnImpactFx(Vector2 hitPoint)

@@ -7,7 +7,7 @@ namespace Assets.Scripts.Characteres.WarriorController
     public partial class Warrior : CharacterController
     {
         [Header("Hivernox Freeze / Boss Damage")]
-        [SerializeField] private bool shieldBlocksHivernoxIceProjectile = false;
+        [SerializeField] private bool shieldBlocksHivernoxIceProjectile = true;
         [SerializeField] private string hivernoxFrozenAnimatorBool = "isFrozen";
         [SerializeField] private GameObject hivernoxFreezeVfxPrefab;
         [SerializeField] private Transform hivernoxFreezeVfxSocket;
@@ -27,6 +27,60 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         public bool IsFrozenByHivernox => _frozenByHivernox;
 
+        public bool TryBlockHivernoxAttackWithShieldLaser(
+            Vector2 fromWorldPosition,
+            float stunSeconds = -1f,
+            float knockbackVelocity = -1f)
+        {
+            if (IsDeadOrDying || _deathStarted)
+                return false;
+
+            if (!ShieldIsUp)
+                return false;
+
+            if (!TryConsumeShieldForHivernoxBlock())
+                return false;
+
+            ApplyHivernoxHitLock(
+                fromWorldPosition,
+                stunSeconds >= 0f ? stunSeconds : blockedHivernoxHitStunSeconds,
+                knockbackVelocity >= 0f ? knockbackVelocity : blockedHivernoxHitKnockbackVelocity);
+
+            return true;
+        }
+
+        public bool IsShieldLaserCollider(Collider2D candidate)
+        {
+            if (candidate == null)
+                return false;
+
+            int shieldLaserLayer = LayerMask.NameToLayer("Shield Laser");
+            if (shieldLaserLayer < 0)
+                return false;
+
+            return candidate.gameObject.layer == shieldLaserLayer &&
+                   candidate.GetComponentInParent<Warrior>() == this;
+        }
+
+        public bool HasActiveShieldLaserProtection()
+        {
+            if (!ShieldIsUp)
+                return false;
+
+            if (shieldHitbox != null && shieldHitbox.enabled && IsShieldLaserCollider(shieldHitbox))
+                return true;
+
+            Collider2D[] colliders = GetComponentsInChildren<Collider2D>(true);
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                Collider2D candidate = colliders[i];
+                if (candidate != null && candidate.enabled && IsShieldLaserCollider(candidate))
+                    return true;
+            }
+
+            return false;
+        }
+
         public bool TryFreezeFromHivernox(HivernoxBoss source, float seconds, Vector2 hitWorldPosition)
         {
             if (seconds <= 0f)
@@ -41,7 +95,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (Time.time < _hivernoxFreezeImmuneUntil)
                 return false;
 
-            if (shieldBlocksHivernoxIceProjectile && ShieldIsUp && TryConsumeShieldForHivernoxBlock())
+            if (shieldBlocksHivernoxIceProjectile && HasActiveShieldLaserProtection() && TryConsumeShieldForHivernoxBlock())
             {
                 ApplyHivernoxHitLock(
                     hitWorldPosition,
@@ -78,7 +132,7 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             Vector2 fromPosition = source != null ? (Vector2)source.transform.position : (Vector2)transform.position;
 
-            if (canBeBlockedByShield && ShieldIsUp && TryConsumeShieldForHivernoxBlock())
+            if (canBeBlockedByShield && HasActiveShieldLaserProtection() && TryConsumeShieldForHivernoxBlock())
             {
                 ApplyHivernoxHitLock(
                     fromPosition,
