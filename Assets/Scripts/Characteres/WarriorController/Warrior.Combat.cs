@@ -702,6 +702,22 @@ namespace Assets.Scripts.Characteres.WarriorController
         [Tooltip("Small overlap margin used while the repulse moves the Warrior by transform.position.")]
         [SerializeField, Min(0f)] private float platformStoneEnemyContactSkin = 0.03f;
 
+        [Header("Enemy External Push / Edge Exit")]
+        [Tooltip("ON = enemy push/repulse is allowed to send the Warrior past the platform edge instead of clamping him at the edge.")]
+        [SerializeField] private bool enemyExternalPushCanForcePlatformExit = true;
+
+        [Tooltip("Small X tolerance used when deciding that the Warrior has crossed a platform edge because of enemy push/repulse.")]
+        [SerializeField, Min(0f)] private float enemyExternalPushEdgeTolerance = 0.02f;
+
+        [Tooltip("Minimum horizontal velocity kept when enemy push/repulse becomes a natural fall past the edge.")]
+        [SerializeField, Min(0f)] private float enemyExternalPushFallMinXVelocity = 2.5f;
+
+        [Tooltip("Gravity used after enemy push/repulse sends the Warrior off the platform.")]
+        [SerializeField, Min(0f)] private float enemyExternalPushFallGravityScale = 3f;
+
+        [Tooltip("Safety timeout before restoring old platform collision if the Warrior never fully leaves the platform trigger.")]
+        [SerializeField, Min(0f)] private float enemyExternalPushRestorePlatformCollisionTimeout = 2f;
+
         private bool _platformStoneRepulseStoppedByEnemyContact;
         private Enemy _platformStoneRepulseBlockingEnemy;
 
@@ -789,19 +805,11 @@ namespace Assets.Scripts.Characteres.WarriorController
             }
 
             Vector3 start = transform.position;
+
+            // IMPORTANT:
+            // Do NOT clamp this target X to the platform bounds.
+            // Enemy/external repulse must be allowed to push the Warrior past the edge.
             float targetX = start.x + direction * Mathf.Abs(distance);
-
-            if (platform != null && platform.platformCollider != null && collider2 != null)
-            {
-                Bounds pb = platform.platformCollider.bounds;
-                float safePad = collider2.bounds.extents.x + 0.05f;
-
-                float minX = pb.min.x + safePad;
-                float maxX = pb.max.x - safePad;
-
-                targetX = Mathf.Clamp(targetX, minX, maxX);
-            }
-
             Vector3 end = new Vector3(targetX, start.y, start.z);
 
             float elapsed = 0f;
@@ -817,6 +825,20 @@ namespace Assets.Scripts.Characteres.WarriorController
                 transform.position = Vector3.Lerp(start, end, t);
                 Physics2D.SyncTransforms();
 
+                // Highest priority: if the external force sends the Warrior beyond the edge,
+                // stop controlling the X position and let gravity/velocity continue the fall.
+                if (TryBeginEnemyExternalPushFallIfNeeded(
+                        platform,
+                        direction,
+                        _canAttackWarriorBeforeStoneRepulse,
+                        _canAttackBeforeStoneRepulse))
+                {
+                    _platformStoneRepulseRoutine = null;
+                    yield break;
+                }
+
+                // Still keep your requested behavior: if the repulse pushes Warrior into an enemy,
+                // stop the repulse immediately.
                 Enemy touchedEnemy = GetEnemyTouchedDuringPlatformStoneRepulse();
                 if (touchedEnemy != null)
                 {
@@ -830,6 +852,16 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             transform.position = end;
             Physics2D.SyncTransforms();
+
+            if (TryBeginEnemyExternalPushFallIfNeeded(
+                    platform,
+                    direction,
+                    _canAttackWarriorBeforeStoneRepulse,
+                    _canAttackBeforeStoneRepulse))
+            {
+                _platformStoneRepulseRoutine = null;
+                yield break;
+            }
 
             Enemy finalTouchedEnemy = GetEnemyTouchedDuringPlatformStoneRepulse();
             if (finalTouchedEnemy != null)
@@ -1018,6 +1050,191 @@ namespace Assets.Scripts.Characteres.WarriorController
             Debug.Log(
                 $"[StoneRepulse END] CanMove={CanMove}, CanAttackWarrior={CanAttackWarrior}, CanAttack={CanAttack}, HardLock={IsHardActionLocked}"
             );
+        }
+
+        private bool TryBeginEnemyExternalPushFallIfNeeded(
+            PlatFormColliderTrigger platform,
+            float direction,
+            bool restoreCanAttackWarrior,
+            bool restoreCanAttack)
+        {
+            if (!enemyExternalPushCanForcePlatformExit)
+                return false;
+
+            if (platform == null || platform.platformCollider == null || collider2 == null)
+                return false;
+
+            direction = Mathf.Sign(direction);
+
+            if (Mathf.Approximately(direction, 0f))
+                direction = GetOppositeFacingDirectionX();
+
+            Bounds platformBounds = platform.platformCollider.bounds;
+            Bounds warriorBounds = collider2.bounds;
+
+            float warriorCenterX = warriorBounds.center.x;
+
+            bool passedRightEdge =
+                direction > 0f &&
+                warriorCenterX >= platformBounds.max.x - enemyExternalPushEdgeTolerance;
+
+            bool passedLeftEdge =
+                direction < 0f &&
+                warriorCenterX <= platformBounds.min.x + enemyExternalPushEdgeTolerance;
+
+            bool noGroundLeft = CountGroundPoints() <= 0;
+
+            if (!passedRightEdge && !passedLeftEdge && !noGroundLeft)
+                return false;
+
+            BeginEnemyExternalPushFall(
+                platform,
+                direction,
+                restoreCanAttackWarrior,
+                restoreCanAttack
+            );
+
+            return true;
+        }
+
+        private void BeginEnemyExternalPushFall(
+            PlatFormColliderTrigger platform,
+            float direction,
+            bool restoreCanAttackWarrior,
+            bool restoreCanAttack)
+        {
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+
+            _platformStoneRepulseActive = false;
+            _platformStoneRepulseStoppedByEnemyContact = false;
+            _platformStoneRepulseBlockingEnemy = null;
+
+            _blockedByEnemyContact = false;
+            _blockingEnemy = null;
+            _blockAction = false;
+
+            // Movement remains locked while falling. Your landing/platform code can restore it.
+            CanMove = false;
+
+            // Restore attack permissions so the Warrior does not stay permanently attack-locked
+            // after the external push has turned into a fall.
+            CanAttackWarrior = restoreCanAttackWarrior;
+            CanAttack = restoreCanAttack;
+
+            IsFallingEdge = true;
+            IsFallingPlfExit = true;
+            IsFallingHitEnemy = false;
+            IsFallingGrazesEdge = false;
+
+            if (platform != null)
+                LastSafePlatform = platform;
+
+            if (platform != null && platform.platformCollider != null && collider2 != null)
+            {
+                Bounds pb = platform.platformCollider.bounds;
+                float yOffset = collider2.bounds.extents.y;
+
+                LastSafePosition = new Vector3(
+                    Mathf.Clamp(transform.position.x, pb.min.x, pb.max.x),
+                    pb.max.y + yOffset + 0.05f,
+                    transform.position.z
+                );
+
+                // Prevent the old platform from catching the Warrior immediately at the edge.
+                IgnoreOldPlatformDuringExternalPushFall(platform);
+            }
+
+            if (rigidbody2 != null)
+            {
+                rigidbody2.gravityScale = enemyExternalPushFallGravityScale;
+                rigidbody2.angularVelocity = 0f;
+
+                Vector2 v = rigidbody2.linearVelocity;
+                float wantedX = direction * enemyExternalPushFallMinXVelocity;
+
+                if (Mathf.Abs(v.x) < Mathf.Abs(wantedX))
+                    v.x = wantedX;
+
+                if (v.y > -0.1f)
+                    v.y = -0.1f;
+
+                rigidbody2.linearVelocity = v;
+            }
+
+            JumpAnimationDisplay();
+
+            Debug.Log("[EnemyExternalPush] Warrior was pushed past platform edge and is now falling naturally.");
+        }
+
+        private void IgnoreOldPlatformDuringExternalPushFall(PlatFormColliderTrigger platform)
+        {
+            if (platform == null || platform.platformCollider == null)
+                return;
+
+            Collider2D[] warriorColliders = GetComponentsInChildren<Collider2D>(true);
+
+            for (int i = 0; i < warriorColliders.Length; i++)
+            {
+                Collider2D col = warriorColliders[i];
+
+                if (col == null)
+                    continue;
+
+                Physics2D.IgnoreCollision(platform.platformCollider, col, true);
+            }
+
+            StartCoroutine(RestoreOldPlatformCollisionWhenExternalPushIsClear(platform, warriorColliders));
+        }
+
+        private IEnumerator RestoreOldPlatformCollisionWhenExternalPushIsClear(
+            PlatFormColliderTrigger platform,
+            Collider2D[] warriorColliders)
+        {
+            float timeoutAt = Time.time + enemyExternalPushRestorePlatformCollisionTimeout;
+
+            while (platform != null && platform.platformCollider != null)
+            {
+                bool stillInsidePlatformTrigger = false;
+
+                if (platform.platformTrigger != null && warriorColliders != null)
+                {
+                    for (int i = 0; i < warriorColliders.Length; i++)
+                    {
+                        Collider2D col = warriorColliders[i];
+
+                        if (col == null)
+                            continue;
+
+                        if (platform.platformTrigger.IsTouching(col))
+                        {
+                            stillInsidePlatformTrigger = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!stillInsidePlatformTrigger)
+                    break;
+
+                if (Time.time >= timeoutAt)
+                    break;
+
+                yield return new WaitForFixedUpdate();
+            }
+
+            if (platform == null || platform.platformCollider == null || warriorColliders == null)
+                yield break;
+
+            for (int i = 0; i < warriorColliders.Length; i++)
+            {
+                Collider2D col = warriorColliders[i];
+
+                if (col == null)
+                    continue;
+
+                Physics2D.IgnoreCollision(platform.platformCollider, col, false);
+            }
         }
 
         private float GetRepulseDirectionFromImpact(float impactX)

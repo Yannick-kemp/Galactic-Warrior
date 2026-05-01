@@ -43,14 +43,17 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private bool debugProjectileAlignment = false;
         [Header("Freeze Finisher")]
         [SerializeField] private float moveToFrozenWarriorSpeed = 4.2f;
-        [SerializeField] private float finisherRange = 1.15f;
-        [SerializeField] private float maxFinisherChaseSeconds = 2.2f;
+
         [SerializeField] private int iceBreakerDamage = 30;
         [SerializeField] private float iceBreakerKnockbackVelocity = 5.5f;
         [SerializeField] private float iceBreakerStunSeconds = 0.25f;
         [SerializeField] private float iceBreakerAnimationSeconds = 0.95f;
-        [SerializeField] private float autoIceBreakerHitDelay = 0.38f;
-        [SerializeField] private bool autoResolveIceBreakerIfNoAnimationEvent = false;
+        [Header("Freeze Finisher - IceBreaker Punch Repulse")]
+        [Tooltip("ON = IceBreakerAttackRoutine uses the same smooth platform repulse style as FallingStone instead of Rigidbody velocity knockback.")]
+        [SerializeField] private bool useIceBreakerPunchRepulse = true;
+        [SerializeField] private float iceBreakerPunchRepulseDistance = 2.25f;
+        [SerializeField] private float iceBreakerPunchRepulseDuration = 0.18f;
+        [SerializeField] private float iceBreakerPunchRepulseControlLock = 0.25f;
         [Header("Freeze Finisher - Warrior Hit Box Contact")]
         [Tooltip("Use the WarriorHitbox child layer only. Leave empty to auto-use the Unity layer named 'Hit Box'.")]
         [SerializeField] private LayerMask frozenWarriorHitBoxLayer;
@@ -365,172 +368,189 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             StopHivernoxMotionNow();
             CanMove = false;
             FaceWarrior();
-            // Hivernox is not moving during this small pause.
-            // Wait animation is allowed here, but never during X movement.
-            // WaitAnimationDisplay();
+
             yield return new WaitForSecondsRealtime(0.08f);
+
             if (warrior == null || !warrior.IsFrozenByHivernox)
             {
-                _actionRoutine = null;
-                //StartExclusiveRoutine(RetreatRoutine());
+                FinishIceBreakerSequenceAndRetreat();
                 yield break;
             }
+
             SetState(HivernoxState.MoveToWarrior);
-            while (warrior != null &&
-                  warrior.IsFrozenByHivernox &&
-                  GetHorizontalDistanceTo(warrior.transform) > finisherRange)
+
+            // No chaseTimer anymore.
+            // As long as the Warrior is frozen, Hivernox keeps trying to reach him.
+            while (warrior != null && warrior.IsFrozenByHivernox)
             {
                 FaceWarrior();
+
                 if (shieldLaserBlocksIceBreaker && IsTouchingWarriorShieldLaserLayer(warrior))
                 {
                     AbortIceBreakerBecauseShieldLaserBlocked(warrior);
                     yield break;
                 }
+
+                // Attack2 starts only when Hivernox body actually touches the WarriorHitbox layer.
                 if (retreatOnFrozenWarriorHitBoxContact && IsTouchingWarriorHitBoxLayer(warrior))
                 {
                     StopHivernoxMotionNow();
                     yield return StartCoroutine(IceBreakerAttackRoutine(warrior));
                     yield break;
                 }
+
                 float targetX = warrior.transform.position.x;
+
                 float nextX = Mathf.MoveTowards(
                     transform.position.x,
                     targetX,
                     moveToFrozenWarriorSpeed * Time.deltaTime);
+
                 nextX = ClampToCurrentPlatform(nextX);
+
                 if (shieldLaserBlocksIceBreaker && WouldTouchWarriorShieldLaserLayerAtX(warrior, nextX))
                 {
                     AbortIceBreakerBecauseShieldLaserBlocked(warrior);
                     yield break;
                 }
+
                 if (retreatOnFrozenWarriorHitBoxContact && WouldTouchWarriorHitBoxLayerAtX(warrior, nextX))
                 {
+                    MoveHivernoxHorizontallyWithLocomotionAnimation(nextX, useRunAnimation: true);
                     StopHivernoxMotionNow();
+
                     yield return StartCoroutine(IceBreakerAttackRoutine(warrior));
                     yield break;
                 }
-                // Movement + animation are linked here.
-                // If Hivernox moves during finisher chase, he must run.
+
                 MoveHivernoxHorizontallyWithLocomotionAnimation(nextX, useRunAnimation: true);
+
                 yield return null;
             }
-            StopHivernoxMotionNow();
-            if (warrior == null || !warrior.IsFrozenByHivernox)
-            {
-                WaitAnimationDisplay();
-                _actionRoutine = null;
-                //  StartExclusiveRoutine(RetreatRoutine());
-                yield break;
-            }
-            if (shieldLaserBlocksIceBreaker && IsTouchingWarriorShieldLaserLayer(warrior))
-            {
-                AbortIceBreakerBecauseShieldLaserBlocked(warrior);
-                yield break;
-            }
-            yield return StartCoroutine(IceBreakerAttackRoutine(warrior));
+
+            // Warrior is no longer frozen, died, or became invalid before contact.
+            // Important: this clears _actionRoutine through the retreat routine.
+            FinishIceBreakerSequenceAndRetreat();
         }
+
         private IEnumerator IceBreakerAttackRoutine(Warrior warrior)
         {
             SetState(HivernoxState.IceBreakerAttack);
             FaceWarrior();
             StopHivernoxMotionNow();
             CanMove = false;
+
             _iceBreakerHitResolved = false;
             _attack2ImpactFxPlayed = false;
-            // Uses your existing CharacterController animation-display method.
-            // This sets isAttacking2 = true.
+
+            // AttackAnimation2Display() starts Attack2.
+            // AE_IceBreakerHit() must be placed as an Animation Event on the real impact frame.
             AttackAnimation2Display();
+
             float timer = 0f;
+
             while (timer < iceBreakerAnimationSeconds)
             {
                 if (warrior == null)
                     break;
+
                 if (shieldLaserBlocksIceBreaker && IsTouchingWarriorShieldLaserLayer(warrior))
                 {
                     AbortIceBreakerBecauseShieldLaserBlocked(warrior);
                     yield break;
                 }
-                // Main fix: use the WarriorHitbox child collider/layer, not Warrior's default BoxCollider2D.
-                // As soon as Hivernox touches that hit box during IceBreakerAttack, resolve the hit
-                // and retreat immediately so the boss cannot keep pushing the frozen Warrior.
-                if (retreatOnFrozenWarriorHitBoxContact &&
-                    warrior.IsFrozenByHivernox &&
-                    IsTouchingWarriorHitBoxLayer(warrior))
-                {
-                    if (!_iceBreakerHitResolved)
-                    {
-                        // Play the dedicated Attack2 impact prefab at the real contact moment.
-                        TryPlayAttack2ImpactFx(warrior, requireTouchOrResolved: false);
-                        AE_IceBreakerHit();
-                    }
-                    StopHivernoxMotionNow();
-                    WaitAnimationDisplay();
-                    CanMove = false;
-                    _actionRoutine = null;
-                    StartExclusiveRoutine(RetreatRoutine());
-                    yield break;
-                }
-                // If the freeze expired before the attack connected, just stop the attack and retreat.
-                if (!warrior.IsFrozenByHivernox && !_iceBreakerHitResolved)
+
+                // The animation event already fired. Stop waiting and retreat immediately.
+                if (_iceBreakerHitResolved)
                     break;
-                if (autoResolveIceBreakerIfNoAnimationEvent &&
-                   !_iceBreakerHitResolved &&
-                   timer >= autoIceBreakerHitDelay)
-                {
-                    // Fallback path when you did not add an animation event.
-                    TryPlayAttack2ImpactFx(warrior, requireTouchOrResolved: false);
-                    AE_IceBreakerHit();
-                }
+
+                // If the freeze expires before the animation impact frame, cancel the punch result.
+                if (!warrior.IsFrozenByHivernox)
+                    break;
+
                 timer += Time.deltaTime;
                 yield return null;
             }
-            WaitAnimationDisplay();
-            CanMove = true;
-            _actionRoutine = null;
-            StartExclusiveRoutine(RetreatRoutine());
+
+            FinishIceBreakerSequenceAndRetreat();
         }
+
         /// <summary>
-        /// Damage / freeze-break logic only.
-        /// Do not use this as the Attack2 visual prefab event anymore.
-        /// Use AE_Attack2ImpactFx on the Attack2 animation impact frame.
+        /// Animation Event for AttackAnimation2Display's real impact frame.
+        /// This is the only place that applies IceBreaker damage, freeze break,
+        /// impact FX, and the smooth punch repulse.
         /// </summary>
         public void AE_IceBreakerHit()
         {
             if (_iceBreakerHitResolved)
                 return;
+
             // Ignore late animation events after the attack was aborted and Hivernox started retreating.
             if (state != HivernoxState.IceBreakerAttack)
                 return;
-            _iceBreakerHitResolved = true;
+
             Warrior warrior = _finisherTarget != null
                ? _finisherTarget
                : (GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null);
+
             if (warrior == null)
                 return;
+
             if (shieldLaserBlocksIceBreaker && warrior.HasActiveShieldLaserProtection())
             {
+                _iceBreakerHitResolved = true;
                 warrior.TryBlockHivernoxAttackWithShieldLaser((Vector2)transform.position);
                 return;
             }
+
+            _iceBreakerHitResolved = true;
+
             FaceWarrior();
+
+            TryPlayAttack2ImpactFx(warrior, requireTouchOrResolved: false);
+
             warrior.BreakHivernoxFreeze();
+
+            float stunForDamageCall = useIceBreakerPunchRepulse ? 0f : iceBreakerStunSeconds;
+            float velocityKnockbackForDamageCall = useIceBreakerPunchRepulse ? 0f : iceBreakerKnockbackVelocity;
+
             warrior.TryReceiveHivernoxDamage(
                 source: this,
                 damage: iceBreakerDamage,
                 canBeBlockedByShield: false,
-                stunSeconds: iceBreakerStunSeconds,
-                knockbackVelocity: iceBreakerKnockbackVelocity);
+                stunSeconds: stunForDamageCall,
+                knockbackVelocity: velocityKnockbackForDamageCall);
+
+            if (useIceBreakerPunchRepulse)
+            {
+                warrior.TryRepulseFromPlatformStoneImpact(
+                    warrior.CurrentplatForm,
+                    (Vector2)transform.position,
+                    iceBreakerPunchRepulseDistance,
+                    iceBreakerPunchRepulseDuration,
+                    iceBreakerPunchRepulseControlLock
+                );
+            }
         }
+
+        private void FinishIceBreakerSequenceAndRetreat()
+        {
+            StopHivernoxMotionNow();
+            WaitAnimationDisplay();
+            CanMove = false;
+            _actionRoutine = null;
+            StartExclusiveRoutine(RetreatRoutine());
+        }
+
         /// <summary>
-        /// Put this animation event on AttackAnimation2's exact impact frame.
-        /// This plays vfx_Impact_hivernox.prefab without doing damage.
+        /// Optional old visual-only Animation Event.
+        /// If AE_IceBreakerHit is already on the impact frame, you do not need this event.
+        /// It is kept so old animation clips do not break if they still call it.
         /// </summary>
         public void AE_Attack2ImpactFx()
         {
-            // Animation Event used by AttackAnimation2Display().
-            // Visual only. AE_IceBreakerHit() still does the damage/freeze-break.
-            // Do not require Physics2D contact here; the event frame can happen slightly
-            // before/after the exact collider overlap frame.
+            // Visual only. AE_IceBreakerHit() now also plays the impact FX.
+            // _attack2ImpactFxPlayed prevents duplicate FX if both events still exist.
             Warrior warrior = _finisherTarget != null
                 ? _finisherTarget
                 : (GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null);
