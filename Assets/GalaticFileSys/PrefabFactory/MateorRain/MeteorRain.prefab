@@ -203,11 +203,13 @@ MonoBehaviour:
   startBehindWarrior: 1
   behindPadding: 0.4
   extraStartBehindDistance: 1
+  travelDirection: -1
+  chooseDirectionFromWarriorAtStart: 0
   frontEdgeMarker: {fileID: 8604806148937260365}
+  leftEdgeMarker: {fileID: 0}
+  rightEdgeMarker: {fileID: 0}
   fallbackFrontEdgeDistance: 2
   moveSpeed: 9
-  moveDirectionX: 1
-  chooseDirectionFromWarriorAtStart: 0
   keepInitialY: 1
   yOffset: 0
   forceParticleSimulationSpaceLocal: 1

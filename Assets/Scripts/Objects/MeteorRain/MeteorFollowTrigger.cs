@@ -10,6 +10,10 @@ public sealed class MeteorFollowTrigger : MonoBehaviour
     [SerializeField] private bool oneShot = true;
     [SerializeField] private float startDelay = 0.75f;
 
+    [Header("Optional Direction Override")]
+    [SerializeField] private bool overrideRainDirection = false;
+    [SerializeField] private MeteorRainTravelDirection rainDirection = MeteorRainTravelDirection.LeftToRight;
+
     [Header("Retry Respawn Override")]
     [SerializeField] private bool registerRetryZoneOnEnter = true;
 
@@ -76,6 +80,9 @@ public sealed class MeteorFollowTrigger : MonoBehaviour
         if (warrior == null) yield break;
         if (!warrior.gameObject.activeInHierarchy) yield break;
         if (GameMgr.Instance?.IsRestarting == true) yield break;
+
+        if (overrideRainDirection)
+            meteorRain.SetTravelDirection(rainDirection);
 
         meteorRain.StartRainAndFollow(warrior);
     }
