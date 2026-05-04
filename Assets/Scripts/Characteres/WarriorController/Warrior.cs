@@ -194,6 +194,13 @@ namespace Assets.Scripts.Characteres.WarriorController
         private bool _postBounceActive;
         private float _postBounceStartTime;
 
+        // ── Morvex-top stuck guard ────────────────────────────────────────────────
+        // Tracks how many consecutive physics frames the warrior sits on Morvex's
+        // NormalCollider top. A bounce is forced after 2 frames.
+        private int _morvexTopContactFrames;
+        private Enemy _morvexTopContactEnemy;
+        // ─────────────────────────────────────────────────────────────────────────
+
         #endregion
 
 
@@ -430,6 +437,8 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void FixedUpdate()
         {
+            ApplyDestinationPlatformAntiTunnelDuringPhysicsFall();
+
             if (!_postBounceActive) return;
 
             if (Time.time - _postBounceStartTime > ignoreEnemyCollisionTime)

@@ -232,12 +232,22 @@ public class RelicUIController : MonoBehaviour
         // SPRINT: arm now, consume later on world touch / actual sprint start
         if (r.slot != null && r.slot.Definition is SprintRelic sprintDef)
         {
+            // Consommer avant d'armer
+            bool consumed = relicManager.TryConsumeById(relicId, consume);
+            if (!consumed) { RefreshButton(r); return; }
+
             bool armed = warrior != null && warrior.TryArmSprintRelic(
                 relicId: relicId,
                 speedMultiplier: sprintDef.speedMultiplier,
                 duration: sprintDef.sprintDuration,
                 cooldown: sprintDef.sprintCooldown,
-                consumeOnUse: true);
+                consumeOnUse: false); // déjà consommé
+
+            if (!armed)
+            {
+                // Rembourser si TryArm a refusé
+                relicManager.Collect(sprintDef, bypassFrameCap: true);
+            }
 
             RefreshButton(r);
             return;

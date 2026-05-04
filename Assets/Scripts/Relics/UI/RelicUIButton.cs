@@ -157,14 +157,22 @@ namespace Assets.Scripts.Relics.UI
             // 2) Sprint relic branch (ARM only; actual consume/use happens when movement starts)
             if (definition is SprintRelic sprintDef)
             {
+                // Consommer d'abord
+                if (ShouldConsumeOnUse() && !_rm.TryConsume(definition, 1))
+                    return; // plus de stack
+
                 bool armed = warrior.TryArmSprintRelic(
                     relicId: _id,
                     speedMultiplier: sprintDef.speedMultiplier,
                     duration: sprintDef.sprintDuration,
                     cooldown: sprintDef.sprintCooldown,
-                    consumeOnUse: ShouldConsumeOnUse());
+                    consumeOnUse: false); // Warrior ne reconsomme pas
 
-                if (!armed) return;
+                if (!armed)
+                {
+                    // Annulé (shield up, déjà armé, etc.) ? rembourser
+                    _rm.Collect(definition); // ou une méthode Refund() dédiée
+                }
                 return;
             }
 

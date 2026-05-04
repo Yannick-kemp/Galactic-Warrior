@@ -65,6 +65,12 @@ public class PlatFormColliderTrigger : MonoBehaviour
 
         if (character != null)
         {
+            // Derived platform types can reject the landing when the character is
+            // in a pass-through state. This prevents artificial seating / stopping
+            // while Warrior or Zalayty should naturally continue the jump path.
+            if (ShouldSkipArtificialPlatformLanding(character, collision))
+                return;
+
             character.CurrentplatForm = this;
 
             if (character is Warrior w)
@@ -111,6 +117,11 @@ public class PlatFormColliderTrigger : MonoBehaviour
                 }
             }
         }
+    }
+
+    protected virtual bool ShouldSkipArtificialPlatformLanding(CharacterController character, Collision2D collision)
+    {
+        return false;
     }
 
     protected virtual void OnCollisionStay2D(Collision2D collision)
@@ -178,6 +189,50 @@ public class PlatFormColliderTrigger : MonoBehaviour
             return e.NormalCollider;
 
         return character.collider2;
+    }
+
+    public virtual bool TryPrepareForPredictedTopLanding(CharacterController character, Collider2D predictedPlatformCollider)
+    {
+        if (character == null || platformCollider == null)
+            return false;
+
+        if (predictedPlatformCollider != platformCollider)
+            return false;
+
+        Collider2D[] cols = character.GetComponentsInChildren<Collider2D>(true);
+
+        for (int i = 0; i < cols.Length; i++)
+        {
+            Collider2D col = cols[i];
+            if (col == null)
+                continue;
+
+            Physics2D.IgnoreCollision(platformCollider, col, false);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Forces this platform to become pass-through for this character because the
+    /// character has really lost the edge and must fall by Rigidbody2D gravity.
+    /// This does not move or seat the character.
+    /// </summary>
+    public virtual void ForceCharacterToFallThroughSourcePlatform(CharacterController character)
+    {
+        if (character == null || platformCollider == null)
+            return;
+
+        Collider2D[] cols = character.GetComponentsInChildren<Collider2D>(true);
+
+        for (int i = 0; i < cols.Length; i++)
+        {
+            Collider2D col = cols[i];
+            if (col == null)
+                continue;
+
+            Physics2D.IgnoreCollision(platformCollider, col, true);
+        }
     }
 
     protected void SeatCharacterOnTop(CharacterController character, float safeMargin = 0.08f, float seatOffset = 0.02f)

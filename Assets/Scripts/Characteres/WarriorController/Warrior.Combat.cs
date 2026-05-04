@@ -670,6 +670,20 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         #region spectacular action scoring
 
+        [Header("Losing Balance -> Physics Fall")]
+        [SerializeField] private bool losingBalanceStartsPhysicsFall = true;
+
+        [Tooltip("Delay after ShowLosingBalance before the Warrior is allowed to fall through the source platform by pure Rigidbody2D gravity.")]
+        [SerializeField, Min(0f)] private float losingBalanceFallDelay = 0.75f;
+
+        [Tooltip("Gravity used once the losing-balance delay has finished and the Warrior is still on the edge.")]
+        [SerializeField, Min(0f)] private float losingBalanceFallGravityScale = 2.5f;
+
+        [Tooltip("Small downward velocity injected only to start the physical fall. No vertical seating/snap is done.")]
+        [SerializeField, Min(0f)] private float losingBalanceFallMinDownVelocity = 0.05f;
+
+        private Coroutine _losingBalanceFallRoutine;
+
         // In Warrior
         public void ShowLosingBalance()
         {
@@ -677,6 +691,110 @@ namespace Assets.Scripts.Characteres.WarriorController
                 ?.NotifyLosingBalanceDisplayed();
 
             LosingBalanceAnimationDisplay();
+            BeginLosingBalancePhysicsFallCountdown();
+        }
+
+        private void BeginLosingBalancePhysicsFallCountdown()
+        {
+            if (!losingBalanceStartsPhysicsFall)
+                return;
+
+            if (_deathStarted || CanDie || IsDeadOrDying || _frozenByHivernox)
+                return;
+
+            if (activesJumpCoroutine != null)
+                return;
+
+            if (CountGroundPoints() > 1)
+                return;
+
+            if (_losingBalanceFallRoutine != null)
+                return;
+
+            PlatFormColliderTrigger sourcePlatform = CurrentplatForm;
+            _losingBalanceFallRoutine = StartCoroutine(LosingBalancePhysicsFallRoutine(sourcePlatform));
+        }
+
+        private IEnumerator LosingBalancePhysicsFallRoutine(PlatFormColliderTrigger sourcePlatform)
+        {
+            float timer = 0f;
+
+            while (timer < losingBalanceFallDelay)
+            {
+                if (_deathStarted || CanDie || IsDeadOrDying || _frozenByHivernox)
+                {
+                    _losingBalanceFallRoutine = null;
+                    yield break;
+                }
+
+                if (activesJumpCoroutine != null)
+                {
+                    _losingBalanceFallRoutine = null;
+                    yield break;
+                }
+
+                // If Warrior recovered stable support during the losing-balance window,
+                // do not force a fall. This preserves the existing safe landing behavior.
+                if (CountGroundPoints() > 1)
+                {
+                    _losingBalanceFallRoutine = null;
+                    yield break;
+                }
+
+                timer += Time.deltaTime;
+                yield return null;
+            }
+
+            _losingBalanceFallRoutine = null;
+
+            if (_deathStarted || CanDie || IsDeadOrDying || _frozenByHivernox)
+                yield break;
+
+            if (activesJumpCoroutine != null || CountGroundPoints() > 1)
+                yield break;
+
+            ForceSimplePhysicsFallAfterLosingBalance(sourcePlatform);
+        }
+
+        private void ForceSimplePhysicsFallAfterLosingBalance(PlatFormColliderTrigger sourcePlatform)
+        {
+            // Refresh the source at the last moment. The platform that matters here is
+            // the platform currently supporting the edge, not a future destination.
+            if (CurrentplatForm != null)
+                sourcePlatform = CurrentplatForm;
+
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+
+            IsFallingEdge = true;
+            IsFallingGrazesEdge = true;
+            IsFallingPlfExit = false;
+            IsFallingHitEnemy = false;
+            CanMove = false;
+            _blockAction = false;
+
+            // Do not snap or seat the Warrior. We only make the SOURCE platform
+            // pass-through so Rigidbody2D gravity can naturally pull him down.
+            if (sourcePlatform != null)
+                sourcePlatform.ForceCharacterToFallThroughSourcePlatform(this);
+
+            if (rigidbody2 != null)
+            {
+                rigidbody2.gravityScale = Mathf.Max(rigidbody2.gravityScale, losingBalanceFallGravityScale);
+
+                RigidbodyConstraints2D constraints = rigidbody2.constraints;
+                constraints &= ~RigidbodyConstraints2D.FreezePositionY;
+                rigidbody2.constraints = constraints;
+
+                Vector2 velocity = rigidbody2.linearVelocity;
+                if (velocity.y > -losingBalanceFallMinDownVelocity)
+                    velocity.y = -losingBalanceFallMinDownVelocity;
+
+                rigidbody2.linearVelocity = velocity;
+                rigidbody2.WakeUp();
+            }
+
+            JumpAnimationDisplay();
         }
 
         public float LastJumpStartTime { get; private set; } = -999f;

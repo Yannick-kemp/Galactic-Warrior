@@ -335,23 +335,24 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             SetHasStone(true);
             EnterState(State.FlyAboveWarrior);
         }
-
         private void UpdateFlyAboveWarrior()
         {
-            if (!hasStone)
+            if (!hasStone) { EnterState(State.SearchNewReserve); return; }
+            if (!HasValidWarrior()) { DropStone(); EnterState(State.Retreat); return; }
+
+            float safeMinY = warrior.transform.position.y + minimumDropHeight;
+
+            // Phase 1: if not yet at safe altitude, climb vertically first
+            if (transform.position.y < safeMinY)
             {
-                EnterState(State.SearchNewReserve);
-                return;
+                Vector3 climbTarget = new Vector3(transform.position.x, safeMinY, 0f);
+                FlyTowards(climbTarget, carryFlySpeed);
+                return; // don't move horizontally yet
             }
 
-            if (!HasValidWarrior())
-            {
-                DropStone();
-                EnterState(State.Retreat);
-                return;
-            }
-
+            // Phase 2: safe altitude reached — move toward drop position
             Vector3 targetPosition = warrior.transform.position + Vector3.up * preferredDropHeight;
+            targetPosition.y = Mathf.Max(targetPosition.y, safeMinY); // keep the clamp too
             FlyTowards(targetPosition, carryFlySpeed);
 
             float horizontalDistance = Mathf.Abs(transform.position.x - warrior.transform.position.x);

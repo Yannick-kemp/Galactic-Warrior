@@ -1,5 +1,6 @@
-using Assets.Scripts.Characteres;
+﻿using Assets.Scripts.Characteres;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class CharacterController : Character, ICharacterController
@@ -18,6 +19,15 @@ public class CharacterController : Character, ICharacterController
     public bool GoLeft;
 
     public PlatFormColliderTrigger CurrentplatForm;
+
+    private struct PredictedLandingCandidate
+    {
+        public PlatFormColliderTrigger platform;
+        public Collider2D platformCollider;
+        public float topY;
+        public float crossT;
+    }
+
     public bool IsMoving => _isMoving;
     [Header("Enemy Health")]
     [SerializeField] public float maxHealth = 100f;
@@ -33,6 +43,21 @@ public class CharacterController : Character, ICharacterController
     // Add near your other virtual properties
     protected virtual bool AllowEdgeExitWhenTargetOutside => false; // default for enemies
     protected virtual float PlatformSafeMargin => 0.40f;
+
+    [Header("Destination Platform Anti-Tunneling")]
+    [SerializeField] private bool enableDestinationPlatformAntiTunnel = true;
+
+    [Tooltip("Tiny upward safety offset after a predicted top landing. This is not a platform snap; it only prevents floating-point re-overlap at the predicted impact point.")]
+    [SerializeField, Min(0f)] private float antiTunnelLandingSkin = 0.015f;
+
+    [Tooltip("Extra sweep distance added to the predicted movement so very fast downward arcs cannot skip the platform top between physics frames.")]
+    [SerializeField, Min(0f)] private float antiTunnelCastExtraDistance = 0.08f;
+
+    [Tooltip("Shrinks the anti-tunnel box cast horizontally. This prevents catching a platform that is only touched by the side of the character.")]
+    [SerializeField, Min(0f)] private float antiTunnelHorizontalSkin = 0.03f;
+
+    [Tooltip("The character bottom must start at least this close above the platform top to allow a predicted top landing.")]
+    [SerializeField, Min(0f)] private float antiTunnelTopStartTolerance = 0.04f;
 
     protected virtual bool ClampMoveToCurrentPlatform => true;
     public virtual bool CanJump { get; set; }
@@ -321,51 +346,257 @@ public class CharacterController : Character, ICharacterController
         FlipCharacter(target.x);
         targetReached = false;
         DescendentPhase = false;
+
         float previousY = startPosition.y;
         Vector2 previousPosition = startPosition;
         Vector2 currentVelocity = Vector2.zero;
 
+        WaitForFixedUpdate waitForFixedUpdate = new WaitForFixedUpdate();
+
         while (!targetReached)
         {
-            elapsedTime += Time.deltaTime;
-            float t = elapsedTime / duration; // Normalized time (0 to 1)
+            float stepTime = Time.fixedDeltaTime > 0f ? Time.fixedDeltaTime : Time.deltaTime;
+            elapsedTime += stepTime;
+            float t = duration > 0f ? elapsedTime / duration : 1f;
 
-            if (t <= 1f) // Before reaching the target
+            Vector2 desiredPosition;
+
+            if (t <= 1f)
             {
-
-                Vector2 currentPosition = Vector2.Lerp(startPosition, target, t);
-                currentPosition.y += height * Mathf.Sin(Mathf.PI * t); // Add parabolic height
-                transform.position = currentPosition;
-
-                // Calculate current velocity (for tracking angle of motion)
-                if (Time.deltaTime > 0)
-                {
-                    currentVelocity = (currentPosition - previousPosition) / Time.deltaTime;
-                    previousPosition = currentPosition;
-                }
-
-                // Determine descending phase
-                if (currentPosition.y < previousY)
-                {
-                    DescendentPhase = true;
-                }
-                else
-                {
-                    DescendentPhase = false;
-                }
-                previousY = currentPosition.y;
+                desiredPosition = Vector2.Lerp(startPosition, target, t);
+                desiredPosition.y += height * Mathf.Sin(Mathf.PI * t);
             }
-            else // After reaching the target
+            else
             {
-                rigidbody2.gravityScale = 2.5f;
+                if (rigidbody2 != null)
+                    rigidbody2.gravityScale = Mathf.Max(rigidbody2.gravityScale, 2.5f);
 
-                // Continue moving with the same velocity vector from the end of the jump
-                transform.position += (Vector3)currentVelocity * Time.deltaTime;
+                desiredPosition = (Vector2)transform.position + currentVelocity * stepTime;
             }
-            yield return null;
+
+            bool movingDown = desiredPosition.y < previousPosition.y;
+
+            // Destination-platform anti-tunneling:
+            // We do NOT use CurrentplatForm here. The platform that matters is the
+            // destination platform hit by the sweep between previousPosition and desiredPosition.
+            if (movingDown &&
+                TryResolveDestinationPlatformTopLanding(previousPosition, desiredPosition, out Vector2 predictedLandingPosition, out PlatFormColliderTrigger destinationPlatform))
+            {
+                MoveCharacterTo(predictedLandingPosition);
+                CompletePredictedTopLanding(destinationPlatform);
+                yield break;
+            }
+
+            MoveCharacterTo(desiredPosition);
+
+            if (stepTime > 0f)
+                currentVelocity = (desiredPosition - previousPosition) / stepTime;
+
+            DescendentPhase = desiredPosition.y < previousY;
+            previousY = desiredPosition.y;
+            previousPosition = desiredPosition;
+
+            yield return waitForFixedUpdate;
         }
+
         _isJumping = false;
+        activesJumpCoroutine = null;
     }
+
+    protected bool TryResolveDestinationPlatformTopLanding(
+        Vector2 fromPosition,
+        Vector2 toPosition,
+        out Vector2 landingPosition,
+        out PlatFormColliderTrigger destinationPlatform,
+        bool ignoreCurrentPlatform = false)
+    {
+        landingPosition = toPosition;
+        destinationPlatform = null;
+
+        if (!enableDestinationPlatformAntiTunnel || PlatformLayer.value == 0)
+            return false;
+
+        if (collider2 == null)
+            return false;
+
+        Vector2 movement = toPosition - fromPosition;
+
+        // Only solve top landing while descending. Upward movement, side-only movement,
+        // and platform-under-trigger pass-through must keep their natural behavior.
+        if (movement.y >= -0.0001f)
+            return false;
+
+        Bounds currentBounds = collider2.bounds;
+
+        // Important:
+        // Bounds are the CURRENT physics bounds, but this method can be used for:
+        //   1) current -> next predicted movement, and
+        //   2) previous -> current movement when physics already moved the Warrior.
+        // Therefore we reconstruct the collider center at fromPosition/toPosition using
+        // the current collider center offset relative to the Rigidbody/transform position.
+        Vector2 referencePosition = rigidbody2 != null
+            ? rigidbody2.position
+            : (Vector2)transform.position;
+
+        Vector2 centerOffset = (Vector2)currentBounds.center - referencePosition;
+        Vector2 startCenter = fromPosition + centerOffset;
+        Vector2 endCenter = toPosition + centerOffset;
+
+        Vector2 castSize = currentBounds.size;
+        castSize.x = Mathf.Max(0.02f, castSize.x - antiTunnelHorizontalSkin * 2f);
+        castSize.y = Mathf.Max(0.02f, castSize.y - antiTunnelLandingSkin * 2f);
+
+        float halfWidth = castSize.x * 0.5f;
+        float halfHeight = castSize.y * 0.5f;
+
+        float startBottomY = startCenter.y - halfHeight;
+        float endBottomY = endCenter.y - halfHeight;
+
+        if (endBottomY >= startBottomY)
+            return false;
+
+        // Swept box: covers the whole vertical path between previous/current/next.
+        // This is more robust than a diagonal BoxCast normal, because when Warrior falls
+        // from a platform edge with horizontal velocity, a diagonal cast can report a side
+        // normal and miss the valid top crossing.
+        float verticalTravel = startBottomY - endBottomY;
+        Vector2 sweepCenter = new Vector2(
+            (startCenter.x + endCenter.x) * 0.5f,
+            (startCenter.y + endCenter.y) * 0.5f);
+
+        Vector2 sweepSize = new Vector2(
+            castSize.x + antiTunnelHorizontalSkin * 2f,
+            castSize.y + verticalTravel + antiTunnelCastExtraDistance);
+
+        Collider2D[] candidates = Physics2D.OverlapBoxAll(
+            sweepCenter,
+            sweepSize,
+            0f,
+            PlatformLayer);
+
+        if (candidates == null || candidates.Length == 0)
+            return false;
+
+        List<PredictedLandingCandidate> landingCandidates =
+            new List<PredictedLandingCandidate>();
+
+        float sweptMinX = Mathf.Min(startCenter.x, endCenter.x) - halfWidth;
+        float sweptMaxX = Mathf.Max(startCenter.x, endCenter.x) + halfWidth;
+
+        for (int i = 0; i < candidates.Length; i++)
+        {
+            Collider2D candidate = candidates[i];
+
+            if (candidate == null || candidate.isTrigger)
+                continue;
+
+            PlatFormColliderTrigger platform = candidate.GetComponentInParent<PlatFormColliderTrigger>();
+            if (platform == null || platform.platformCollider == null)
+                continue;
+
+            // Important: use the destination platform found by the sweep, not CurrentplatForm.
+            if (candidate != platform.platformCollider)
+                continue;
+
+            // For physical edge-fall checks, CurrentplatForm is usually the source platform.
+            // Do not recapture that source platform while Warrior is intentionally leaving its edge.
+            if (ignoreCurrentPlatform && platform == CurrentplatForm)
+                continue;
+
+            Bounds pb = platform.platformCollider.bounds;
+            float topY = pb.max.y;
+
+            bool crossesThisTop =
+                startBottomY >= topY - antiTunnelTopStartTolerance &&
+                endBottomY <= topY + antiTunnelLandingSkin;
+
+            if (!crossesThisTop)
+                continue;
+
+            bool horizontallyCrossesDestination =
+                sweptMaxX > pb.min.x + antiTunnelHorizontalSkin &&
+                sweptMinX < pb.max.x - antiTunnelHorizontalSkin;
+
+            if (!horizontallyCrossesDestination)
+                continue;
+
+            // Candidate found. We do not immediately trust the highest surface,
+            // because it may still be the source platform locked in fall-through.
+            // TryPrepareForPredictedTopLanding can reject that source platform; then
+            // we must try the next valid platform destination instead of returning false.
+            float crossT = Mathf.InverseLerp(startBottomY, endBottomY, topY);
+
+            landingCandidates.Add(new PredictedLandingCandidate
+            {
+                platform = platform,
+                platformCollider = candidate,
+                topY = topY,
+                crossT = crossT
+            });
+        }
+
+        if (landingCandidates.Count == 0)
+            return false;
+
+        landingCandidates.Sort((a, b) =>
+        {
+            int topCompare = b.topY.CompareTo(a.topY);
+            if (topCompare != 0)
+                return topCompare;
+
+            return a.crossT.CompareTo(b.crossT);
+        });
+
+        for (int i = 0; i < landingCandidates.Count; i++)
+        {
+            PredictedLandingCandidate candidate = landingCandidates[i];
+
+            if (candidate.platform == null || candidate.platformCollider == null)
+                continue;
+
+            if (!candidate.platform.TryPrepareForPredictedTopLanding(this, candidate.platformCollider))
+                continue;
+
+            Vector2 naturalPositionAtCrossing =
+                Vector2.Lerp(fromPosition, toPosition, Mathf.Clamp01(candidate.crossT));
+
+            // Keep X natural. Only prevent the body bottom from passing below the crossed top.
+            naturalPositionAtCrossing.y =
+                candidate.topY + antiTunnelLandingSkin + halfHeight - centerOffset.y;
+
+            landingPosition = naturalPositionAtCrossing;
+            destinationPlatform = candidate.platform;
+            return true;
+        }
+
+        return false;
+    }
+
+    protected void MoveCharacterTo(Vector2 position)
+    {
+        if (rigidbody2 != null)
+            rigidbody2.MovePosition(position);
+        else
+            transform.position = new Vector3(position.x, position.y, transform.position.z);
+    }
+
+    protected void CompletePredictedTopLanding(PlatFormColliderTrigger destinationPlatform)
+    {
+        CurrentplatForm = destinationPlatform;
+        targetReached = true;
+        DescendentPhase = false;
+        _isJumping = false;
+        activesJumpCoroutine = null;
+
+        if (rigidbody2 != null)
+        {
+            Vector2 velocity = rigidbody2.linearVelocity;
+            if (velocity.y < 0f)
+                velocity.y = 0f;
+            rigidbody2.linearVelocity = velocity;
+        }
+    }
+
     public void StopJumpTowardCoroutine()
     {
         targetReached = true;
