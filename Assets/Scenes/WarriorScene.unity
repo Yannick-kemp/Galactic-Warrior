@@ -7280,8 +7280,12 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 1111713199878802657, guid: 6e81682d4a780534098c4967bfe8eb1e, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: -340
+      objectReference: {fileID: 0}
+    - target: {fileID: 1111713199878802657, guid: 6e81682d4a780534098c4967bfe8eb1e, type: 3}
       propertyPath: m_AnchoredPosition.y
-      value: 385.7
+      value: -374
       objectReference: {fileID: 0}
     - target: {fileID: 3938057196650400918, guid: 6e81682d4a780534098c4967bfe8eb1e, type: 3}
       propertyPath: m_AnchorMax.y
@@ -7404,8 +7408,12 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7452325242388782211, guid: 6e81682d4a780534098c4967bfe8eb1e, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: -153
+      objectReference: {fileID: 0}
+    - target: {fileID: 7452325242388782211, guid: 6e81682d4a780534098c4967bfe8eb1e, type: 3}
       propertyPath: m_AnchoredPosition.y
-      value: 105.3
+      value: -544
       objectReference: {fileID: 0}
     - target: {fileID: 7574719671624573814, guid: 6e81682d4a780534098c4967bfe8eb1e, type: 3}
       propertyPath: warrior

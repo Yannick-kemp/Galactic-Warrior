@@ -138,21 +138,64 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (shouldRun) RunAnimationDisplay();
         }
 
+        //private void HandleFallingAndDeath()
+        //{
+        //    if (IsFalling)
+        //    {
+        //        rigidbody2.gravityScale = 3f;
+        //        StopMoveTowardCoroutine();
+        //        JumpAnimationDisplay();
+        //    }
+
+        //    if (_deathStarted || CanDie)
+        //    {
+        //        StopMoveTowardCoroutine();
+        //        DeathAnimationDisplay();
+        //        return;
+        //    }
+        //}
+
         private void HandleFallingAndDeath()
         {
-            if (IsFalling)
-            {
-                rigidbody2.gravityScale = 3f;
-                StopMoveTowardCoroutine();
-                JumpAnimationDisplay();
-            }
-
+            // Death must always win over jump/fall animation.
             if (_deathStarted || CanDie)
             {
                 StopMoveTowardCoroutine();
                 DeathAnimationDisplay();
                 return;
             }
+
+            int groundPoints = CountGroundPoints();
+
+            bool noGroundPoint = groundPoints == 0;
+
+            // Do not break Attack1/Attack2/Attack3.
+            // If an attack ends while airborne, ExitAttackToBestState() already sends him to jump.
+            if (IsAnyAttackPlaying())
+                return;
+
+            // Do not break Hivernox freeze / hard lock visuals.
+            if (IsHardActionLocked || _frozenByHivernox)
+                return;
+
+            bool shouldDisplayJump =
+                IsFalling ||
+                IsFallingEdge ||
+                IsFallingGrazesEdge ||
+                noGroundPoint ||
+                activesJumpCoroutine != null;
+
+            if (!shouldDisplayJump)
+                return;
+
+            if (rigidbody2 != null)
+                rigidbody2.gravityScale = Mathf.Max(rigidbody2.gravityScale, 3f);
+
+            // If ground points are zero, movement coroutine must not keep RunAnimationDisplay alive.
+            if (noGroundPoint || IsFalling || IsFallingEdge || IsFallingGrazesEdge)
+                StopMoveTowardCoroutine();
+
+            JumpAnimationDisplay();
         }
 
         private void CheckIfStopRunDisplay()

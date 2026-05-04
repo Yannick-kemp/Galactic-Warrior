@@ -1,3 +1,5 @@
+using Assets.Scripts.Characteres.EnemyContoller;
+using Assets.Scripts.Characteres.WarriorController;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -20,15 +22,37 @@ namespace Assets.Scripts.Platforms
         [Min(0f)] public float waitAtRight = 0.25f;
         [Min(0.0001f)] public float arriveEpsilon = 0.01f;
 
-        [Header("Riders (anti-jitter)")]
+        [Header("Riders / Lift Carry")]
+        [Tooltip("When true, every Rigidbody2D standing on the top surface is carried, not only the Warrior.")]
+        [SerializeField] private bool carryAllStandingRigidbodies = true;
+
         [Tooltip("How many FixedUpdate steps we wait before removing a rider after OnCollisionExit2D.")]
         [Min(0)] public int exitGraceFixedSteps = 2;
 
-        [Tooltip("Contact normal.y must be above this to count as 'standing on top'.")]
+        [Tooltip("Absolute contact normal Y must be above this to count as top/bottom support. Absolute is used because Unity can report the opposite sign depending on which body owns the callback.")]
         [Range(0.1f, 0.95f)] public float topNormalMin = 0.55f;
 
-        [Tooltip("Contact point must be near platform top to count as 'standing on top'.")]
+        [Tooltip("Contact point must be near the platform top to count as standing on the top surface.")]
         [Min(0f)] public float topPointBuffer = 0.08f;
+
+        [Tooltip("Extra vertical tolerance used for the support fallback check after MovePosition.")]
+        [Min(0f)] public float supportFallbackTopTolerance = 0.14f;
+
+        [Tooltip("Horizontal edge tolerance used when checking whether the rider is still really above the top surface.")]
+        [Min(0f)] public float supportFallbackSideTolerance = 0.04f;
+
+        [Tooltip("Required part of the rider collider width that must still overlap the platform top. This prevents edge jitter while still allowing stable lift riding.")]
+        [Range(0.01f, 0.75f)] public float minRiderWidthOverlapRatio = 0.12f;
+
+        [Header("Riders / Keep Seated On Surface")]
+        [Tooltip("Keeps a rider seated on the top surface with a very small vertical correction. This is NOT an edge clamp; it runs only while the rider is still supported by the top surface.")]
+        [SerializeField] private bool keepRidersSeatedOnTop = true;
+
+        [Tooltip("Small vertical gap kept between rider bottom and platform top.")]
+        [Min(0f)] public float seatOnTopOffset = 0.015f;
+
+        [Tooltip("Maximum vertical correction per FixedUpdate. Keep this small so the platform cannot pull a falling/jumping character back onto the edge.")]
+        [Min(0f)] public float maxSeatCorrectionPerFixedStep = 0.06f;
 
         private Rigidbody2D _rb;
         private Vector2 _leftPos;
@@ -42,6 +66,7 @@ namespace Assets.Scripts.Platforms
         private readonly HashSet<Rigidbody2D> _riders = new HashSet<Rigidbody2D>();
         private readonly Dictionary<Rigidbody2D, Collider2D[]> _riderCols = new Dictionary<Rigidbody2D, Collider2D[]>();
         private readonly HashSet<Rigidbody2D> _pendingRemove = new HashSet<Rigidbody2D>();
+        private readonly List<Rigidbody2D> _ridersToRemove = new List<Rigidbody2D>();
 
         protected override void Start()
         {
@@ -61,7 +86,8 @@ namespace Assets.Scripts.Platforms
         protected override void FixedUpdate()
         {
             base.FixedUpdate();
-            if (_rb == null) return;
+            if (_rb == null)
+                return;
 
             if (_waitTimer > 0f)
             {
@@ -80,6 +106,8 @@ namespace Assets.Scripts.Platforms
 
             Vector2 delta = next - _lastPlatformPos;
 
+            // Move the platform first, then move valid top-surface riders by the same horizontal delta.
+            // This gives lift behavior without parenting, friction dependency, or real velocity inheritance.
             _rb.MovePosition(next);
             CarryRiders(delta);
 
@@ -116,8 +144,9 @@ namespace Assets.Scripts.Platforms
         {
             base.OnCollisionExit2D(collision);
 
-            var rb = collision.rigidbody;
-            if (rb == null) return;
+            Rigidbody2D rb = collision.rigidbody;
+            if (rb == null)
+                return;
 
             if (!_pendingRemove.Contains(rb))
             {
@@ -128,26 +157,66 @@ namespace Assets.Scripts.Platforms
 
         private void TryAddRider(Collision2D collision)
         {
-            var rb = collision.rigidbody;
-            if (rb == null) return;
+            if (!carryAllStandingRigidbodies)
+                return;
 
-            float platformTopY = platformCollider != null ? platformCollider.bounds.max.y : transform.position.y;
+            Rigidbody2D rb = collision.rigidbody;
+            if (rb == null || platformCollider == null)
+                return;
+
+            // Only a real top-surface contact can become a lift rider.
+            // This rejects side hits, underside hits, and pass-through/ignored collider states.
+            if (!CollisionHasTopSupport(collision))
+                return;
+
+            CacheRiderColliders(rb);
+
+            if (!CanCarryRiderNow(rb))
+                return;
+
+            CharacterController character = GetCharacterFromRider(rb);
+            if (character != null && character.CurrentplatForm == null)
+                character.CurrentplatForm = this;
+
+            _riders.Add(rb);
+            _pendingRemove.Remove(rb);
+        }
+
+        private bool CollisionHasTopSupport(Collision2D collision)
+        {
+            if (collision == null || collision.contactCount <= 0 || platformCollider == null)
+                return false;
+
+            Collider2D riderCollider = collision.collider;
+            if (riderCollider == null || riderCollider.isTrigger)
+                return false;
+
+            if (Physics2D.GetIgnoreCollision(platformCollider, riderCollider))
+                return false;
+
+            Bounds pb = platformCollider.bounds;
+            Bounds cb = riderCollider.bounds;
+
+            // The rider must be above the platform, not hitting the side or underside.
+            if (cb.center.y < pb.max.y - supportFallbackTopTolerance)
+                return false;
 
             for (int i = 0; i < collision.contactCount; i++)
             {
-                var c = collision.GetContact(i);
+                ContactPoint2D c = collision.GetContact(i);
 
-                if (c.normal.y > topNormalMin && c.point.y >= platformTopY - topPointBuffer)
-                {
-                    _riders.Add(rb);
+                bool verticalContact = Mathf.Abs(c.normal.y) >= topNormalMin;
+                bool contactNearTop =
+                    c.point.y >= pb.max.y - topPointBuffer &&
+                    c.point.y <= pb.max.y + supportFallbackTopTolerance;
 
-                    if (!_riderCols.ContainsKey(rb))
-                        _riderCols[rb] = rb.GetComponentsInChildren<Collider2D>(true);
-
-                    _pendingRemove.Remove(rb);
-                    return;
-                }
+                if (verticalContact && contactNearTop)
+                    return true;
             }
+
+            // Fallback for frames where Unity reports a noisy/side-looking normal but the collider
+            // is clearly sitting on the top surface.
+            return IsSupportedByTopSurface(riderCollider, Vector2.zero);
         }
 
         private IEnumerator RemoveRiderIfReallyLeft(Rigidbody2D rb)
@@ -157,60 +226,161 @@ namespace Assets.Scripts.Platforms
 
             _pendingRemove.Remove(rb);
 
-            if (rb == null)
+            if (rb == null || !CanCarryRiderNow(rb))
             {
-                _riders.Remove(rb);
-                _riderCols.Remove(rb);
+                RemoveRider(rb);
                 yield break;
             }
+        }
 
-            if (IsStillOnPlatform(rb))
-                yield break;
+        private void CacheRiderColliders(Rigidbody2D rb)
+        {
+            if (rb == null)
+                return;
+
+            if (!_riderCols.ContainsKey(rb) || _riderCols[rb] == null || _riderCols[rb].Length == 0)
+                _riderCols[rb] = rb.GetComponentsInChildren<Collider2D>(true);
+        }
+
+        private void RemoveRider(Rigidbody2D rb)
+        {
+            if (rb == null)
+                return;
 
             _riders.Remove(rb);
             _riderCols.Remove(rb);
+            _pendingRemove.Remove(rb);
+        }
+
+        private CharacterController GetCharacterFromRider(Rigidbody2D rb)
+        {
+            if (rb == null)
+                return null;
+
+            CharacterController character = rb.GetComponent<CharacterController>();
+            if (character != null)
+                return character;
+
+            character = rb.GetComponentInParent<CharacterController>();
+            if (character != null)
+                return character;
+
+            return rb.GetComponentInChildren<CharacterController>();
+        }
+
+        private bool CanCarryRiderNow(Rigidbody2D rb)
+        {
+            if (rb == null || platformCollider == null)
+                return false;
+
+            CharacterController character = GetCharacterFromRider(rb);
+
+            if (character != null)
+            {
+                // If another platform now owns the character, this moving platform must stop carrying it.
+                if (character.CurrentplatForm != null && character.CurrentplatForm != this)
+                    return false;
+
+                // A jumping character is no longer standing on the lift surface.
+                if (character.IsJumping)
+                    return false;
+
+                // Important: do not use CountGroundPoints() <= 0 as the generic carry-removal rule here.
+                // Ground points can briefly read 0 while the platform/rider pair is being moved by Rigidbody2D.MovePosition.
+                // For lift behavior, the source of truth is top-surface collider support/overlap.
+                if (character is Warrior warrior)
+                {
+                    if (warrior.IsFallingEdge ||
+                        warrior.IsFallingPlfExit ||
+                        warrior.IsFallingHitEnemy ||
+                        warrior.IsFallingGrazesEdge)
+                        return false;
+                }
+                else if (character is ZalaytyMonster zalayty)
+                {
+                    if (zalayty.IsJumping)
+                        return false;
+                }
+            }
+
+            if (!IsRiderCarryAllowed(rb))
+                return false;
+
+            return IsStillOnPlatform(rb);
         }
 
         private bool IsStillOnPlatform(Rigidbody2D rb)
         {
-            if (platformCollider == null) return false;
+            if (platformCollider == null || rb == null)
+                return false;
 
-            if (!_riderCols.TryGetValue(rb, out var cols) || cols == null || cols.Length == 0)
+            CharacterController character = GetCharacterFromRider(rb);
+            if (character != null)
+            {
+                Collider2D standing = GetStandingCollider(character);
+                return IsSupportedByTopSurface(standing, Vector2.zero);
+            }
+
+            if (!_riderCols.TryGetValue(rb, out Collider2D[] cols) || cols == null || cols.Length == 0)
                 cols = rb.GetComponentsInChildren<Collider2D>(true);
 
-            foreach (var col in cols)
+            foreach (Collider2D col in cols)
             {
-                if (col == null) continue;
-
-                if (Physics2D.GetIgnoreCollision(platformCollider, col))
-                    continue;
-
-                if (platformCollider.IsTouching(col))
-                    return true;
-
-                Bounds pb = platformCollider.bounds;
-                Bounds cb = col.bounds;
-
-                bool horizontallyOver = cb.max.x > pb.min.x + 0.02f && cb.min.x < pb.max.x - 0.02f;
-                bool nearTop = cb.min.y >= pb.max.y - 0.12f;
-
-                if (horizontallyOver && nearTop)
+                if (IsSupportedByTopSurface(col, Vector2.zero))
                     return true;
             }
 
             return false;
         }
 
+        private bool IsSupportedByTopSurface(Collider2D col, Vector2 predictedDelta)
+        {
+            if (col == null || col.isTrigger || platformCollider == null)
+                return false;
+
+            if (Physics2D.GetIgnoreCollision(platformCollider, col))
+                return false;
+
+            Bounds pb = platformCollider.bounds;
+            Bounds cb = col.bounds;
+
+            cb.center += (Vector3)predictedDelta;
+
+            bool riderAbovePlatform = cb.center.y >= pb.center.y;
+            if (!riderAbovePlatform)
+                return false;
+
+            float overlapX = Mathf.Min(cb.max.x, pb.max.x) - Mathf.Max(cb.min.x, pb.min.x);
+            if (overlapX <= 0f)
+                return false;
+
+            float requiredOverlap = Mathf.Max(
+                supportFallbackSideTolerance,
+                Mathf.Min(cb.size.x, pb.size.x) * minRiderWidthOverlapRatio
+            );
+
+            bool enoughHorizontalOverlap = overlapX >= requiredOverlap;
+
+            bool closeToTop =
+                cb.min.y >= pb.max.y - supportFallbackTopTolerance &&
+                cb.min.y <= pb.max.y + supportFallbackTopTolerance;
+
+            return enoughHorizontalOverlap && closeToTop;
+        }
+
         private bool IsRiderCarryAllowed(Rigidbody2D rb)
         {
-            if (platformCollider == null) return true;
+            if (platformCollider == null || rb == null)
+                return false;
 
-            if (!_riderCols.TryGetValue(rb, out var cols) || cols == null || cols.Length == 0)
-                return true;
+            if (!_riderCols.TryGetValue(rb, out Collider2D[] cols) || cols == null || cols.Length == 0)
+                cols = rb.GetComponentsInChildren<Collider2D>(true);
 
-            foreach (var col in cols)
+            foreach (Collider2D col in cols)
             {
-                if (col == null) continue;
+                if (col == null || col.isTrigger)
+                    continue;
+
                 if (!Physics2D.GetIgnoreCollision(platformCollider, col))
                     return true;
             }
@@ -255,20 +425,97 @@ namespace Assets.Scripts.Platforms
                 return;
 
             _riders.RemoveWhere(r => r == null);
+            _ridersToRemove.Clear();
 
-            foreach (var rider in _riders)
+            foreach (Rigidbody2D rider in _riders)
             {
-                if (rider == null)
+                if (!CanCarryRiderNow(rider))
+                {
+                    _ridersToRemove.Add(rider);
                     continue;
+                }
 
-                if (!IsRiderCarryAllowed(rider))
-                    continue;
-
-                // Horizontal lift behavior only.
+                // Horizontal lift behavior: same X displacement as the platform.
+                // Optional tiny Y seating correction keeps the character on the surface without clamping edges.
                 Vector2 carryDelta = new Vector2(delta.x, 0f);
-
-                rider.MovePosition(rider.position + carryDelta);
+                MoveRiderWithPlatform(rider, carryDelta);
             }
+
+            for (int i = 0; i < _ridersToRemove.Count; i++)
+                RemoveRider(_ridersToRemove[i]);
+
+            _ridersToRemove.Clear();
+        }
+
+        private void MoveRiderWithPlatform(Rigidbody2D rider, Vector2 carryDelta)
+        {
+            if (rider == null || carryDelta == Vector2.zero)
+                return;
+
+            CharacterController character = GetCharacterFromRider(rider);
+            Rigidbody2D body = character != null && character.rigidbody2 != null
+                ? character.rigidbody2
+                : rider;
+
+            if (character != null && character.CurrentplatForm == null)
+                character.CurrentplatForm = this;
+
+            Vector2 finalDelta = carryDelta;
+
+            if (keepRidersSeatedOnTop && TryGetSmallSeatCorrectionY(character, body, carryDelta, out float correctionY))
+                finalDelta.y += correctionY;
+
+            body.MovePosition(body.position + finalDelta);
+        }
+
+        private bool TryGetSmallSeatCorrectionY(CharacterController character, Rigidbody2D body, Vector2 carryDelta, out float correctionY)
+        {
+            correctionY = 0f;
+
+            if (platformCollider == null || body == null)
+                return false;
+
+            Collider2D standing = null;
+
+            if (character != null)
+                standing = GetStandingCollider(character);
+
+            if (standing == null)
+            {
+                if (!_riderCols.TryGetValue(body, out Collider2D[] cols) || cols == null || cols.Length == 0)
+                    cols = body.GetComponentsInChildren<Collider2D>(true);
+
+                for (int i = 0; i < cols.Length; i++)
+                {
+                    Collider2D c = cols[i];
+                    if (IsSupportedByTopSurface(c, carryDelta))
+                    {
+                        standing = c;
+                        break;
+                    }
+                }
+            }
+
+            if (standing == null || standing.isTrigger)
+                return false;
+
+            // Do not seat if the rider will not still be above the top surface after the horizontal carry.
+            // This is what prevents the lift code from pulling characters back from an edge fall.
+            if (!IsSupportedByTopSurface(standing, carryDelta))
+                return false;
+
+            Bounds pb = platformCollider.bounds;
+            Bounds cb = standing.bounds;
+
+            float predictedBottomY = cb.min.y + carryDelta.y;
+            float wantedBottomY = pb.max.y + seatOnTopOffset;
+            float rawCorrection = wantedBottomY - predictedBottomY;
+
+            if (Mathf.Abs(rawCorrection) <= 0.001f)
+                return false;
+
+            correctionY = Mathf.Clamp(rawCorrection, -maxSeatCorrectionPerFixedStep, maxSeatCorrectionPerFixedStep);
+            return Mathf.Abs(correctionY) > 0.0001f;
         }
     }
 }

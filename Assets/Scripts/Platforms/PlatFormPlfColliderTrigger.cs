@@ -106,7 +106,7 @@ namespace Assets.Scripts.Platforms
 
         {
 
-            var character = other.GetComponent<CharacterController>();
+            var character = other.GetComponentInParent<CharacterController>();
 
             const float buffer = 0.08f;
 
@@ -168,7 +168,7 @@ namespace Assets.Scripts.Platforms
 
         {
 
-            var character = other.GetComponent<CharacterController>();
+            var character = other.GetComponentInParent<CharacterController>();
 
 
 
@@ -260,11 +260,15 @@ namespace Assets.Scripts.Platforms
 
         {
 
-            var character = collision.GetComponent<CharacterController>();
+            var character = collision.GetComponentInParent<CharacterController>();
 
-            if (character is Warrior w)
+            // Important: the same platform pass-through rule is used by Warrior and Zalayty.
+            // On trigger enter/stay we may ignore the solid platform collider.
+            // On trigger exit we must restore it for BOTH characters, otherwise the
+            // normal platform collider can remain ignored and cause edge/jump jitter later.
+            if (character is Warrior || character is ZalaytyMonster)
 
-                StartCoroutine(ReEnableCollisionDelayed(w));
+                StartCoroutine(ReEnableCollisionDelayed(character));
 
         }
 
@@ -280,7 +284,7 @@ namespace Assets.Scripts.Platforms
 
             GameObject collidedObject = collision.collider.gameObject;
 
-            CharacterController character = collidedObject.GetComponent<CharacterController>();
+            CharacterController character = collision.collider.GetComponentInParent<CharacterController>();
 
             if (character == null) return;
 
@@ -346,7 +350,39 @@ namespace Assets.Scripts.Platforms
 
                     if (warriorEdgeTimer.IsRunning) warriorEdgeTimer.Stop();
 
-                    warrior.IsFallingGrazesEdge = warrior.IsFallingDueToGravity();
+                    bool notMovingUp = warrior.rigidbody2 == null || warrior.rigidbody2.linearVelocity.y <= 0.05f;
+
+                    if (notMovingUp)
+
+                    {
+
+                        // No ground point left: do not let a side/contact jitter keep the Warrior
+                        // attached to the moving platform edge. Ignore this platform until the
+                        // trigger is exited; OnTriggerExit2D restores the collision.
+                        warrior.IsFallingGrazesEdge = true;
+                        warrior.IsFallingEdge = true;
+                        warrior.IsFallingPlfExit = false;
+                        warrior.IsFallingHitEnemy = false;
+                        warrior.CanMove = false;
+
+                        SetIgnoreForCharacter(warrior, true);
+
+                        if (warrior.rigidbody2 != null)
+                        {
+                            warrior.rigidbody2.gravityScale = Mathf.Max(warrior.rigidbody2.gravityScale, 2.5f);
+
+                            Vector2 v = warrior.rigidbody2.linearVelocity;
+                            if (v.y > -0.05f)
+                                v.y = -0.05f;
+                            warrior.rigidbody2.linearVelocity = v;
+                        }
+
+                        warrior.JumpAnimationDisplay();
+                    }
+                    else
+                    {
+                        warrior.IsFallingGrazesEdge = false;
+                    }
 
                     _pendingWarriorFall = null;
 
@@ -392,13 +428,11 @@ namespace Assets.Scripts.Platforms
 
             var collidedObject = collision.collider.gameObject;
 
-            var character = collidedObject.GetComponent<CharacterController>();
+            var character = collision.collider.GetComponentInParent<CharacterController>();
 
             if (character == null) return;
 
 
-
-            var characterColliders = character.GetComponentsInChildren<Collider2D>(true);
 
 
 
@@ -406,23 +440,12 @@ namespace Assets.Scripts.Platforms
 
             {
 
-                if (w.IsJumping)
-
-                {
-
-                    foreach (var col in characterColliders)
-
-                    {
-
-                        if (col == null) continue;
-
-                        Physics2D.IgnoreCollision(platformCollider, col, false);
-
-                    }
-
-                }
-
-                else
+                // Do NOT restore platform collision here.
+                // If the Warrior is still inside this platform trigger while jumping up
+                // or passing through an edge zone, restoring on collision-exit can make
+                // him land on a platform from the bottom. The restore belongs to
+                // OnTriggerExit2D -> ReEnableCollisionDelayed().
+                if (!w.IsJumping)
 
                 {
 
@@ -480,25 +503,12 @@ namespace Assets.Scripts.Platforms
 
         {
 
+            // Wait one physics step so Unity updates trigger-touching state for all child colliders.
             yield return new WaitForFixedUpdate();
 
-            if (character == null) yield break;
-
-
-
-            if (character is Warrior w)
-
-            {
-
-                if (w.IsFallingEdge || w.IsFallingGrazesEdge) yield break;
-
-            }
-
-
+            if (character == null || platformCollider == null) yield break;
 
             if (!platformCollider.enabled) platformCollider.enabled = true;
-
-
 
             var cols = character.GetComponentsInChildren<Collider2D>(true);
 
@@ -508,6 +518,8 @@ namespace Assets.Scripts.Platforms
 
                 if (col == null) continue;
 
+                // Restore only the colliders that are really outside the trigger.
+                // Any child collider still inside keeps passing through until its own exit.
                 if (platformTrigger != null && platformTrigger.IsTouching(col)) continue;
 
                 Physics2D.IgnoreCollision(platformCollider, col, false);
@@ -521,6 +533,8 @@ namespace Assets.Scripts.Platforms
         private void SetIgnoreForCharacter(CharacterController ch, bool ignore)
 
         {
+
+            if (ch == null || platformCollider == null) return;
 
             var cols = ch.GetComponentsInChildren<Collider2D>(true);
 
@@ -710,7 +724,17 @@ namespace Assets.Scripts.Platforms
 
                 w.CanMove = false;
 
-                Physics2D.IgnoreCollision(platformCollider, w.collider2, true);
+                SetIgnoreForCharacter(w, true);
+
+                if (w.rigidbody2 != null)
+                {
+                    w.rigidbody2.gravityScale = Mathf.Max(w.rigidbody2.gravityScale, 2.5f);
+
+                    Vector2 v = w.rigidbody2.linearVelocity;
+                    if (v.y > -0.05f)
+                        v.y = -0.05f;
+                    w.rigidbody2.linearVelocity = v;
+                }
 
             }
 

@@ -50,8 +50,7 @@ public class PlatFormColliderTrigger : MonoBehaviour
 
     protected virtual void OnCollisionExit2D(Collision2D collision)
     {
-        GameObject collidedObject = collision.collider.gameObject;
-        CharacterController character = collidedObject.GetComponent<CharacterController>();
+        CharacterController character = collision.collider.GetComponentInParent<CharacterController>();
 
         if (character == null) return;
 
@@ -62,8 +61,7 @@ public class PlatFormColliderTrigger : MonoBehaviour
 
     protected virtual void OnCollisionEnter2D(Collision2D collision)
     {
-        GameObject collidedObject = collision.collider.gameObject;
-        CharacterController character = collidedObject.GetComponent<CharacterController>();
+        CharacterController character = collision.collider.GetComponentInParent<CharacterController>();
 
         if (character != null)
         {
@@ -117,8 +115,7 @@ public class PlatFormColliderTrigger : MonoBehaviour
 
     protected virtual void OnCollisionStay2D(Collision2D collision)
     {
-        GameObject collidedObject = collision.collider.gameObject;
-        CharacterController character = collidedObject.GetComponent<CharacterController>();
+        CharacterController character = collision.collider.GetComponentInParent<CharacterController>();
 
         if (character == null) return;
 
@@ -142,7 +139,7 @@ public class PlatFormColliderTrigger : MonoBehaviour
 
         if (ch == null) yield break;
 
-        if (ch.collider2 != null && platformCollider != null && ch.collider2.IsTouching(platformCollider))
+        if (IsAnyCharacterColliderTouchingPlatform(ch))
             yield break;
 
         if (ch is Warrior w && w.transform.parent == transform)
@@ -150,6 +147,29 @@ public class PlatFormColliderTrigger : MonoBehaviour
 
         if (ch.CurrentplatForm == this)
             ch.CurrentplatForm = null;
+    }
+
+    private bool IsAnyCharacterColliderTouchingPlatform(CharacterController ch)
+    {
+        if (ch == null || platformCollider == null)
+            return false;
+
+        Collider2D[] cols = ch.GetComponentsInChildren<Collider2D>(true);
+
+        for (int i = 0; i < cols.Length; i++)
+        {
+            Collider2D col = cols[i];
+            if (col == null || col.isTrigger)
+                continue;
+
+            if (Physics2D.GetIgnoreCollision(platformCollider, col))
+                continue;
+
+            if (col.IsTouching(platformCollider))
+                return true;
+        }
+
+        return false;
     }
 
     protected Collider2D GetStandingCollider(CharacterController character)
