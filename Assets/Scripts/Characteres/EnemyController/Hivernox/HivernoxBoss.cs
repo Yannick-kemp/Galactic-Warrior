@@ -1,5 +1,6 @@
 using System.Collections;
 using Assets.Scripts.Characteres.WarriorController;
+using Assets.Scripts.Tools;
 using UnityEngine;
 namespace Assets.Scripts.Characteres.EnemyContoller
 {
@@ -107,12 +108,22 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [Tooltip("Old field kept as fallback. Prefer assigning Attack 2 Impact Fx Prefab above.")]
         [SerializeField] private GameObject iceBreakerHitFxPrefab;
         [SerializeField] private GameObject handSmashHitFxPrefab;
+        [Header("Hand Smash SFX")]
+        [Tooltip("Assign impact-487673.mp3 here. Plays only when AE_HandSmashHit resolves a real hand-smash impact.")]
+        [SerializeField] private AudioClip handSmashHitClip;
+        [SerializeField, Range(0f, 1f)] private float handSmashHitVolume = 0.95f;
+        [SerializeField] private Vector2 handSmashHitPitchRange = new Vector2(0.96f, 1.04f);
+        [Tooltip("0 = 2D sound. 1 = 3D sound from Hivernox/Warrior impact position.")]
+        [SerializeField, Range(0f, 1f)] private float handSmashHitSpatialBlend = 0f;
+        [SerializeField, Min(0f)] private float handSmashHitMaxDistance = 20f;
+        [SerializeField] private bool handSmashHitPlayOncePerFrame = true;
         private Coroutine _actionRoutine;
         private bool _bossActivated;
         private bool _projectileFiredThisAttack;
         private bool _iceBreakerHitResolved;
         private bool _attack2ImpactFxPlayed;
         private bool _handSmashHitResolved;
+        private int _lastHandSmashHitSfxFrame = -1;
         private float _nextIceAttackTime = -999f;
         private float _nextCounterTime = -999f;
         private Vector3 _homePosition;
@@ -577,6 +588,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             }
             _attack2ImpactFxPlayed = true;
             SpawnFx(prefab, GetAttack2ImpactFxPosition(warrior), attack2ImpactFxLifetime);
+            PlayHandSmashHitSfx(warrior.transform.position);
             return true;
         }
         private Vector3 GetAttack2ImpactFxPosition(Warrior warrior)
@@ -692,7 +704,26 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                canBeBlockedByShield: true,
                stunSeconds: handSmashStunSeconds,
                knockbackVelocity: handSmashKnockbackVelocity);
+           
             SpawnFx(handSmashHitFxPrefab, warrior.transform.position);
+        }
+        private void PlayHandSmashHitSfx(Vector3 position)
+        {
+            if (handSmashHitClip == null)
+                return;
+
+            if (handSmashHitPlayOncePerFrame && _lastHandSmashHitSfxFrame == Time.frameCount)
+                return;
+
+            _lastHandSmashHitSfxFrame = Time.frameCount;
+
+            OneShotAudio.Play(
+               handSmashHitClip,
+               position,
+               handSmashHitVolume,
+               handSmashHitPitchRange,
+               handSmashHitSpatialBlend,
+               handSmashHitMaxDistance);
         }
         public void AE_EndHandSmash()
         {

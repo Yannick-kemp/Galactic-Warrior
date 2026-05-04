@@ -36,6 +36,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Plf_bck_0
       objectReference: {fileID: 0}
+    - target: {fileID: 6826248018796020927, guid: fc18dcf1738d09f4d81545f53a1a218a, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 7181476780801085656, guid: fc18dcf1738d09f4d81545f53a1a218a, type: 3}
       propertyPath: m_LocalScale.x
       value: 1.39

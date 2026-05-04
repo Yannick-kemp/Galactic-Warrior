@@ -45,6 +45,8 @@ public class GameMgr : MonoBehaviour, IGame
     [Header("Background Music")]
     [SerializeField] private string warriorSceneName = "WarriorScene";
     [SerializeField] private AudioClip level1Music;
+    [SerializeField] private AudioClip level2Music; // assign IceOfAge.mp3 for AgeOfIce
+    [SerializeField] private string level2MusicResourcesPath = "Music/IceOfAge"; // optional fallback: Assets/Resources/Music/IceOfAge.mp3
     [SerializeField, Range(0f, 1f)] private float musicVolume = 0.35f;
     [SerializeField] private bool restartMusicOnLevelRestart = false;
 
@@ -221,9 +223,13 @@ public class GameMgr : MonoBehaviour, IGame
             ScoreManager.Instance?.StartNewRun();
             StartLevel1Music();
         }
+        else if (isLevel2)
+        {
+            StartLevel2Music();
+        }
         else
         {
-            StopLevel1Music();
+            StopMusic();
         }
 
         if (isLevel2)
@@ -259,18 +265,47 @@ public class GameMgr : MonoBehaviour, IGame
 
     private void StartLevel1Music()
     {
-        if (level1Music == null) return;
+        StartMusic(level1Music);
+    }
+
+    private void StartLevel2Music()
+    {
+        AudioClip clip = level2Music;
+
+        // Useful if GameMgr is created at runtime by GameInitializer and the Inspector field is empty.
+        // Put the file here: Assets/Resources/Music/IceOfAge.mp3
+        // Then Resources path must be: Music/IceOfAge  (no .mp3 extension)
+        if (clip == null && !string.IsNullOrEmpty(level2MusicResourcesPath))
+            clip = Resources.Load<AudioClip>(level2MusicResourcesPath);
+
+        StartMusic(clip);
+    }
+
+    private void StartMusic(AudioClip clip)
+    {
+        if (_musicSource == null)
+            EnsureMusicSource();
+
+        if (clip == null)
+        {
+            StopMusic();
+            return;
+        }
 
         _musicSource.volume = musicVolume;
 
-        if (_musicSource.clip != level1Music)
-            _musicSource.clip = level1Music;
+        if (_musicSource.clip != clip)
+        {
+            _musicSource.Stop();
+            _musicSource.clip = clip;
+            _musicSource.time = 0f;
+        }
 
         if (!_musicSource.isPlaying)
             _musicSource.Play();
     }
 
-    private void StopLevel1Music()
+    private void StopMusic()
     {
         if (_musicSource != null && _musicSource.isPlaying)
             _musicSource.Stop();
@@ -279,9 +314,11 @@ public class GameMgr : MonoBehaviour, IGame
     private void MaybeRestartMusicForLevelRestart()
     {
         if (!restartMusicOnLevelRestart) return;
-        if (SceneManager.GetActiveScene().name != warriorSceneName) return;
 
-        if (_musicSource != null)
+        string activeSceneName = SceneManager.GetActiveScene().name;
+        if (activeSceneName != warriorSceneName && activeSceneName != level2SceneName) return;
+
+        if (_musicSource != null && _musicSource.clip != null)
         {
             _musicSource.Stop();
             _musicSource.time = 0f;

@@ -181,6 +181,10 @@ PrefabInstance:
       propertyPath: level1Music
       value: 
       objectReference: {fileID: 8300000, guid: c98c954867269c940aded1fb776d078d, type: 3}
+    - target: {fileID: 1928913765699674672, guid: 7f6241061ccd43346b13f6640d109246, type: 3}
+      propertyPath: level2Music
+      value: 
+      objectReference: {fileID: 8300000, guid: 32669b502f2c4bf43aa29cf4ba8c5823, type: 3}
     - target: {fileID: 4315649855814584681, guid: 7f6241061ccd43346b13f6640d109246, type: 3}
       propertyPath: m_Name
       value: GameMgr

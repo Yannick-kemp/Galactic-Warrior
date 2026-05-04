@@ -74,29 +74,19 @@ namespace Assets.Scripts.Platforms
             Vector2 current = _rb.position;
             Vector2 next = Vector2.MoveTowards(current, target, speed * Time.fixedDeltaTime);
 
-            _rb.MovePosition(next);
+            bool arrived = Vector2.Distance(next, target) <= arriveEpsilon;
+            if (arrived)
+                next = target;
 
             Vector2 delta = next - _lastPlatformPos;
-            if (delta != Vector2.zero && _riders.Count > 0)
-            {
-                _riders.RemoveWhere(r => r == null);
 
-                foreach (var rider in _riders)
-                {
-                    if (rider == null) continue;
-                    if (!IsRiderCarryAllowed(rider)) continue;
-
-                    rider.MovePosition(rider.position + delta);
-                }
-            }
+            _rb.MovePosition(next);
+            CarryRiders(delta);
 
             _lastPlatformPos = next;
 
-            if (Vector2.Distance(next, target) <= arriveEpsilon)
+            if (arrived)
             {
-                _rb.MovePosition(target);
-                _lastPlatformPos = target;
-
                 if (_goingRight)
                 {
                     _waitTimer = waitAtRight;
@@ -257,6 +247,28 @@ namespace Assets.Scripts.Platforms
         {
             if (xMin > xMax)
                 (xMin, xMax) = (xMax, xMin);
+        }
+
+        private void CarryRiders(Vector2 delta)
+        {
+            if (delta == Vector2.zero)
+                return;
+
+            _riders.RemoveWhere(r => r == null);
+
+            foreach (var rider in _riders)
+            {
+                if (rider == null)
+                    continue;
+
+                if (!IsRiderCarryAllowed(rider))
+                    continue;
+
+                // Horizontal lift behavior only.
+                Vector2 carryDelta = new Vector2(delta.x, 0f);
+
+                rider.MovePosition(rider.position + carryDelta);
+            }
         }
     }
 }
