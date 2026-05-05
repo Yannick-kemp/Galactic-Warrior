@@ -100,6 +100,42 @@ public class ZalaytyMonster : Enemy
     [Tooltip("Stops only Zalayty horizontal velocity when his independent movement is interrupted.")]
     [SerializeField] private bool stopHorizontalVelocityOnIndependentStop = true;
 
+    [Header("Warrior Top Rebound - Zalayty Only")]
+    [SerializeField] private bool enableWarriorTopRebound = true;
+
+    [Tooltip("Minimum contact normal Y that means Zalayty is standing on the Warrior top surface.")]
+    [SerializeField, Range(0f, 1f)] private float warriorTopReboundNormalY = 0.65f;
+
+    [Tooltip("Bounds fallback tolerance for detecting that Zalayty's bottom is on Warrior's top.")]
+    [SerializeField, Min(0f)] private float warriorTopReboundBoundsBand = 0.22f;
+
+    [Tooltip("Small horizontal gap kept between Zalayty and Warrior after the rebound.")]
+    [SerializeField, Min(0f)] private float warriorTopReboundSideGap = 0.08f;
+
+    [Tooltip("Minimum extra clearance used when choosing a rebound landing beside Warrior. This prevents landing back on Warrior's top bound.")]
+    [SerializeField, Min(0f)] private float warriorTopReboundMinSideClearance = 0.18f;
+
+    [Tooltip("Extra vertical lift used by the Warrior-top rebound so Zalayty exits the current Warrior contact cleanly.")]
+    [SerializeField, Min(0f)] private float warriorTopReboundExtraLift = 0.35f;
+
+    [Tooltip("During the short Warrior-top rebound, temporarily ignore Warrior colliders until Zalayty is clear, then restore them.")]
+    [SerializeField] private bool ignoreWarriorCollisionDuringTopRebound = true;
+
+    [Tooltip("Maximum time allowed before Warrior collision is restored if the clear test cannot complete.")]
+    [SerializeField, Min(0.05f)] private float warriorTopReboundIgnoreRestoreTimeout = 0.65f;
+
+    [Tooltip("Keeps the rebound target away from platform edges when there is enough room.")]
+    [SerializeField, Min(0f)] private float warriorTopReboundPlatformInset = 0.30f;
+
+    [Tooltip("Controlled short arc duration used to move Zalayty beside Warrior.")]
+    [SerializeField, Min(0.05f)] private float warriorTopReboundDuration = 0.28f;
+
+    [Tooltip("Controlled short arc height used to move Zalayty beside Warrior.")]
+    [SerializeField, Min(0f)] private float warriorTopReboundHeight = 0.75f;
+
+    [Tooltip("Prevents repeated rebound spam while Zalayty is already correcting his position.")]
+    [SerializeField, Min(0f)] private float warriorTopReboundCooldown = 0.35f;
+
     protected override bool ClampMoveToCurrentPlatform => !useIndependentMovement;
     protected override bool AllowEdgeExitWhenTargetOutside => true;
 
@@ -480,16 +516,27 @@ public class ZalaytyMonster : Enemy
         activesMoveCoroutine = null;
     }
 
-    private void StartZalaytyJumpTo(Vector2 landing, float jumpHeight, float duration, PlatFormColliderTrigger expectedLandingPlatform)
+    private void StartZalaytyJumpTo(
+        Vector2 landing,
+        float jumpHeight,
+        float duration,
+        PlatFormColliderTrigger expectedLandingPlatform,
+        bool forceJumpTowardPositionAction = false)
     {
         StopMoveTowardCoroutine();
         StopJumpTowardCoroutine();
         ExitWaitAnimation();
         JumpAnimationDisplay();
 
-        activesJumpCoroutine = useIndependentMovement
-            ? JumpArcIndependent(landing, jumpHeight, duration, expectedLandingPlatform)
-            : JumpTowardPositionAction(landing, jumpHeight, duration, null);
+        _activeJumpTargetPlatform = expectedLandingPlatform;
+
+        // Normal Zalayty movement stays independent.
+        // Only special cases can explicitly request the CharacterController-style arc.
+        bool useCharacterControllerJump = forceJumpTowardPositionAction || !useIndependentMovement;
+
+        activesJumpCoroutine = useCharacterControllerJump
+            ? JumpTowardPositionAction(landing, jumpHeight, duration, null)
+            : JumpArcIndependent(landing, jumpHeight, duration, expectedLandingPlatform);
 
         StartCoroutine(activesJumpCoroutine);
     }
@@ -537,6 +584,11 @@ public class ZalaytyMonster : Enemy
 
         if (expectedLandingPlatform != null)
             CurrentplatForm = expectedLandingPlatform;
+
+        if (_activeJumpTargetPlatform == expectedLandingPlatform)
+            _activeJumpTargetPlatform = null;
+
+        RestoreActiveJumpDownSourcePlatformNow();
 
         StopHorizontalVelocityIfNeeded();
         DescendentPhase = false;
@@ -593,13 +645,16 @@ public class ZalaytyMonster : Enemy
         if (platform == null)
             return;
 
-        CurrentplatForm = platform;
-
         if (!useIndependentMovement)
+        {
+            CurrentplatForm = platform;
             return;
+        }
 
         if (!IsIndependentTopLanding(platform))
             return;
+
+        CurrentplatForm = platform;
 
         if (activesJumpCoroutine != null)
             StopCoroutine(activesJumpCoroutine);
@@ -616,6 +671,8 @@ public class ZalaytyMonster : Enemy
             v.y = 0f;
             rigidbody2.linearVelocity = v;
         }
+
+        RestoreActiveJumpDownSourcePlatformNow();
     }
 
     private bool IsIndependentTopLanding(PlatFormColliderTrigger platform)
@@ -638,6 +695,14 @@ public class ZalaytyMonster : Enemy
     }
 
     private enum Side { Left, Right }
+
+    private PlatFormColliderTrigger _activeJumpDownSourcePlatform;
+    private PlatFormColliderTrigger _activeJumpTargetPlatform;
+    private bool _warriorTopReboundActive;
+    private float _nextAllowedWarriorTopReboundTime;
+    private float _warriorTopReboundBusyUntil;
+    private Coroutine _restoreWarriorTopReboundCollisionCoroutine;
+    private readonly List<Collider2D> _ignoredWarriorTopReboundColliders = new List<Collider2D>();
 
     private IEnumerator MoveAndJumpToPlatform(PlatFormColliderTrigger nextPlatform, Transform warrior)
     {
@@ -726,8 +791,13 @@ public class ZalaytyMonster : Enemy
         // when Zalayty is no longer physically touching/overlapping that source body.
         if (goingDown)
         {
+            _activeJumpDownSourcePlatform = sourcePlatform;
+
             bool sourcePassThroughStarted =
                 sourcePlatform.RequestZalaytyJumpDownThroughSourcePlatform(this);
+
+            if (!sourcePassThroughStarted)
+                _activeJumpDownSourcePlatform = null;
 
             // Fallback for an unusual platform that refuses the request.
             // Normal PlatFormColliderTrigger / PlatFormPlfColliderTrigger should return true.
@@ -1009,37 +1079,531 @@ public class ZalaytyMonster : Enemy
 
     private static readonly ContactPoint2D[] _contacts = new ContactPoint2D[16];
 
+    private void OnCollisionEnter2D(Collision2D collision)
+    {
+        TryHandleWarriorTopReboundCollision(collision);
+    }
 
     private void OnCollisionStay2D(Collision2D collision)
     {
-        // Only care about Warrior
-        if (!collision.collider.TryGetComponent<Assets.Scripts.Characteres.WarriorController.Warrior>(out var warrior))
-            return;
+        TryHandleWarriorTopReboundCollision(collision);
+    }
 
+    private bool TryHandleWarriorTopReboundCollision(Collision2D collision)
+    {
+        if (!enableWarriorTopRebound)
+            return false;
+
+        if (_warriorTopReboundActive && Time.time < _warriorTopReboundBusyUntil)
+            return false;
+
+        if (_warriorTopReboundActive && Time.time >= _warriorTopReboundBusyUntil)
+            _warriorTopReboundActive = false;
+
+        if (Time.time < _nextAllowedWarriorTopReboundTime)
+            return false;
+
+        Warrior warrior = collision.collider != null
+            ? collision.collider.GetComponentInParent<Warrior>()
+            : null;
+
+        if (warrior == null || warrior.collider2 == null || warrior.IsDead)
+            return false;
+
+        if (!IsZalaytyOnWarriorTop(collision, warrior))
+            return false;
+
+        return StartControlledWarriorTopRebound(warrior);
+    }
+
+    private bool IsZalaytyOnWarriorTop(Collision2D collision, Warrior warrior)
+    {
         int count = collision.GetContacts(_contacts);
 
         for (int i = 0; i < count; i++)
         {
-            // If Zalayty is above Warrior, the normal (for Zalayty) points UP
-            if (_contacts[i].normal.y > 0.7f)
-            {
-                //Zalayty is on top of Warrior
-                HandleZalaytyOnTopOfWarrior(warrior);
-                return;
-            }
+            // For this Zalayty collision, a strong upward normal means he is standing
+            // on the Warrior's top surface instead of touching the Warrior side.
+            if (_contacts[i].normal.y >= warriorTopReboundNormalY)
+                return true;
         }
+
+        Collider2D body = GetZalaytyBodyCollider();
+        if (body == null || warrior == null || warrior.collider2 == null)
+            return false;
+
+        Bounds z = body.bounds;
+        Bounds w = warrior.collider2.bounds;
+
+        bool xOverlap = z.max.x > w.min.x && z.min.x < w.max.x;
+        bool bottomIsNearWarriorTop =
+            z.min.y >= w.max.y - warriorTopReboundBoundsBand &&
+            z.min.y <= w.max.y + warriorTopReboundBoundsBand * 2f;
+        bool movingDownOrStable = rigidbody2 == null || rigidbody2.linearVelocity.y <= 0.65f;
+
+        return xOverlap && bottomIsNearWarriorTop && movingDownOrStable;
     }
 
-    private void HandleZalaytyOnTopOfWarrior(Warrior warrior)
+    private bool StartControlledWarriorTopRebound(Warrior warrior)
     {
-        // Example fixes
+        if (!TryComputeWarriorTopReboundLanding(
+                warrior,
+                out Vector2 landing,
+                out PlatFormColliderTrigger landingPlatform,
+                out float jumpHeight,
+                out float duration))
+        {
+            return false;
+        }
+
+        RestoreActiveJumpDownSourcePlatformNow();
+
+        _warriorTopReboundActive = true;
+        _nextAllowedWarriorTopReboundTime = Time.time + warriorTopReboundCooldown;
+        _warriorTopReboundBusyUntil = Time.time + duration + 0.15f;
+
+        TemporarilyIgnoreWarriorForTopRebound(warrior, duration);
+
+        // Important: Warrior-top rebound must enter the normal Zalayty jump entry point.
+        // Only this special rebound forces JumpTowardPositionAction. Normal Zalayty
+        // movement remains independent and Warrior platform behavior remains untouched.
+        StartZalaytyJumpTo(
+            landing,
+            jumpHeight,
+            duration,
+            landingPlatform,
+            forceJumpTowardPositionAction: true);
+
+        return true;
+    }
+
+    private bool TryComputeWarriorTopReboundLanding(
+        Warrior warrior,
+        out Vector2 landing,
+        out PlatFormColliderTrigger landingPlatform,
+        out float jumpHeight,
+        out float duration)
+    {
+        landing = transform.position;
+        landingPlatform = null;
+        jumpHeight = warriorTopReboundHeight;
+        duration = warriorTopReboundDuration;
+
+        if (warrior == null || warrior.collider2 == null)
+            return false;
+
+        Collider2D body = GetZalaytyBodyCollider();
+        if (body == null)
+            return false;
+
+        landingPlatform = warrior.CurrentplatForm != null && warrior.CurrentplatForm.platformCollider != null
+            ? warrior.CurrentplatForm
+            : null;
+
+        if (landingPlatform == null && _activeJumpTargetPlatform != null && _activeJumpTargetPlatform.platformCollider != null)
+            landingPlatform = _activeJumpTargetPlatform;
+
+        if (landingPlatform == null && CurrentplatForm != null && CurrentplatForm.platformCollider != null)
+            landingPlatform = CurrentplatForm;
+
+        Bounds z = body.bounds;
+        Bounds w = warrior.collider2.bounds;
+
+        float bodyHalfX = Mathf.Max(0.01f, z.extents.x);
+        float bodyHalfY = Mathf.Max(0.01f, z.extents.y);
+        float bodyCenterOffsetX = z.center.x - transform.position.x;
+
+        // This is the important part: the target center must be OUTSIDE Warrior's
+        // expanded horizontal bounds. A small side gap is often not enough when the
+        // physics solver still has a contact pair from the top-bound landing.
+        float clearGap = Mathf.Max(
+            warriorTopReboundSideGap,
+            warriorTopReboundMinSideClearance,
+            0.02f);
+
+        float outsideLeftCenterX = w.min.x - bodyHalfX - clearGap;
+        float outsideRightCenterX = w.max.x + bodyHalfX + clearGap;
+
+        bool preferLeft;
+        if (z.center.x < w.center.x - sideEpsilon)
+            preferLeft = true;
+        else if (z.center.x > w.center.x + sideEpsilon)
+            preferLeft = false;
+        else
+            preferLeft = GetAvailableLeftSpace(warrior, landingPlatform, bodyHalfX) >=
+                         GetAvailableRightSpace(warrior, landingPlatform, bodyHalfX);
+
+        float chosenCenterX;
+
+        if (landingPlatform != null && landingPlatform.platformCollider != null)
+        {
+            Bounds p = landingPlatform.platformCollider.bounds;
+            GetSafeCenterXRangeOnPlatform(p, bodyHalfX, out float safeMinCenterX, out float safeMaxCenterX);
+
+            // Valid side intervals. These are the only ranges that are both on the
+            // platform surface and beside Warrior instead of above him.
+            float leftMin = safeMinCenterX;
+            float leftMax = Mathf.Min(safeMaxCenterX, outsideLeftCenterX);
+            float rightMin = Mathf.Max(safeMinCenterX, outsideRightCenterX);
+            float rightMax = safeMaxCenterX;
+
+            bool leftFits = leftMax >= leftMin;
+            bool rightFits = rightMax >= rightMin;
+
+            if (leftFits || rightFits)
+            {
+                if (preferLeft && leftFits)
+                    chosenCenterX = Mathf.Clamp(z.center.x, leftMin, leftMax);
+                else if (!preferLeft && rightFits)
+                    chosenCenterX = Mathf.Clamp(z.center.x, rightMin, rightMax);
+                else if (leftFits)
+                    chosenCenterX = Mathf.Clamp(z.center.x, leftMin, leftMax);
+                else
+                    chosenCenterX = Mathf.Clamp(z.center.x, rightMin, rightMax);
+            }
+            else
+            {
+                // If there is literally no valid side interval on this platform, it
+                // is impossible to be both fully beside Warrior and fully on the
+                // platform. In that rare case, choose the platform edge that gives
+                // the greatest separation, but still prefer moving away from Warrior.
+                float leftEdgeCandidate = safeMinCenterX;
+                float rightEdgeCandidate = safeMaxCenterX;
+
+                float leftSeparation = Mathf.Abs(leftEdgeCandidate - w.center.x);
+                float rightSeparation = Mathf.Abs(rightEdgeCandidate - w.center.x);
+
+                if (preferLeft && leftEdgeCandidate < w.center.x)
+                    chosenCenterX = leftEdgeCandidate;
+                else if (!preferLeft && rightEdgeCandidate > w.center.x)
+                    chosenCenterX = rightEdgeCandidate;
+                else
+                    chosenCenterX = leftSeparation >= rightSeparation ? leftEdgeCandidate : rightEdgeCandidate;
+            }
+
+            chosenCenterX = Mathf.Clamp(chosenCenterX, safeMinCenterX, safeMaxCenterX);
+            landing = new Vector2(chosenCenterX - bodyCenterOffsetX, p.max.y + landingYOffset);
+        }
+        else
+        {
+            chosenCenterX = preferLeft ? outsideLeftCenterX : outsideRightCenterX;
+            landing = new Vector2(chosenCenterX - bodyCenterOffsetX, transform.position.y + 0.05f);
+        }
+
+        float horizontalDistance = Mathf.Abs((landing.x + bodyCenterOffsetX) - z.center.x);
+
+        // The arc must lift Zalayty enough to break the current Warrior-top contact.
+        // Too low/too short makes the body slide on Warrior and land back on top.
+        float minimumLiftFromContact = Mathf.Max(0.20f, bodyHalfY * 0.45f) + warriorTopReboundExtraLift;
+        jumpHeight = Mathf.Max(
+            warriorTopReboundHeight,
+            minimumLiftFromContact,
+            horizontalDistance * 0.35f);
+
+        float speed = Mathf.Max(0.01f, Speed);
+        duration = Mathf.Clamp(
+            horizontalDistance / speed * 0.75f,
+            Mathf.Max(0.16f, warriorTopReboundDuration * 0.75f),
+            Mathf.Max(0.32f, warriorTopReboundDuration * 1.8f));
+
+        return true;
+    }
+
+    private float GetAvailableLeftSpace(Warrior warrior, PlatFormColliderTrigger platform, float bodyHalfX)
+    {
+        if (warrior == null || warrior.collider2 == null || platform == null || platform.platformCollider == null)
+            return 0f;
+
+        Bounds p = platform.platformCollider.bounds;
+        Bounds w = warrior.collider2.bounds;
+        GetSafeCenterXRangeOnPlatform(p, bodyHalfX, out float safeMinCenterX, out _);
+        return Mathf.Max(0f, (w.min.x - warriorTopReboundSideGap - bodyHalfX) - safeMinCenterX);
+    }
+
+    private float GetAvailableRightSpace(Warrior warrior, PlatFormColliderTrigger platform, float bodyHalfX)
+    {
+        if (warrior == null || warrior.collider2 == null || platform == null || platform.platformCollider == null)
+            return 0f;
+
+        Bounds p = platform.platformCollider.bounds;
+        Bounds w = warrior.collider2.bounds;
+        GetSafeCenterXRangeOnPlatform(p, bodyHalfX, out _, out float safeMaxCenterX);
+        return Mathf.Max(0f, safeMaxCenterX - (w.max.x + warriorTopReboundSideGap + bodyHalfX));
+    }
+
+    private void GetSafeCenterXRangeOnPlatform(Bounds platformBounds, float bodyHalfX, out float safeMinCenterX, out float safeMaxCenterX)
+    {
+        float inset = Mathf.Max(0f, warriorTopReboundPlatformInset);
+
+        safeMinCenterX = platformBounds.min.x + inset + bodyHalfX;
+        safeMaxCenterX = platformBounds.max.x - inset - bodyHalfX;
+
+        if (safeMaxCenterX >= safeMinCenterX)
+            return;
+
+        // Fallback for very small platforms: reduce the inset before giving up.
+        safeMinCenterX = platformBounds.min.x + bodyHalfX;
+        safeMaxCenterX = platformBounds.max.x - bodyHalfX;
+
+        if (safeMaxCenterX >= safeMinCenterX)
+            return;
+
+        float center = platformBounds.center.x;
+        safeMinCenterX = center;
+        safeMaxCenterX = center;
+    }
+
+    private IEnumerator WarriorTopReboundArc(
+        Vector2 landing,
+        float height,
+        float duration,
+        PlatFormColliderTrigger expectedLandingPlatform)
+    {
+        // Zalayty-only rebound jump.
+        // This intentionally follows the same controlled-arc pattern as
+        // CharacterController.JumpTowardPositionAction(), but it is kept local to
+        // Zalayty so Warrior platform behavior is not affected.
+        if (_isJumping)
+            yield break;
+
+        _isJumping = true;
+        targetReached = false;
+        DescendentPhase = false;
         SetJumping(false);
 
-        if (!_isJumping)
+        Vector2 startPosition = rigidbody2 != null
+            ? rigidbody2.position
+            : (Vector2)transform.position;
+
+        Vector2 target = ClampWarriorTopReboundTargetToPlatform(landing, expectedLandingPlatform);
+
+        float elapsedTime = 0f;
+        FlipCharacter(target.x);
+
+        float previousY = startPosition.y;
+        Vector2 previousPosition = startPosition;
+        WaitForFixedUpdate waitForFixedUpdate = new WaitForFixedUpdate();
+
+        duration = Mathf.Max(0.05f, duration);
+        height = Mathf.Max(0f, height);
+
+        while (!targetReached)
         {
-            extraJump(); // or push off / ignore collision
+            if (_deathStarted || IsStunned)
+                break;
+
+            float stepTime = Time.fixedDeltaTime > 0f ? Time.fixedDeltaTime : Time.deltaTime;
+            elapsedTime += stepTime;
+            float t = duration > 0f ? elapsedTime / duration : 1f;
+
+            Vector2 desiredPosition;
+
+            if (t <= 1f)
+            {
+                desiredPosition = Vector2.Lerp(startPosition, target, t);
+                desiredPosition.y += height * Mathf.Sin(Mathf.PI * t);
+            }
+            else
+            {
+                // Safety fallback: if the sweep did not catch the platform before the
+                // end of the short rebound, finish on the already-clamped target.
+                // We do not keep horizontal momentum here because the requirement is
+                // a controlled side rebound beside Warrior, not a long overshoot.
+                desiredPosition = target;
+            }
+
+            bool movingDown = desiredPosition.y < previousPosition.y;
+
+            // Destination-platform anti-tunneling:
+            // Do not depend on CurrentplatForm here. The platform that matters is
+            // the platform crossed by the sweep between previousPosition and
+            // desiredPosition. This prevents Zalayty from passing through or
+            // overshooting beyond the destination platform surface.
+            if (movingDown &&
+                TryResolveDestinationPlatformTopLanding(
+                    previousPosition,
+                    desiredPosition,
+                    out Vector2 predictedLandingPosition,
+                    out PlatFormColliderTrigger destinationPlatform))
+            {
+                MoveCharacterTo(predictedLandingPosition);
+                CompleteWarriorTopReboundLanding(destinationPlatform);
+                yield break;
+            }
+
+            MoveCharacterTo(desiredPosition);
+
+            DescendentPhase = desiredPosition.y < previousY;
+            previousY = desiredPosition.y;
+            previousPosition = desiredPosition;
+
+            // End exactly on the safe, clamped rebound target if no swept platform
+            // landing was found. This prevents the old sliding/overshoot behavior.
+            if (t >= 1f)
+            {
+                MoveCharacterTo(target);
+                CompleteWarriorTopReboundLanding(expectedLandingPlatform);
+                yield break;
+            }
+
+            yield return waitForFixedUpdate;
         }
+
+        // Interrupted by death/stun: restore the source-platform ignore anyway.
+        CompleteWarriorTopReboundLanding(expectedLandingPlatform);
     }
+
+    private Vector2 ClampWarriorTopReboundTargetToPlatform(
+        Vector2 target,
+        PlatFormColliderTrigger expectedLandingPlatform)
+    {
+        if (expectedLandingPlatform == null || expectedLandingPlatform.platformCollider == null)
+            return target;
+
+        Collider2D body = GetZalaytyBodyCollider();
+        if (body == null)
+            return target;
+
+        Bounds p = expectedLandingPlatform.platformCollider.bounds;
+        Bounds z = body.bounds;
+
+        float bodyHalfX = Mathf.Max(0.01f, z.extents.x);
+        float bodyCenterOffsetX = z.center.x - transform.position.x;
+
+        GetSafeCenterXRangeOnPlatform(p, bodyHalfX, out float safeMinCenterX, out float safeMaxCenterX);
+
+        float targetCenterX = target.x + bodyCenterOffsetX;
+        targetCenterX = Mathf.Clamp(targetCenterX, safeMinCenterX, safeMaxCenterX);
+
+        return new Vector2(targetCenterX - bodyCenterOffsetX, p.max.y + landingYOffset);
+    }
+
+    private void CompleteWarriorTopReboundLanding(PlatFormColliderTrigger destinationPlatform)
+    {
+        if (destinationPlatform != null)
+            CurrentplatForm = destinationPlatform;
+
+        if (_activeJumpTargetPlatform == destinationPlatform)
+            _activeJumpTargetPlatform = null;
+
+        RestoreActiveJumpDownSourcePlatformNow();
+        StopHorizontalVelocityIfNeeded();
+
+        targetReached = true;
+        DescendentPhase = false;
+        _isJumping = false;
+        activesJumpCoroutine = null;
+        SetJumping(false);
+        _warriorTopReboundActive = false;
+    }
+
+    private void OnDisable()
+    {
+        RestoreIgnoredWarriorTopReboundCollisions();
+        RestoreActiveJumpDownSourcePlatformNow();
+    }
+
+    private void TemporarilyIgnoreWarriorForTopRebound(Warrior warrior, float reboundDuration)
+    {
+        RestoreIgnoredWarriorTopReboundCollisions();
+
+        if (!ignoreWarriorCollisionDuringTopRebound || warrior == null)
+            return;
+
+        Collider2D body = GetZalaytyBodyCollider();
+        if (body == null)
+            return;
+
+        Collider2D[] warriorColliders = warrior.GetComponentsInChildren<Collider2D>(true);
+        if (warriorColliders == null || warriorColliders.Length == 0)
+            return;
+
+        for (int i = 0; i < warriorColliders.Length; i++)
+        {
+            Collider2D c = warriorColliders[i];
+            if (c == null || c == body)
+                continue;
+
+            Physics2D.IgnoreCollision(body, c, true);
+            _ignoredWarriorTopReboundColliders.Add(c);
+        }
+
+        float timeout = Mathf.Max(
+            warriorTopReboundIgnoreRestoreTimeout,
+            reboundDuration + 0.20f);
+
+        _restoreWarriorTopReboundCollisionCoroutine =
+            StartCoroutine(RestoreWarriorTopReboundCollisionsWhenClear(body, warrior, timeout));
+    }
+
+    private IEnumerator RestoreWarriorTopReboundCollisionsWhenClear(
+        Collider2D zalaytyBody,
+        Warrior warrior,
+        float timeout)
+    {
+        float timer = 0f;
+        WaitForFixedUpdate wait = new WaitForFixedUpdate();
+
+        while (timer < timeout)
+        {
+            if (zalaytyBody == null || warrior == null || warrior.collider2 == null)
+                break;
+
+            Bounds z = zalaytyBody.bounds;
+            Bounds w = warrior.collider2.bounds;
+
+            bool horizontallyClear = z.min.x >= w.max.x || z.max.x <= w.min.x;
+            bool verticallyClear = z.min.y > w.max.y + warriorTopReboundBoundsBand || z.max.y < w.min.y;
+
+            if (horizontallyClear || verticallyClear)
+                break;
+
+            timer += Time.fixedDeltaTime > 0f ? Time.fixedDeltaTime : Time.deltaTime;
+            yield return wait;
+        }
+
+        RestoreIgnoredWarriorTopReboundCollisions();
+    }
+
+    private void RestoreIgnoredWarriorTopReboundCollisions()
+    {
+        if (_restoreWarriorTopReboundCollisionCoroutine != null)
+        {
+            StopCoroutine(_restoreWarriorTopReboundCollisionCoroutine);
+            _restoreWarriorTopReboundCollisionCoroutine = null;
+        }
+
+        Collider2D body = GetZalaytyBodyCollider();
+        if (body != null)
+        {
+            for (int i = 0; i < _ignoredWarriorTopReboundColliders.Count; i++)
+            {
+                Collider2D c = _ignoredWarriorTopReboundColliders[i];
+                if (c != null)
+                    Physics2D.IgnoreCollision(body, c, false);
+            }
+        }
+
+        _ignoredWarriorTopReboundColliders.Clear();
+    }
+
+    private Collider2D GetZalaytyBodyCollider()
+    {
+        if (NormalCollider != null && NormalCollider.enabled)
+            return NormalCollider;
+
+        return collider2;
+    }
+
+    private void RestoreActiveJumpDownSourcePlatformNow()
+    {
+        if (_activeJumpDownSourcePlatform == null)
+            return;
+
+        _activeJumpDownSourcePlatform.ForceRestoreZalaytyJumpDownSourcePlatform(this);
+        _activeJumpDownSourcePlatform = null;
+    }
+
     public override float ComputeStepBackDistance(float incoming)
     {
         // If profile missing, fallback

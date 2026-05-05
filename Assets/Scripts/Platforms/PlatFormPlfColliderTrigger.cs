@@ -552,6 +552,15 @@ namespace Assets.Scripts.Platforms
             return true;
         }
 
+        public override bool ForceRestoreZalaytyJumpDownSourcePlatform(ZalaytyMonster zalayty)
+        {
+            if (zalayty == null || platformCollider == null)
+                return false;
+
+            ClearZalaytyJumpDownLock(zalayty, restoreCollision: true);
+            return true;
+        }
+
         private bool IsZalaytyJumpDownLocked(CharacterController character)
         {
             if (character is not ZalaytyMonster)

@@ -232,6 +232,20 @@ public class PlatFormColliderTrigger : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// Zalayty-only emergency restore used when he lands on Warrior while the
+    /// source platform is still temporarily ignored. This never changes Warrior
+    /// platform behavior; it only restores this platform body against Zalayty.
+    /// </summary>
+    public virtual bool ForceRestoreZalaytyJumpDownSourcePlatform(ZalaytyMonster zalayty)
+    {
+        if (zalayty == null || platformCollider == null)
+            return false;
+
+        SetPlatformCollisionForCharacter(zalayty, ignore: false);
+        return true;
+    }
+
     private IEnumerator RestoreZalaytySourcePlatformWhenBodyClear(ZalaytyMonster zalayty)
     {
         WaitForFixedUpdate wait = new WaitForFixedUpdate();
