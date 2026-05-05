@@ -11,6 +11,24 @@ public class ZalaytyMonster : Enemy
     [Header("A* Follow Settings")]
     [SerializeField] private float repathInterval = 0.25f;
 
+    [Header("Temporary Platform Loss - Zalayty Only")]
+    [Tooltip("Prevents Zalayty from entering Wait animation during tiny take-off / temporary CurrentplatForm null gaps.")]
+    [SerializeField] private bool keepMotionDuringTemporaryPlatformLoss = true;
+
+    [Tooltip("How long Zalayty may keep his current chase/jump state after losing CurrentplatForm for a short take-off.")]
+    [SerializeField, Min(0f)] private float temporaryPlatformLossGraceTime = 0.45f;
+
+    [Tooltip("Small retry delay while platform is temporarily null. Lower than repathInterval to avoid visible stutter.")]
+    [SerializeField, Min(0.01f)] private float temporaryPlatformLossRetryDelay = 0.04f;
+
+    [Tooltip("When CurrentplatForm is null, try to recover it immediately from Zalayty ground points before forcing wait.")]
+    [SerializeField] private bool recoverPlatformFromGroundPointsWhenMissing = true;
+
+    private PlatFormColliderTrigger _lastKnownPlatform;
+    private float _lastKnownPlatformTime = -999f;
+    private PlatFormColliderTrigger _lastKnownWarriorPlatform;
+    private float _lastKnownWarriorPlatformTime = -999f;
+
     [Tooltip("Extra landing Y offset so we land safely on the next platform.")]
     [SerializeField] private float landingYOffset = 0.2f;
 
@@ -30,8 +48,11 @@ public class ZalaytyMonster : Enemy
     [SerializeField] private float zalaytyBodyWidthCheck = 0.5f;
 
     [Header("Attack Behavior")]
-    [Tooltip("If true: when in range, Zalayty stops moving and attacks.")]
+    [Tooltip("Legacy behavior. When enabled alone, Zalayty stops moving while attacking.")]
     [SerializeField] private bool stopAndAttackWhenInRange = true;
+
+    [Tooltip("When Zalayty and Warrior are on the same platform, ignore stopAndAttackWhenInRange so Zalayty keeps pressing toward Warrior.")]
+    [SerializeField] private bool neverStopOnSamePlatformWithWarrior = true;
 
     [Header("ExtraJump Conditions")]
     [SerializeField] private float closeToWarriorDistance = 0.9f;   // "very close" distance
@@ -96,6 +117,19 @@ public class ZalaytyMonster : Enemy
 
     [Tooltip("Small tolerance used when deciding if Zalayty landed on a platform top.")]
     [SerializeField, Min(0f)] private float independentLandingBand = 0.16f;
+
+    [Header("Independent Jump Anti-Tunneling")]
+    [Tooltip("If true, Zalayty predicts destination platform top crossing during independent jumps instead of waiting for collision callbacks.")]
+    [SerializeField] private bool enableIndependentJumpAntiTunneling = true;
+
+    [Tooltip("Extra Y tolerance when checking if Zalayty crossed the destination platform top between two physics steps.")]
+    [SerializeField, Min(0f)] private float predictedLandingTopSkin = 0.08f;
+
+    [Tooltip("Safety value used by the predictive landing test. Keep this generous so fast arc steps cannot skip the platform top.")]
+    [SerializeField, Min(0f)] private float predictedLandingMaxDropPastTop = 0.45f;
+
+    [Tooltip("Small X tolerance used when checking if Zalayty is horizontally above the destination platform.")]
+    [SerializeField, Min(0f)] private float predictedLandingHorizontalSkin = 0.03f;
 
     [Tooltip("Stops only Zalayty horizontal velocity when his independent movement is interrupted.")]
     [SerializeField] private bool stopHorizontalVelocityOnIndependentStop = true;
@@ -165,6 +199,7 @@ public class ZalaytyMonster : Enemy
 
         // IMPORTANT: apply spawn overrides ONCE, after defaults
         ApplySpawnOverridesNow();
+        RememberKnownPlatforms(GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null);
 
         if (followRoutine != null) StopCoroutine(followRoutine);
         followRoutine = StartCoroutine(FollowWarriorLoop());
@@ -376,8 +411,23 @@ public class ZalaytyMonster : Enemy
                 continue;
             }
 
+            RememberKnownPlatforms(warrior);
+            TryRecoverCurrentPlatformFromGroundPoints();
+            RememberKnownPlatforms(warrior);
+
             if (CurrentplatForm == null || warrior.CurrentplatForm == null)
             {
+                if (ShouldKeepMotionDuringTemporaryPlatformLoss(warrior))
+                {
+                    // Important: during a tiny take-off / temporary platform-null gap,
+                    // do NOT stop the movement coroutine and do NOT enter WaitAnimation.
+                    // Stopping here zeroes X velocity and creates visible same-platform stutter.
+                    ExitWaitAnimation();
+                    DisplayAirborneOrRunAnimationDuringTemporaryLoss();
+                    yield return new WaitForSeconds(temporaryPlatformLossRetryDelay);
+                    continue;
+                }
+
                 StopMoveTowardCoroutine();
                 EnterWaitAnimation();
                 yield return new WaitForSeconds(repathInterval);
@@ -397,16 +447,10 @@ public class ZalaytyMonster : Enemy
                     continue;
                 }
 
-                //if (TrySqueezeExtraJump(warrior))
-                //{
-                //    yield return new WaitForSeconds(0.08f);
-                //    continue;
-                //}
-
 
                 inRangeOrAttacking = TryToPerformAttack(warrior.transform);
 
-                if (inRangeOrAttacking && stopAndAttackWhenInRange)
+                if (inRangeOrAttacking && stopAndAttackWhenInRange && !neverStopOnSamePlatformWithWarrior)
                 {
                     StopMoveTowardCoroutine();
                     yield return new WaitForSeconds(repathInterval);
@@ -458,6 +502,108 @@ public class ZalaytyMonster : Enemy
             yield return StartCoroutine(MoveAndJumpToPlatform(next.Platform, warrior.transform));
             yield return new WaitForSeconds(0.02f);
         }
+    }
+
+    private void RememberKnownPlatforms(Warrior warrior)
+    {
+        if (CurrentplatForm != null)
+        {
+            _lastKnownPlatform = CurrentplatForm;
+            _lastKnownPlatformTime = Time.time;
+        }
+
+        if (warrior != null && warrior.CurrentplatForm != null)
+        {
+            _lastKnownWarriorPlatform = warrior.CurrentplatForm;
+            _lastKnownWarriorPlatformTime = Time.time;
+        }
+    }
+
+    private bool TryRecoverCurrentPlatformFromGroundPoints()
+    {
+        if (!recoverPlatformFromGroundPointsWhenMissing)
+            return CurrentplatForm != null;
+
+        if (CurrentplatForm != null)
+            return true;
+
+        if (GroundPoints == null)
+            return false;
+
+        foreach (Transform pt in GroundPoints)
+        {
+            if (pt == null)
+                continue;
+
+            Collider2D[] hits = Physics2D.OverlapCircleAll(pt.position, Groundradius, PlatformLayer);
+            for (int i = 0; i < hits.Length; i++)
+            {
+                Collider2D hit = hits[i];
+                if (hit == null)
+                    continue;
+
+                PlatFormColliderTrigger platform = hit.GetComponentInParent<PlatFormColliderTrigger>();
+                if (platform == null || platform.platformCollider == null)
+                    continue;
+
+                CurrentplatForm = platform;
+                _lastKnownPlatform = platform;
+                _lastKnownPlatformTime = Time.time;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool ShouldKeepMotionDuringTemporaryPlatformLoss(Warrior warrior)
+    {
+        if (!keepMotionDuringTemporaryPlatformLoss)
+            return false;
+
+        float now = Time.time;
+        bool zalaytyPlatformMissing = CurrentplatForm == null;
+        bool warriorPlatformMissing = warrior != null && warrior.CurrentplatForm == null;
+
+        bool hasRecentZalaytyPlatform =
+            _lastKnownPlatform != null &&
+            now <= _lastKnownPlatformTime + temporaryPlatformLossGraceTime;
+
+        bool hasRecentWarriorPlatform =
+            _lastKnownWarriorPlatform != null &&
+            now <= _lastKnownWarriorPlatformTime + temporaryPlatformLossGraceTime;
+
+        bool zalaytyIsInControlledJump = _isJumping || activesJumpCoroutine != null;
+        bool zalaytyJustLostGround = CountGroundPoints() == 0 && hasRecentZalaytyPlatform;
+
+        if (zalaytyPlatformMissing && (zalaytyIsInControlledJump || zalaytyJustLostGround))
+            return true;
+
+        // Warrior can also briefly clear his CurrentplatForm during a hop.
+        // If his last known platform is still Zalayty's current/last platform,
+        // do not force Zalayty into WaitAnimation for that short gap.
+        if (warriorPlatformMissing && hasRecentWarriorPlatform)
+        {
+            PlatFormColliderTrigger myRelevantPlatform = CurrentplatForm != null
+                ? CurrentplatForm
+                : _lastKnownPlatform;
+
+            if (myRelevantPlatform != null && _lastKnownWarriorPlatform == myRelevantPlatform)
+                return true;
+        }
+
+        return false;
+    }
+
+    private void DisplayAirborneOrRunAnimationDuringTemporaryLoss()
+    {
+        if (IsAttackAnimationActive())
+            return;
+
+        if (_isJumping || activesJumpCoroutine != null || CountGroundPoints() == 0)
+            JumpAnimationDisplay();
+        else if (CanMove)
+            RunAnimationDisplay();
     }
 
     private float GetIndependentFollowTargetX(Warrior warrior)
@@ -541,7 +687,11 @@ public class ZalaytyMonster : Enemy
         StartCoroutine(activesJumpCoroutine);
     }
 
-    private IEnumerator JumpArcIndependent(Vector2 landing, float height, float duration, PlatFormColliderTrigger expectedLandingPlatform)
+    private IEnumerator JumpArcIndependent(
+        Vector2 landing,
+        float height,
+        float duration,
+        PlatFormColliderTrigger expectedLandingPlatform)
     {
         if (_isJumping)
             yield break;
@@ -566,26 +716,159 @@ public class ZalaytyMonster : Enemy
             if (_deathStarted || IsStunned)
                 break;
 
+            Vector2 currentPosition = rigidbody2 != null
+                ? rigidbody2.position
+                : (Vector2)transform.position;
+
             elapsed += Time.fixedDeltaTime;
             float t = Mathf.Clamp01(elapsed / duration);
 
-            Vector2 pos = Vector2.Lerp(start, landing, t);
-            pos.y += height * Mathf.Sin(Mathf.PI * t);
+            Vector2 nextPosition = Vector2.Lerp(start, landing, t);
+            nextPosition.y += height * Mathf.Sin(Mathf.PI * t);
 
-            DescendentPhase = pos.y < previousY;
-            previousY = pos.y;
+            DescendentPhase = nextPosition.y < previousY;
+            previousY = nextPosition.y;
 
             FlipCharacter(landing.x);
-            MoveZalaytyBody(pos);
+
+            if (TryResolveIndependentPredictedTopLanding(
+                    currentPosition,
+                    nextPosition,
+                    expectedLandingPlatform,
+                    out Vector2 resolvedLanding,
+                    out PlatFormColliderTrigger resolvedPlatform))
+            {
+                MoveZalaytyBody(resolvedLanding);
+                FinishIndependentJumpOnPlatform(resolvedPlatform);
+                yield break;
+            }
+
+            MoveZalaytyBody(nextPosition);
             yield return wait;
         }
 
         MoveZalaytyBody(landing);
+        FinishIndependentJumpOnPlatform(expectedLandingPlatform);
+    }
 
-        if (expectedLandingPlatform != null)
-            CurrentplatForm = expectedLandingPlatform;
+    private bool TryResolveIndependentPredictedTopLanding(
+        Vector2 from,
+        Vector2 to,
+        PlatFormColliderTrigger expectedLandingPlatform,
+        out Vector2 resolvedLanding,
+        out PlatFormColliderTrigger resolvedPlatform)
+    {
+        resolvedLanding = to;
+        resolvedPlatform = null;
 
-        if (_activeJumpTargetPlatform == expectedLandingPlatform)
+        if (!enableIndependentJumpAntiTunneling)
+            return false;
+
+        if (expectedLandingPlatform == null || expectedLandingPlatform.platformCollider == null)
+            return false;
+
+        Collider2D body = GetZalaytyBodyCollider();
+        if (body == null)
+            return false;
+
+        Vector2 delta = to - from;
+
+        // Only solve top landing while descending.
+        if (delta.y >= -0.0001f)
+            return false;
+
+        Bounds platformBounds = expectedLandingPlatform.platformCollider.bounds;
+        Bounds currentBodyBounds = body.bounds;
+
+        Bounds nextBodyBounds = currentBodyBounds;
+        nextBodyBounds.center += (Vector3)delta;
+
+        float platformTopY = platformBounds.max.y;
+
+        bool crossedPlatformTop =
+            currentBodyBounds.min.y >= platformTopY - predictedLandingTopSkin &&
+            nextBodyBounds.min.y <= platformTopY + predictedLandingMaxDropPastTop;
+
+        if (!crossedPlatformTop)
+            return false;
+
+        Bounds sweptBodyBounds = currentBodyBounds;
+        sweptBodyBounds.Encapsulate(nextBodyBounds.min);
+        sweptBodyBounds.Encapsulate(nextBodyBounds.max);
+
+        bool horizontallyOverPlatform =
+            sweptBodyBounds.max.x > platformBounds.min.x + predictedLandingHorizontalSkin &&
+            sweptBodyBounds.min.x < platformBounds.max.x - predictedLandingHorizontalSkin;
+
+        if (!horizontallyOverPlatform)
+            return false;
+
+        // Critical anti-tunneling line:
+        // The destination platform must become solid before MovePosition crosses its top.
+        expectedLandingPlatform.TryPrepareForPredictedTopLanding(
+            this,
+            expectedLandingPlatform.platformCollider);
+
+        resolvedLanding = BuildIndependentTopLandingPosition(expectedLandingPlatform, to.x);
+        resolvedPlatform = expectedLandingPlatform;
+
+        return true;
+    }
+
+    private Vector2 BuildIndependentTopLandingPosition(
+        PlatFormColliderTrigger platform,
+        float wantedBodyPositionX)
+    {
+        if (platform == null || platform.platformCollider == null)
+            return new Vector2(wantedBodyPositionX, transform.position.y);
+
+        Collider2D body = GetZalaytyBodyCollider();
+        Bounds platformBounds = platform.platformCollider.bounds;
+
+        if (body == null)
+            return new Vector2(wantedBodyPositionX, platformBounds.max.y + landingYOffset);
+
+        Vector2 bodyPosition = rigidbody2 != null
+            ? rigidbody2.position
+            : (Vector2)transform.position;
+
+        Bounds bodyBounds = body.bounds;
+
+        float bodyBottomOffsetFromPosition = bodyBounds.min.y - bodyPosition.y;
+        float bodyCenterOffsetFromPositionX = bodyBounds.center.x - bodyPosition.x;
+        float bodyHalfWidth = Mathf.Max(0.01f, bodyBounds.extents.x);
+
+        float safeMinBodyCenterX =
+            platformBounds.min.x + bodyHalfWidth + predictedLandingHorizontalSkin;
+
+        float safeMaxBodyCenterX =
+            platformBounds.max.x - bodyHalfWidth - predictedLandingHorizontalSkin;
+
+        float wantedBodyCenterX = wantedBodyPositionX + bodyCenterOffsetFromPositionX;
+
+        float resolvedBodyCenterX = safeMaxBodyCenterX >= safeMinBodyCenterX
+            ? Mathf.Clamp(wantedBodyCenterX, safeMinBodyCenterX, safeMaxBodyCenterX)
+            : platformBounds.center.x;
+
+        float resolvedPositionX = resolvedBodyCenterX - bodyCenterOffsetFromPositionX;
+
+        // Place Zalayty using his body bottom, not the transform pivot.
+        float resolvedPositionY =
+            platformBounds.max.y + landingYOffset - bodyBottomOffsetFromPosition;
+
+        return new Vector2(resolvedPositionX, resolvedPositionY);
+    }
+
+    private void FinishIndependentJumpOnPlatform(PlatFormColliderTrigger platform)
+    {
+        if (platform != null)
+        {
+            CurrentplatForm = platform;
+            _lastKnownPlatform = platform;
+            _lastKnownPlatformTime = Time.time;
+        }
+
+        if (_activeJumpTargetPlatform == platform)
             _activeJumpTargetPlatform = null;
 
         RestoreActiveJumpDownSourcePlatformNow();
@@ -648,6 +931,8 @@ public class ZalaytyMonster : Enemy
         if (!useIndependentMovement)
         {
             CurrentplatForm = platform;
+            _lastKnownPlatform = platform;
+            _lastKnownPlatformTime = Time.time;
             return;
         }
 
@@ -655,6 +940,8 @@ public class ZalaytyMonster : Enemy
             return;
 
         CurrentplatForm = platform;
+        _lastKnownPlatform = platform;
+        _lastKnownPlatformTime = Time.time;
 
         if (activesJumpCoroutine != null)
             StopCoroutine(activesJumpCoroutine);
@@ -1353,149 +1640,7 @@ public class ZalaytyMonster : Enemy
         safeMaxCenterX = center;
     }
 
-    private IEnumerator WarriorTopReboundArc(
-        Vector2 landing,
-        float height,
-        float duration,
-        PlatFormColliderTrigger expectedLandingPlatform)
-    {
-        // Zalayty-only rebound jump.
-        // This intentionally follows the same controlled-arc pattern as
-        // CharacterController.JumpTowardPositionAction(), but it is kept local to
-        // Zalayty so Warrior platform behavior is not affected.
-        if (_isJumping)
-            yield break;
 
-        _isJumping = true;
-        targetReached = false;
-        DescendentPhase = false;
-        SetJumping(false);
-
-        Vector2 startPosition = rigidbody2 != null
-            ? rigidbody2.position
-            : (Vector2)transform.position;
-
-        Vector2 target = ClampWarriorTopReboundTargetToPlatform(landing, expectedLandingPlatform);
-
-        float elapsedTime = 0f;
-        FlipCharacter(target.x);
-
-        float previousY = startPosition.y;
-        Vector2 previousPosition = startPosition;
-        WaitForFixedUpdate waitForFixedUpdate = new WaitForFixedUpdate();
-
-        duration = Mathf.Max(0.05f, duration);
-        height = Mathf.Max(0f, height);
-
-        while (!targetReached)
-        {
-            if (_deathStarted || IsStunned)
-                break;
-
-            float stepTime = Time.fixedDeltaTime > 0f ? Time.fixedDeltaTime : Time.deltaTime;
-            elapsedTime += stepTime;
-            float t = duration > 0f ? elapsedTime / duration : 1f;
-
-            Vector2 desiredPosition;
-
-            if (t <= 1f)
-            {
-                desiredPosition = Vector2.Lerp(startPosition, target, t);
-                desiredPosition.y += height * Mathf.Sin(Mathf.PI * t);
-            }
-            else
-            {
-                // Safety fallback: if the sweep did not catch the platform before the
-                // end of the short rebound, finish on the already-clamped target.
-                // We do not keep horizontal momentum here because the requirement is
-                // a controlled side rebound beside Warrior, not a long overshoot.
-                desiredPosition = target;
-            }
-
-            bool movingDown = desiredPosition.y < previousPosition.y;
-
-            // Destination-platform anti-tunneling:
-            // Do not depend on CurrentplatForm here. The platform that matters is
-            // the platform crossed by the sweep between previousPosition and
-            // desiredPosition. This prevents Zalayty from passing through or
-            // overshooting beyond the destination platform surface.
-            if (movingDown &&
-                TryResolveDestinationPlatformTopLanding(
-                    previousPosition,
-                    desiredPosition,
-                    out Vector2 predictedLandingPosition,
-                    out PlatFormColliderTrigger destinationPlatform))
-            {
-                MoveCharacterTo(predictedLandingPosition);
-                CompleteWarriorTopReboundLanding(destinationPlatform);
-                yield break;
-            }
-
-            MoveCharacterTo(desiredPosition);
-
-            DescendentPhase = desiredPosition.y < previousY;
-            previousY = desiredPosition.y;
-            previousPosition = desiredPosition;
-
-            // End exactly on the safe, clamped rebound target if no swept platform
-            // landing was found. This prevents the old sliding/overshoot behavior.
-            if (t >= 1f)
-            {
-                MoveCharacterTo(target);
-                CompleteWarriorTopReboundLanding(expectedLandingPlatform);
-                yield break;
-            }
-
-            yield return waitForFixedUpdate;
-        }
-
-        // Interrupted by death/stun: restore the source-platform ignore anyway.
-        CompleteWarriorTopReboundLanding(expectedLandingPlatform);
-    }
-
-    private Vector2 ClampWarriorTopReboundTargetToPlatform(
-        Vector2 target,
-        PlatFormColliderTrigger expectedLandingPlatform)
-    {
-        if (expectedLandingPlatform == null || expectedLandingPlatform.platformCollider == null)
-            return target;
-
-        Collider2D body = GetZalaytyBodyCollider();
-        if (body == null)
-            return target;
-
-        Bounds p = expectedLandingPlatform.platformCollider.bounds;
-        Bounds z = body.bounds;
-
-        float bodyHalfX = Mathf.Max(0.01f, z.extents.x);
-        float bodyCenterOffsetX = z.center.x - transform.position.x;
-
-        GetSafeCenterXRangeOnPlatform(p, bodyHalfX, out float safeMinCenterX, out float safeMaxCenterX);
-
-        float targetCenterX = target.x + bodyCenterOffsetX;
-        targetCenterX = Mathf.Clamp(targetCenterX, safeMinCenterX, safeMaxCenterX);
-
-        return new Vector2(targetCenterX - bodyCenterOffsetX, p.max.y + landingYOffset);
-    }
-
-    private void CompleteWarriorTopReboundLanding(PlatFormColliderTrigger destinationPlatform)
-    {
-        if (destinationPlatform != null)
-            CurrentplatForm = destinationPlatform;
-
-        if (_activeJumpTargetPlatform == destinationPlatform)
-            _activeJumpTargetPlatform = null;
-
-        RestoreActiveJumpDownSourcePlatformNow();
-        StopHorizontalVelocityIfNeeded();
-
-        targetReached = true;
-        DescendentPhase = false;
-        _isJumping = false;
-        activesJumpCoroutine = null;
-        SetJumping(false);
-        _warriorTopReboundActive = false;
-    }
 
     private void OnDisable()
     {
