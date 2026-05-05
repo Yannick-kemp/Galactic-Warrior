@@ -214,11 +214,45 @@ public class PlatFormColliderTrigger : MonoBehaviour
     }
 
     /// <summary>
-    /// Forces this platform to become pass-through for this character because the
-    /// character has really lost the edge and must fall by Rigidbody2D gravity.
-    /// This does not move or seat the character.
+    /// Zalayty-only request used when Zalayty intentionally jumps down from this platform
+    /// toward a lower platform. The default implementation is intentionally generic:
+    /// ignore this platform body now, then restore it as soon as Zalayty is no longer
+    /// touching/overlapping this platformCollider.
+    ///
+    /// PlatFormPlfColliderTrigger overrides this with a stronger lock so its
+    /// trigger/body-first rules cannot restore the source platform too early.
     /// </summary>
-    public virtual void ForceCharacterToFallThroughSourcePlatform(CharacterController character)
+    public virtual bool RequestZalaytyJumpDownThroughSourcePlatform(ZalaytyMonster zalayty)
+    {
+        if (zalayty == null || platformCollider == null)
+            return false;
+
+        SetPlatformCollisionForCharacter(zalayty, ignore: true);
+        StartCoroutine(RestoreZalaytySourcePlatformWhenBodyClear(zalayty));
+        return true;
+    }
+
+    private IEnumerator RestoreZalaytySourcePlatformWhenBodyClear(ZalaytyMonster zalayty)
+    {
+        WaitForFixedUpdate wait = new WaitForFixedUpdate();
+
+        // Let the IgnoreCollision state reach the physics engine first.
+        yield return wait;
+
+        while (zalayty != null && platformCollider != null)
+        {
+            if (!IsAnyCharacterColliderTouchingOrOverlappingPlatformBody(zalayty))
+                break;
+
+            SetPlatformCollisionForCharacter(zalayty, ignore: true);
+            yield return wait;
+        }
+
+        if (zalayty != null && platformCollider != null)
+            SetPlatformCollisionForCharacter(zalayty, ignore: false);
+    }
+
+    protected void SetPlatformCollisionForCharacter(CharacterController character, bool ignore)
     {
         if (character == null || platformCollider == null)
             return;
@@ -231,8 +265,44 @@ public class PlatFormColliderTrigger : MonoBehaviour
             if (col == null)
                 continue;
 
-            Physics2D.IgnoreCollision(platformCollider, col, true);
+            Physics2D.IgnoreCollision(platformCollider, col, ignore);
         }
+    }
+
+    protected bool IsAnyCharacterColliderTouchingOrOverlappingPlatformBody(CharacterController character, float contactSkin = 0.01f)
+    {
+        if (character == null || platformCollider == null)
+            return false;
+
+        Collider2D[] cols = character.GetComponentsInChildren<Collider2D>(true);
+
+        for (int i = 0; i < cols.Length; i++)
+        {
+            Collider2D col = cols[i];
+
+            if (col == null || col.isTrigger)
+                continue;
+
+            ColliderDistance2D distance = Physics2D.Distance(col, platformCollider);
+
+            if (distance.isOverlapped || distance.distance <= contactSkin)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Forces this platform to become pass-through for this character because the
+    /// character has really lost the edge and must fall by Rigidbody2D gravity.
+    /// This does not move or seat the character.
+    /// </summary>
+    public virtual void ForceCharacterToFallThroughSourcePlatform(CharacterController character)
+    {
+        if (character == null || platformCollider == null)
+            return;
+
+        SetPlatformCollisionForCharacter(character, ignore: true);
     }
 
     protected void SeatCharacterOnTop(CharacterController character, float safeMargin = 0.08f, float seatOffset = 0.02f)

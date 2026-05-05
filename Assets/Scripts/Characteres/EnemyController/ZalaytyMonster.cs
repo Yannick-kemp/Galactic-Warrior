@@ -87,6 +87,22 @@ public class ZalaytyMonster : Enemy
 
     public bool inRangeOrAttacking;
 
+    [Header("Independent Movement - Zalayty Only")]
+    [Tooltip("If true, Zalayty does not use CharacterController MoveToward/JumpToward and is not clamped by platform edges.")]
+    [SerializeField] private bool useIndependentMovement = true;
+
+    [Tooltip("Distance on X considered reached by Zalayty's independent horizontal movement.")]
+    [SerializeField, Min(0.01f)] private float independentMoveArriveDistance = 0.08f;
+
+    [Tooltip("Small tolerance used when deciding if Zalayty landed on a platform top.")]
+    [SerializeField, Min(0f)] private float independentLandingBand = 0.16f;
+
+    [Tooltip("Stops only Zalayty horizontal velocity when his independent movement is interrupted.")]
+    [SerializeField] private bool stopHorizontalVelocityOnIndependentStop = true;
+
+    protected override bool ClampMoveToCurrentPlatform => !useIndependentMovement;
+    protected override bool AllowEdgeExitWhenTargetOutside => true;
+
     private void Awake()
     {
 #if UNITY_ANDROID
@@ -126,9 +142,11 @@ public class ZalaytyMonster : Enemy
 
     protected override void Update()
     {
-        base.Update();
+        // Do NOT call base.Update() here. Enemy.Update() contains patrol/edge safety
+        // code that stops movement and clamps enemies back onto the current platform.
+        // Zalayty owns his movement, so we keep only the generic death fallback.
+        CheckWorldYDeathFallback();
         initDirection();
-        var warrior = GameMgr.Instance?.WarriorInstance;
     }
 
     private void initDirection()
@@ -172,7 +190,8 @@ public class ZalaytyMonster : Enemy
             ? (warB.min.x - clearance)   // land left of warrior
             : (warB.max.x + clearance);  // land right of warrior
 
-        landingX = Mathf.Clamp(landingX, safeMinX, safeMaxX);
+        if (!useIndependentMovement)
+            landingX = Mathf.Clamp(landingX, safeMinX, safeMaxX);
 
         // validate that we truly got to the requested side
         if (landOnLeftOfWarrior && landingX >= warB.min.x - 0.1f) return false;
@@ -185,14 +204,11 @@ public class ZalaytyMonster : Enemy
         float duration = 0.4f;
 
         ExitWaitAnimation();
-        StopMoveTowardCoroutine();
-        StopJumpTowardCoroutine();
+        PlatFormColliderTrigger expectedPlatform = IsXInsidePlatform(CurrentplatForm, landingX)
+            ? CurrentplatForm
+            : null;
 
-        JumpAnimationDisplay();
-        activesJumpCoroutine = JumpTowardPositionAction(landing, jumpHeight, duration, null);
-        StartCoroutine(activesJumpCoroutine);
-
-        SetJumping(false);
+        StartZalaytyJumpTo(landing, jumpHeight, duration, expectedPlatform);
         return true;
     }
 
@@ -335,7 +351,7 @@ public class ZalaytyMonster : Enemy
             // SAME PLATFORM: warrior-like melee
             if (CurrentplatForm == warrior.CurrentplatForm)
             {
-                float targetX = ClampToCurrentPlatform(warrior.transform.position.x);
+                float targetX = GetIndependentFollowTargetX(warrior);
                 SetDirectionVariables(targetX);
 
                 // NEW: squeeze-driven extraJump (group logic) //  Only if checkbox is enabled
@@ -365,8 +381,7 @@ public class ZalaytyMonster : Enemy
                 {
                     ExitWaitAnimation();
                     RunAnimationDisplay();
-                    activesMoveCoroutine = MoveTowardPostionAction(targetX);
-                    StartCoroutine(activesMoveCoroutine);
+                    StartZalaytyMoveToX(targetX);
                 }
 
                 yield return new WaitForSeconds(repathInterval);
@@ -409,43 +424,273 @@ public class ZalaytyMonster : Enemy
         }
     }
 
+    private float GetIndependentFollowTargetX(Warrior warrior)
+    {
+        if (warrior == null)
+            return transform.position.x;
+
+        if (!useIndependentMovement)
+            return ClampToCurrentPlatform(warrior.transform.position.x);
+
+        return warrior.transform.position.x;
+    }
+
+    private void StartZalaytyMoveToX(float targetX)
+    {
+        StopMoveTowardCoroutine();
+        ExitWaitAnimation();
+        RunAnimationDisplay();
+
+        activesMoveCoroutine = useIndependentMovement
+            ? MoveTowardXIndependent(targetX)
+            : MoveTowardPostionAction(targetX);
+
+        StartCoroutine(activesMoveCoroutine);
+    }
+
+    private IEnumerator MoveTowardXIndependent(float targetX)
+    {
+        if (_isMoving)
+            yield break;
+
+        _isMoving = true;
+        WaitForFixedUpdate wait = new WaitForFixedUpdate();
+
+        while (this != null && Mathf.Abs(targetX - transform.position.x) > independentMoveArriveDistance)
+        {
+            if (!CanMove || _deathStarted || IsStunned)
+                break;
+
+            if (!IsAttackAnimationActive())
+                FlipCharacter(targetX);
+
+            Vector2 current = rigidbody2 != null
+                ? rigidbody2.position
+                : (Vector2)transform.position;
+
+            float step = Speed * Time.fixedDeltaTime;
+            float nextX = Mathf.MoveTowards(current.x, targetX, step);
+
+            MoveZalaytyBody(new Vector2(nextX, current.y));
+            yield return wait;
+        }
+
+        StopHorizontalVelocityIfNeeded();
+        _isMoving = false;
+        activesMoveCoroutine = null;
+    }
+
+    private void StartZalaytyJumpTo(Vector2 landing, float jumpHeight, float duration, PlatFormColliderTrigger expectedLandingPlatform)
+    {
+        StopMoveTowardCoroutine();
+        StopJumpTowardCoroutine();
+        ExitWaitAnimation();
+        JumpAnimationDisplay();
+
+        activesJumpCoroutine = useIndependentMovement
+            ? JumpArcIndependent(landing, jumpHeight, duration, expectedLandingPlatform)
+            : JumpTowardPositionAction(landing, jumpHeight, duration, null);
+
+        StartCoroutine(activesJumpCoroutine);
+    }
+
+    private IEnumerator JumpArcIndependent(Vector2 landing, float height, float duration, PlatFormColliderTrigger expectedLandingPlatform)
+    {
+        if (_isJumping)
+            yield break;
+
+        _isJumping = true;
+        targetReached = false;
+        DescendentPhase = false;
+        SetJumping(false);
+
+        Vector2 start = rigidbody2 != null
+            ? rigidbody2.position
+            : (Vector2)transform.position;
+
+        float elapsed = 0f;
+        float previousY = start.y;
+        WaitForFixedUpdate wait = new WaitForFixedUpdate();
+
+        duration = Mathf.Max(0.05f, duration);
+
+        while (elapsed < duration)
+        {
+            if (_deathStarted || IsStunned)
+                break;
+
+            elapsed += Time.fixedDeltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+
+            Vector2 pos = Vector2.Lerp(start, landing, t);
+            pos.y += height * Mathf.Sin(Mathf.PI * t);
+
+            DescendentPhase = pos.y < previousY;
+            previousY = pos.y;
+
+            FlipCharacter(landing.x);
+            MoveZalaytyBody(pos);
+            yield return wait;
+        }
+
+        MoveZalaytyBody(landing);
+
+        if (expectedLandingPlatform != null)
+            CurrentplatForm = expectedLandingPlatform;
+
+        StopHorizontalVelocityIfNeeded();
+        DescendentPhase = false;
+        targetReached = true;
+        _isJumping = false;
+        activesJumpCoroutine = null;
+        SetJumping(false);
+    }
+
+    private void MoveZalaytyBody(Vector2 position)
+    {
+        if (rigidbody2 != null)
+            rigidbody2.MovePosition(position);
+        else
+            transform.position = new Vector3(position.x, position.y, transform.position.z);
+    }
+
+    private void StopHorizontalVelocityIfNeeded()
+    {
+        if (!stopHorizontalVelocityOnIndependentStop || rigidbody2 == null)
+            return;
+
+        Vector2 v = rigidbody2.linearVelocity;
+        v.x = 0f;
+        rigidbody2.linearVelocity = v;
+    }
+
+    private bool IsAttackAnimationActive()
+    {
+        return animator != null &&
+               (animator.GetBool("isAttacking") ||
+                animator.GetBool("isAttacking2") ||
+                animator.GetBool("isAttacking3") ||
+                animator.GetBool("isDying"));
+    }
+
+    private bool IsXInsidePlatform(PlatFormColliderTrigger platform, float x)
+    {
+        if (platform == null || platform.platformCollider == null)
+            return false;
+
+        Bounds b = platform.platformCollider.bounds;
+        return x >= b.min.x && x <= b.max.x;
+    }
+
+    public override void StopMoveTowardCoroutine()
+    {
+        base.StopMoveTowardCoroutine();
+        StopHorizontalVelocityIfNeeded();
+    }
+
+    public void NotifyIndependentPlatformCollision(PlatFormColliderTrigger platform, Collision2D collision)
+    {
+        if (platform == null)
+            return;
+
+        CurrentplatForm = platform;
+
+        if (!useIndependentMovement)
+            return;
+
+        if (!IsIndependentTopLanding(platform))
+            return;
+
+        if (activesJumpCoroutine != null)
+            StopCoroutine(activesJumpCoroutine);
+
+        targetReached = true;
+        DescendentPhase = false;
+        _isJumping = false;
+        activesJumpCoroutine = null;
+        SetJumping(false);
+
+        if (rigidbody2 != null && rigidbody2.linearVelocity.y < 0f)
+        {
+            Vector2 v = rigidbody2.linearVelocity;
+            v.y = 0f;
+            rigidbody2.linearVelocity = v;
+        }
+    }
+
+    private bool IsIndependentTopLanding(PlatFormColliderTrigger platform)
+    {
+        if (platform == null || platform.platformCollider == null)
+            return false;
+
+        Collider2D body = NormalCollider != null ? NormalCollider : collider2;
+        if (body == null)
+            return false;
+
+        Bounds pb = platform.platformCollider.bounds;
+        Bounds cb = body.bounds;
+
+        bool horizontallyOverTop = cb.max.x > pb.min.x && cb.min.x < pb.max.x;
+        bool closeToTop = cb.min.y >= pb.max.y - independentLandingBand;
+        bool movingDownOrStable = rigidbody2 == null || rigidbody2.linearVelocity.y <= 0.08f;
+
+        return horizontallyOverTop && closeToTop && movingDownOrStable;
+    }
+
     private enum Side { Left, Right }
 
     private IEnumerator MoveAndJumpToPlatform(PlatFormColliderTrigger nextPlatform, Transform warrior)
     {
-        if (CurrentplatForm == null || nextPlatform == null) yield break;
+        PlatFormColliderTrigger sourcePlatform = CurrentplatForm;
+
+        if (sourcePlatform == null || sourcePlatform.platformCollider == null ||
+            nextPlatform == null || nextPlatform.platformCollider == null)
+            yield break;
 
         if (_isJumping) yield break;
 
-        Bounds curB = CurrentplatForm.platformCollider.bounds;
+        Bounds curB = sourcePlatform.platformCollider.bounds;
         Bounds nextB = nextPlatform.platformCollider.bounds;
 
         bool goingDown = nextB.max.y < curB.max.y - 0.05f;
 
-        // Choose takeoff side (still needed to avoid re-landing on current platform footprint)
         float desiredX = warrior != null ? warrior.position.x : nextB.center.x;
         Side side = ChooseBestSideForTransition(curB, nextB, desiredX);
 
-        // 1) Move to takeoff position
-        float takeoffXInside = (side == Side.Right)
-            ? (curB.max.x - takeoffEdgeMargin)
-            : (curB.min.x + takeoffEdgeMargin);
+        // 1) Move to takeoff position.
+        // Going down is now different from a side/up transition:
+        // Zalayty may take off above the lower target and pass through the source platform.
+        float takeoffXInside;
+        if (goingDown)
+        {
+            takeoffXInside = ChooseBestLocationForTransition(curB, nextB, desiredX);
+            takeoffXInside = Mathf.Clamp(
+                takeoffXInside,
+                curB.min.x + takeoffEdgeMargin,
+                curB.max.x - takeoffEdgeMargin
+            );
+        }
+        else
+        {
+            takeoffXInside = (side == Side.Right)
+                ? (curB.max.x - takeoffEdgeMargin)
+                : (curB.min.x + takeoffEdgeMargin);
+        }
 
-        takeoffXInside = ClampToCurrentPlatform(takeoffXInside);
+        if (!useIndependentMovement)
+            takeoffXInside = ClampToCurrentPlatform(takeoffXInside);
+
         SetDirectionVariables(takeoffXInside);
 
         if (CanMove && activesMoveCoroutine == null)
         {
-            ExitWaitAnimation();
-            RunAnimationDisplay();
-            activesMoveCoroutine = MoveTowardPostionAction(takeoffXInside);
-            StartCoroutine(activesMoveCoroutine);
+            StartZalaytyMoveToX(takeoffXInside);
         }
 
         float moveTimeout = 1.25f;
         while (moveTimeout > 0f)
         {
-            if (CurrentplatForm == null) yield break;
+            if (CurrentplatForm == null && sourcePlatform == null) yield break;
             if (CurrentplatForm == nextPlatform) yield break;
             if (activesMoveCoroutine == null) break;
 
@@ -475,17 +720,33 @@ public class ZalaytyMonster : Enemy
 
         Vector2 landing = new Vector2(landingX, nextB.max.y + landingYOffset);
 
-        // 3) To prevent "landing back on current platform" (without IgnoreCollision):
-        // when going DOWN we nudge outside current platform bounds on the chosen side.
-        if (goingDown && rigidbody2 != null)
+        // 3) Zalayty-only jump-down pass-through.
+        // Do NOT move Warrior logic and do NOT globally disable the platform.
+        // Only the source platform ignores Zalayty's colliders, then restores itself
+        // when Zalayty is no longer physically touching/overlapping that source body.
+        if (goingDown)
         {
-            float outsideX = (side == Side.Right)
-                ? (curB.max.x + dropSideOutEpsilon)
-                : (curB.min.x - dropSideOutEpsilon);
-            //µ
-            //ExitWaitAnimation();
-            JumpAnimationDisplay();
-            rigidbody2.position = new Vector2(outsideX, rigidbody2.position.y);
+            bool sourcePassThroughStarted =
+                sourcePlatform.RequestZalaytyJumpDownThroughSourcePlatform(this);
+
+            // Fallback for an unusual platform that refuses the request.
+            // Normal PlatFormColliderTrigger / PlatFormPlfColliderTrigger should return true.
+            if (!sourcePassThroughStarted && rigidbody2 != null)
+            {
+                float outsideX = (side == Side.Right)
+                    ? (curB.max.x + dropSideOutEpsilon)
+                    : (curB.min.x - dropSideOutEpsilon);
+
+                rigidbody2.position = new Vector2(outsideX, rigidbody2.position.y);
+            }
+
+            if (rigidbody2 != null)
+            {
+                Vector2 v = rigidbody2.linearVelocity;
+                if (v.y > -0.05f)
+                    v.y = -0.05f;
+                rigidbody2.linearVelocity = v;
+            }
         }
 
         // 4) Jump
@@ -495,9 +756,7 @@ public class ZalaytyMonster : Enemy
         float jumpHeight = goingDown ? 1.25f : Mathf.Clamp(dy + 2.5f, 2.5f, 10f);
         float duration = Mathf.Clamp((dx / Mathf.Max(0.01f, Speed)) * 0.65f, 0.25f, 0.8f);
         // ExitWaitAnimation();
-        JumpAnimationDisplay();
-        activesJumpCoroutine = JumpTowardPositionAction(landing, jumpHeight, duration, null);
-        StartCoroutine(activesJumpCoroutine);
+        StartZalaytyJumpTo(landing, jumpHeight, duration, nextPlatform);
 
         float landTimeout = 2.0f;
         while (landTimeout > 0f)
@@ -568,13 +827,9 @@ public class ZalaytyMonster : Enemy
 
         if (EnemyRangeService.IsInRange || inRangeByDistance)
         {
-            if (!IsWarriorInFront(warrior))
-            {
-                if (leftFacing && transform.position.x < target.position.x || !leftFacing && transform.position.x > target.position.x)
-                {
-                    Flip();
-                }
-            }
+            // Zalayty must attack from the front. If Warrior moved behind him,
+            // flip before trying to trigger the attack animation.
+            FaceTowards(warrior);
 
             EnemyRangeService.TryAction(warrior, Range, OnAttackPerformed);
             return true;
@@ -598,8 +853,12 @@ public class ZalaytyMonster : Enemy
         if (requireTargetInFront && !IsWarriorInFront(warrior.transform))
             return;
 
-        // Let base only trigger animation when appropriate
-        base.OnAttackPerformed(attacker, attackedTarget);
+        FaceTowards(warrior.transform);
+
+        if (!IsWarriorInFront(warrior.transform))
+            return;
+
+        AttackAnimationDisplay();
     }
     private bool _isWaitingAnimActive = false;
 

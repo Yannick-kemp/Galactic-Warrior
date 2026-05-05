@@ -285,6 +285,8 @@ public class CharacterController : Character, ICharacterController
     }
     public IEnumerator MoveTowardPostionAction(float x)
     {
+        
+        
         if (_isMoving) yield break;
         _isMoving = true;
 

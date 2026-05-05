@@ -53,6 +53,20 @@ namespace Assets.Scripts.Platforms
         private readonly Dictionary<int, Coroutine> _sourceFallRestoreCoroutines =
             new Dictionary<int, Coroutine>();
 
+        // Zalayty-only jump-down source-platform lock.
+        // This is intentionally separate from the Warrior source fall-through lock.
+        private readonly HashSet<int> _zalaytyJumpDownLockedCharacters =
+            new HashSet<int>();
+
+        // After the source body is clear, collision is restored even if Zalayty is
+        // still inside this platformTrigger. This prevents OnTriggerStay from
+        // immediately making the source platform pass-through again.
+        private readonly HashSet<int> _zalaytyJumpDownRestoredInsideTriggerCharacters =
+            new HashSet<int>();
+
+        private readonly Dictionary<int, Coroutine> _zalaytyJumpDownRestoreCoroutines =
+            new Dictionary<int, Coroutine>();
+
         [Header("Anti-jitter")]
         [SerializeField] private float maxWarriorSpeed = 20f;
 
@@ -67,6 +81,9 @@ namespace Assets.Scripts.Platforms
 
         [Tooltip("Safety timeout used if the character exits the trigger but Unity still reports a body overlap.")]
         [SerializeField, Min(0f)] private float restoreAfterTriggerExitTimeout = 0.75f;
+
+        [Tooltip("Zalayty-only: how close to the source platform body still counts as physical contact during jump-down restore.")]
+        [SerializeField, Min(0f)] private float zalaytyJumpDownRestoreContactSkin = 0.01f;
 
         [SerializeField] private float edgeZoneWidth = 0.35f;
 
@@ -125,6 +142,19 @@ namespace Assets.Scripts.Platforms
 
             AddTriggerContact(character, other);
 
+            if (IsZalaytyJumpDownRestoredInsideTrigger(character))
+            {
+                SetIgnoreForCharacter(character, false);
+                return;
+            }
+
+            if (IsZalaytyJumpDownLocked(character))
+            {
+                SetIgnoreForCharacter(character, true);
+                StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
+                return;
+            }
+
             if (IsSourceFallThroughLocked(character))
             {
                 // This is the platform source of the edge fall. It must remain
@@ -161,6 +191,19 @@ namespace Assets.Scripts.Platforms
             // already crossed part of the trigger. Track this collider too, otherwise
             // OnTriggerExit of another child collider can restore platformCollider too early.
             AddTriggerContact(character, other);
+
+            if (IsZalaytyJumpDownRestoredInsideTrigger(character))
+            {
+                SetIgnoreForCharacter(character, false);
+                return;
+            }
+
+            if (IsZalaytyJumpDownLocked(character))
+            {
+                SetIgnoreForCharacter(character, true);
+                StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
+                return;
+            }
 
             if (IsSourceFallThroughLocked(character))
             {
@@ -219,6 +262,26 @@ namespace Assets.Scripts.Platforms
 
             RemoveTriggerContact(character, collision);
 
+            if (IsZalaytyJumpDownRestoredInsideTrigger(character))
+            {
+                SetIgnoreForCharacter(character, false);
+
+                if (!IsCharacterStillInsideThisTrigger(character))
+                {
+                    ClearZalaytyJumpDownRestoredInsideTrigger(character);
+                    ClearFirstContact(character);
+                }
+
+                return;
+            }
+
+            if (IsZalaytyJumpDownLocked(character))
+            {
+                SetIgnoreForCharacter(character, true);
+                StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
+                return;
+            }
+
             if (IsSourceFallThroughLocked(character))
             {
                 // Do not restore on the first child-collider exit. Restore only after
@@ -261,6 +324,13 @@ namespace Assets.Scripts.Platforms
 
             if (IsValidPlatformCharacter(character))
             {
+                if (IsZalaytyJumpDownLocked(character))
+                {
+                    SetIgnoreForCharacter(character, true);
+                    StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
+                    return;
+                }
+
                 if (IsSourceFallThroughLocked(character))
                 {
                     SetIgnoreForCharacter(character, true);
@@ -287,6 +357,13 @@ namespace Assets.Scripts.Platforms
 
             if (IsValidPlatformCharacter(character))
             {
+                if (IsZalaytyJumpDownLocked(character))
+                {
+                    SetIgnoreForCharacter(character, true);
+                    StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
+                    return;
+                }
+
                 if (IsSourceFallThroughLocked(character))
                 {
                     SetIgnoreForCharacter(character, true);
@@ -406,6 +483,13 @@ namespace Assets.Scripts.Platforms
             if (character == null)
                 return;
 
+            if (IsValidPlatformCharacter(character) && IsZalaytyJumpDownLocked(character))
+            {
+                SetIgnoreForCharacter(character, true);
+                StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
+                return;
+            }
+
             if (IsValidPlatformCharacter(character) && IsSourceFallThroughLocked(character))
             {
                 SetIgnoreForCharacter(character, true);
@@ -442,6 +526,121 @@ namespace Assets.Scripts.Platforms
             }
         }
 
+        // ─── Zalayty-only jump-down source-platform lock ─────────────────────
+
+        public override bool RequestZalaytyJumpDownThroughSourcePlatform(ZalaytyMonster zalayty)
+        {
+            if (zalayty == null || platformCollider == null)
+                return false;
+
+            int id = GetCharacterKey(zalayty);
+            if (id == 0)
+                return false;
+
+            _zalaytyJumpDownLockedCharacters.Add(id);
+            _zalaytyJumpDownRestoredInsideTriggerCharacters.Remove(id);
+
+            // The source platform is being intentionally left downward. It must not
+            // become a predicted top landing platform while Zalayty is still clearing it.
+            _predictedTopLandingLockedCharacters.Remove(id);
+
+            _firstContactByCharacter[id] = FirstPlatformContact.TriggerFirst;
+            _firstContactFrameByCharacter[id] = Time.frameCount;
+
+            SetIgnoreForCharacter(zalayty, true);
+            StartRestoreZalaytyJumpDownWhenBodyClear(zalayty);
+            return true;
+        }
+
+        private bool IsZalaytyJumpDownLocked(CharacterController character)
+        {
+            if (character is not ZalaytyMonster)
+                return false;
+
+            int id = GetCharacterKey(character);
+            return id != 0 && _zalaytyJumpDownLockedCharacters.Contains(id);
+        }
+
+        private bool IsZalaytyJumpDownRestoredInsideTrigger(CharacterController character)
+        {
+            if (character is not ZalaytyMonster)
+                return false;
+
+            int id = GetCharacterKey(character);
+            return id != 0 && _zalaytyJumpDownRestoredInsideTriggerCharacters.Contains(id);
+        }
+
+        private void ClearZalaytyJumpDownRestoredInsideTrigger(CharacterController character)
+        {
+            int id = GetCharacterKey(character);
+            if (id != 0)
+                _zalaytyJumpDownRestoredInsideTriggerCharacters.Remove(id);
+        }
+
+        private void StartRestoreZalaytyJumpDownWhenBodyClear(ZalaytyMonster zalayty)
+        {
+            int id = GetCharacterKey(zalayty);
+            if (id == 0)
+                return;
+
+            if (_zalaytyJumpDownRestoreCoroutines.ContainsKey(id))
+                return;
+
+            _zalaytyJumpDownRestoreCoroutines[id] =
+                StartCoroutine(RestoreZalaytyJumpDownWhenBodyClear(zalayty, id));
+        }
+
+        private IEnumerator RestoreZalaytyJumpDownWhenBodyClear(ZalaytyMonster zalayty, int id)
+        {
+            WaitForFixedUpdate wait = new WaitForFixedUpdate();
+
+            // Let the IgnoreCollision call affect the physics step first.
+            yield return wait;
+
+            while (zalayty != null && platformCollider != null)
+            {
+                if (!IsAnyCharacterColliderTouchingOrOverlappingPlatformBody(zalayty, zalaytyJumpDownRestoreContactSkin))
+                    break;
+
+                SetIgnoreForCharacter(zalayty, true);
+                yield return wait;
+            }
+
+            if (zalayty != null && platformCollider != null)
+                ClearZalaytyJumpDownLock(zalayty, restoreCollision: true);
+            else
+                ClearZalaytyJumpDownLock(zalayty, restoreCollision: false);
+        }
+
+        private void ClearZalaytyJumpDownLock(ZalaytyMonster zalayty, bool restoreCollision)
+        {
+            int id = GetCharacterKey(zalayty);
+            if (id == 0)
+                return;
+
+            _zalaytyJumpDownLockedCharacters.Remove(id);
+
+            if (_zalaytyJumpDownRestoreCoroutines.TryGetValue(id, out Coroutine coroutine) && coroutine != null)
+                StopCoroutine(coroutine);
+
+            _zalaytyJumpDownRestoreCoroutines.Remove(id);
+            ClearFirstContact(zalayty);
+
+            if (restoreCollision && zalayty != null && platformCollider != null)
+            {
+                if (IsCharacterStillInsideThisTrigger(zalayty))
+                    _zalaytyJumpDownRestoredInsideTriggerCharacters.Add(id);
+                else
+                    _zalaytyJumpDownRestoredInsideTriggerCharacters.Remove(id);
+
+                SetIgnoreForCharacter(zalayty, false);
+            }
+            else
+            {
+                _zalaytyJumpDownRestoredInsideTriggerCharacters.Remove(id);
+            }
+        }
+
         // ─── Anti-jitter helpers ──────────────────────────────────────────────
 
         public override bool TryPrepareForPredictedTopLanding(CharacterController character, Collider2D predictedPlatformCollider)
@@ -455,6 +654,13 @@ namespace Assets.Scripts.Platforms
             int id = GetCharacterKey(character);
             if (id == 0)
                 return false;
+
+            if (IsZalaytyJumpDownLocked(character))
+            {
+                SetIgnoreForCharacter(character, true);
+                StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
+                return false;
+            }
 
             if (IsSourceFallThroughLocked(character))
             {
@@ -708,6 +914,9 @@ namespace Assets.Scripts.Platforms
             _firstContactFrameByCharacter.Remove(id);
             _triggerContactsByCharacter.Remove(id);
             _predictedTopLandingLockedCharacters.Remove(id);
+
+            if (character is ZalaytyMonster)
+                _zalaytyJumpDownRestoredInsideTriggerCharacters.Remove(id);
         }
 
         private void AddTriggerContact(CharacterController character, Collider2D collider)
@@ -1010,6 +1219,12 @@ namespace Assets.Scripts.Platforms
         {
             if (!IsValidPlatformCharacter(character))
                 return false;
+
+            if (IsZalaytyJumpDownRestoredInsideTrigger(character))
+                return false;
+
+            if (IsZalaytyJumpDownLocked(character))
+                return true;
 
             if (ShouldKeepPredictedTopLandingSolid(character))
                 return false;
