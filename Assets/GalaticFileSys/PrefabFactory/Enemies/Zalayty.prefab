@@ -416,6 +416,17 @@ MonoBehaviour:
   zalaytyBodyWidthCheck: 0.5
   stopAndAttackWhenInRange: 1
   neverStopOnSamePlatformWithWarrior: 1
+  requireMainBoxContactToStopAndAttackOnSamePlatform: 1
+  requireSideContactForMainBoxAttack: 1
+  sideAttackMinVerticalOverlap: 0.12
+  sideAttackMinVerticalOverlapRatio: 0.18
+  samePlatformMainBoxContactSkin: 0.09
+  zalaytyImpactHitSkin: 0.1
+  samePlatformMainBoxContactReleaseSkin: 0.12
+  stopOnWarriorMainBoxContactEvenDuringPlatformMismatch: 1
+  useContactReleaseHysteresis: 1
+  samePlatformContactRecheckDelay: 0.04
+  repeatAttackWhileMainBoxesStillTouchingOnSamePlatform: 1
   closeToWarriorDistance: 0.9
   warriorEdgeMargin: 1.8
   touchingExtraRadius: 0.05
@@ -437,19 +448,23 @@ MonoBehaviour:
   useIndependentMovement: 1
   independentMoveArriveDistance: 0.08
   independentLandingBand: 0.16
+  enableIndependentJumpAntiTunneling: 1
+  predictedLandingTopSkin: 0.08
+  predictedLandingMaxDropPastTop: 0.45
+  predictedLandingHorizontalSkin: 0.03
   stopHorizontalVelocityOnIndependentStop: 1
   enableWarriorTopRebound: 1
-  warriorTopReboundNormalY: 0.65
-  warriorTopReboundBoundsBand: 0.22
-  warriorTopReboundSideGap: 0.08
-  warriorTopReboundMinSideClearance: 0.18
-  warriorTopReboundExtraLift: 0.35
+  warriorTopReboundNormalY: 0.711
+  warriorTopReboundBoundsBand: 0.1
+  warriorTopReboundSideGap: 0.45
+  warriorTopReboundMinSideClearance: 0.4
+  warriorTopReboundExtraLift: 0.22
   ignoreWarriorCollisionDuringTopRebound: 1
-  warriorTopReboundIgnoreRestoreTimeout: 0.65
+  warriorTopReboundIgnoreRestoreTimeout: 0.8
   warriorTopReboundPlatformInset: 0.3
-  warriorTopReboundDuration: 0.28
-  warriorTopReboundHeight: 0.75
-  warriorTopReboundCooldown: 0.35
+  warriorTopReboundDuration: 0.59
+  warriorTopReboundHeight: 0.9
+  warriorTopReboundCooldown: 0.33
   maxFallSpeed: 25
   platformMask:
     serializedVersion: 2

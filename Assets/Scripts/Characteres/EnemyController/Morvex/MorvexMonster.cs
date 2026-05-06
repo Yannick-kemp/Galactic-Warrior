@@ -205,11 +205,16 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         public override void TakeDamage(float damage)
         {
             base.TakeDamage(damage);
+        }
+
+        protected override void OnDamaged(float damage, bool killed)
+        {
+            base.OnDamaged(damage, killed);
 
             if (hasStone)
                 DropStone();
 
-            if (IsDeadOrDying)
+            if (killed || IsDeadOrDying)
                 return;
 
             stunTimer = hitStunDuration;

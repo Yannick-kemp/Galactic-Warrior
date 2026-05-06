@@ -24,10 +24,25 @@ public class ZalaytyMonster : Enemy
     [Tooltip("When CurrentplatForm is null, try to recover it immediately from Zalayty ground points before forcing wait.")]
     [SerializeField] private bool recoverPlatformFromGroundPointsWhenMissing = true;
 
+    [Header("Warrior Same-Platform Jump Grace")]
+    [Tooltip("When Warrior was on Zalayty's platform and then jumps / loses ground, delay A* path recompute instead of instantly switching to different-platform logic.")]
+    [SerializeField] private bool delayPathRecomputeAfterWarriorLeavesSamePlatform = true;
+
+    [Tooltip("How long Zalayty keeps the previous same-platform chase/attack decision after Warrior leaves ground from the same platform.")]
+    [SerializeField, Min(0f)] private float warriorSamePlatformLeaveGraceTime = 0.5f;
+
+    [Tooltip("Small polling delay while the same-platform jump grace is active. Keep it low so Zalayty quickly resumes normal chase if Warrior lands back.")]
+    [SerializeField, Min(0.01f)] private float warriorSamePlatformLeaveRetryDelay = 0.04f;
+
     private PlatFormColliderTrigger _lastKnownPlatform;
     private float _lastKnownPlatformTime = -999f;
     private PlatFormColliderTrigger _lastKnownWarriorPlatform;
     private float _lastKnownWarriorPlatformTime = -999f;
+    private PlatFormColliderTrigger _lastConfirmedSharedPlatform;
+    private float _lastConfirmedSharedPlatformTime = -999f;
+    private PlatFormColliderTrigger _warriorSamePlatformLeaveGracePlatform;
+    private float _warriorSamePlatformLeaveGraceUntil = -999f;
+    private Warrior _warriorSamePlatformLeaveGraceInstance;
 
     [Tooltip("Extra landing Y offset so we land safely on the next platform.")]
     [SerializeField] private float landingYOffset = 0.2f;
@@ -53,6 +68,40 @@ public class ZalaytyMonster : Enemy
 
     [Tooltip("When Zalayty and Warrior are on the same platform, ignore stopAndAttackWhenInRange so Zalayty keeps pressing toward Warrior.")]
     [SerializeField] private bool neverStopOnSamePlatformWithWarrior = true;
+
+    [Header("Same Platform Physical Contact Attack")]
+    [Tooltip("When true, Zalayty only stops/attacks on the same platform after his MAIN BoxCollider2D physically touches/overlaps Warrior's MAIN BoxCollider2D.")]
+    [SerializeField] private bool requireMainBoxContactToStopAndAttackOnSamePlatform = true;
+
+    [Tooltip("When true, top/bottom body contact is NOT valid attack contact. Zalayty must be beside Warrior with real vertical overlap.")]
+    [SerializeField] private bool requireSideContactForMainBoxAttack = true;
+
+    [Tooltip("Minimum vertical overlap, in world units, required between Zalayty and Warrior main boxes before the contact is considered side melee contact.")]
+    [SerializeField, Min(0f)] private float sideAttackMinVerticalOverlap = 0.12f;
+
+    [Tooltip("Minimum vertical overlap ratio of the smaller main-box height required for side melee contact.")]
+    [SerializeField, Range(0f, 1f)] private float sideAttackMinVerticalOverlapRatio = 0.18f;
+
+    [Tooltip("Small skin used by Physics2D.Distance so tiny solver gaps still count as body contact. Keep this very small.")]
+    [SerializeField, Min(0f)] private float samePlatformMainBoxContactSkin = 0.015f;
+
+    [Tooltip("Small tolerance used only on the animation-event hit frame. This prevents a visible Zalayty hit from missing because of a tiny physics solver gap.")]
+    [SerializeField, Min(0f)] private float zalaytyImpactHitSkin = 0.10f;
+
+    [Tooltip("While Zalayty is already stopped by Warrior body contact, keep him stopped until the bodies are separated by at least this distance. This hysteresis prevents attack/chase jitter caused by tiny physics solver gaps.")]
+    [SerializeField, Min(0f)] private float samePlatformMainBoxContactReleaseSkin = 0.12f;
+
+    [Tooltip("When true, real MAIN BoxCollider2D contact with Warrior stops Zalayty even if CurrentplatForm values are temporarily null or mismatched for one frame.")]
+    [SerializeField] private bool stopOnWarriorMainBoxContactEvenDuringPlatformMismatch = true;
+
+    [Tooltip("When true, Zalayty does not restart chase while a previous body-contact lock is still inside the release skin.")]
+    [SerializeField] private bool useContactReleaseHysteresis = true;
+
+    [Tooltip("How often the same-platform contact lock is rechecked while Zalayty is touching/attacking.")]
+    [SerializeField, Min(0.01f)] private float samePlatformContactRecheckDelay = 0.04f;
+
+    [Tooltip("When true, Zalayty keeps repeating contact attacks after cooldown while the MAIN BoxCollider2D bodies remain touching on the same platform.")]
+    [SerializeField] private bool repeatAttackWhileMainBoxesStillTouchingOnSamePlatform = true;
 
     [Header("ExtraJump Conditions")]
     [SerializeField] private float closeToWarriorDistance = 0.9f;   // "very close" distance
@@ -91,9 +140,25 @@ public class ZalaytyMonster : Enemy
     [Header("Squeeze ExtraJump")]
     [SerializeField] private bool allowSqueezeExtraJump = true; //checkbox in Inspector
 
+    [Header("Takeoff Rules - Zalayty Only")]
+    [Tooltip("When true, Zalayty can start an airborne arc only to change platforms or to perform the Warrior-top rebound. Same-platform extra jumps are blocked.")]
+    [SerializeField] private bool onlyTakeOffToChangePlatformsOrRebound = true;
+
+    [Tooltip("When true, any small upward lift caused by physics contact is cancelled while Zalayty is not in an authorized platform-change/rebound arc.")]
+    [SerializeField] private bool cancelUnauthorizedUpwardLift = true;
+
+    [Tooltip("Maximum distance above the last known platform top that may be corrected back to grounded position. Keep this small so real falls are not cancelled.")]
+    [SerializeField, Min(0f)] private float unauthorizedLiftSnapBand = 0.25f;
+
+    [Tooltip("Horizontal inset used when checking whether Zalayty is still above the last known platform before cancelling unauthorized lift.")]
+    [SerializeField, Min(0f)] private float unauthorizedLiftPlatformXInset = 0.02f;
+
 
     private float _nextSqueezeCheckTime;
     private float _lastSqueezeJumpTime;
+    private float _nextAllowedSamePlatformContactAttackTime;
+    private bool _samePlatformContactCombatLocked;
+    private bool _samePlatformContactAttackWasActive;
 
 
     private Coroutine followRoutine;
@@ -133,6 +198,22 @@ public class ZalaytyMonster : Enemy
 
     [Tooltip("Stops only Zalayty horizontal velocity when his independent movement is interrupted.")]
     [SerializeField] private bool stopHorizontalVelocityOnIndependentStop = true;
+
+    [Header("Platform Jump Landing - Avoid Warrior Top")]
+    [Tooltip("When true, Zalayty adjusts platform-change landing X so he lands beside Warrior instead of on Warrior's top bound.")]
+    [SerializeField] private bool avoidWarriorTopLandingDuringPlatformJumps = true;
+
+    [Tooltip("Extra horizontal gap kept between Zalayty's main body and Warrior's main body when choosing a platform-jump landing beside Warrior.")]
+    [SerializeField, Min(0f)] private float platformJumpWarriorSideGap = 0.18f;
+
+    [Tooltip("Inset from the destination platform edges used only when choosing a safe beside-Warrior landing point.")]
+    [SerializeField, Min(0f)] private float platformJumpLandingPlatformInset = 0.30f;
+
+    [Tooltip("When true, the landing correction is applied only when the destination platform is Warrior's current platform.")]
+    [SerializeField] private bool onlyAvoidWarriorTopLandingOnWarriorPlatform = true;
+
+    [Tooltip("If the requested landing is not above Warrior, keep the original landing X. If false, Zalayty may still choose a better beside-Warrior attack position on Warrior's platform.")]
+    [SerializeField] private bool keepOriginalLandingWhenAlreadyBesideWarrior = true;
 
     [Header("Warrior Top Rebound - Zalayty Only")]
     [SerializeField] private bool enableWarriorTopRebound = true;
@@ -220,6 +301,11 @@ public class ZalaytyMonster : Enemy
         initDirection();
     }
 
+    private void FixedUpdate()
+    {
+        PreventUnauthorizedTakeoffLift();
+    }
+
     private void initDirection()
     {
         if (CurrentplatForm != null)
@@ -279,8 +365,7 @@ public class ZalaytyMonster : Enemy
             ? CurrentplatForm
             : null;
 
-        StartZalaytyJumpTo(landing, jumpHeight, duration, expectedPlatform);
-        return true;
+        return StartZalaytyJumpTo(landing, jumpHeight, duration, expectedPlatform);
     }
 
     private bool TrySqueezeExtraJump(Warrior warrior)
@@ -393,7 +478,14 @@ public class ZalaytyMonster : Enemy
         while (this != null)
         {
             var warrior = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
-            if (isOnEdgePlatform && inRangeOrAttacking && CurrentplatForm == warrior.CurrentplatForm && IsWarriorNearPlatformEdge(warrior))
+            // Same-platform takeoff is disabled by the new rule.
+            // Zalayty may leave the ground only for real platform changes or Warrior-top rebound.
+            if (!onlyTakeOffToChangePlatformsOrRebound &&
+                isOnEdgePlatform &&
+                inRangeOrAttacking &&
+                warrior != null &&
+                CurrentplatForm == warrior.CurrentplatForm &&
+                IsWarriorNearPlatformEdge(warrior))
             {
                 StopMoveTowardCoroutine();
                 ExitWaitAnimation();
@@ -414,6 +506,47 @@ public class ZalaytyMonster : Enemy
             RememberKnownPlatforms(warrior);
             TryRecoverCurrentPlatformFromGroundPoints();
             RememberKnownPlatforms(warrior);
+            UpdateWarriorSamePlatformLeaveGraceState(warrior);
+
+            // First priority: real body contact with Warrior means STOP NOW.
+            // Do this before platform-null/path checks so a temporary CurrentplatForm
+            // mismatch cannot restart chase and push Warrior for one frame.
+            if (!_samePlatformContactCombatLocked && ShouldStopSamePlatformChaseForMainBoxContact(warrior))
+            {
+                inRangeOrAttacking = true;
+                MaintainSamePlatformContactCombat(warrior, true);
+                yield return null;
+                continue;
+            }
+
+            // Contact-combat release is GLOBAL, not platform-dependent.
+            // If Zalayty was locked because the MAIN BoxCollider2D bodies touched,
+            // separation must immediately return him to chase/path logic, even if
+            // CurrentplatForm/Warrior.CurrentplatForm changed or became temporarily null.
+            if (_samePlatformContactCombatLocked)
+            {
+                bool contactStillTouching = AreMainBoxesTouchingForContactCombat(warrior);
+
+                if (contactStillTouching)
+                {
+                    inRangeOrAttacking = true;
+                    MaintainSamePlatformContactCombat(warrior, true);
+                    yield return null;
+                    continue;
+                }
+
+                ReleaseContactCombatForImmediateChase();
+                inRangeOrAttacking = false;
+            }
+
+            if (ShouldDelayPathRecomputeBecauseWarriorLeftSamePlatform(warrior))
+            {
+                // Warrior just jumped / temporarily lost ground from our shared platform.
+                // Keep the same-platform chase decision alive; do NOT enter the A* branch yet.
+                ContinueSamePlatformChaseDuringWarriorLeaveGrace(warrior);
+                yield return new WaitForSeconds(warriorSamePlatformLeaveRetryDelay);
+                continue;
+            }
 
             if (CurrentplatForm == null || warrior.CurrentplatForm == null)
             {
@@ -434,27 +567,54 @@ public class ZalaytyMonster : Enemy
                 continue;
             }
 
-            // SAME PLATFORM: warrior-like melee
+            // SAME PLATFORM: chase until the MAIN BoxCollider2D bodies physically touch.
+            // Do not use range-only attack decisions here. This keeps Zalayty moving
+            // toward Warrior and prevents early Wait/attack before real contact.
             if (CurrentplatForm == warrior.CurrentplatForm)
             {
                 float targetX = GetIndependentFollowTargetX(warrior);
                 SetDirectionVariables(targetX);
 
+                bool mainBoxesTouching = ShouldStopSamePlatformChaseForMainBoxContact(warrior);
+
+                // Contact-combat is controlled ONLY by real MAIN BoxCollider2D contact.
+                // As soon as the bodies separate, do not keep Zalayty stopped because
+                // an old attack animation/cooldown is still active. Fall through and chase.
+                if (mainBoxesTouching)
+                {
+                    inRangeOrAttacking = true;
+                    MaintainSamePlatformContactCombat(warrior, true);
+                    yield return null;
+                    continue;
+                }
+
+                if (_samePlatformContactCombatLocked)
+                    ReleaseContactCombatForImmediateChase();
+
+                inRangeOrAttacking = false;
+
                 // NEW: squeeze-driven extraJump (group logic) //  Only if checkbox is enabled
-                if (allowSqueezeExtraJump && TrySqueezeExtraJump(warrior))
+                if (!onlyTakeOffToChangePlatformsOrRebound &&
+                    allowSqueezeExtraJump &&
+                    TrySqueezeExtraJump(warrior))
                 {
                     yield return new WaitForSeconds(0.08f);
                     continue;
                 }
 
-
-                inRangeOrAttacking = TryToPerformAttack(warrior.transform);
-
-                if (inRangeOrAttacking && stopAndAttackWhenInRange && !neverStopOnSamePlatformWithWarrior)
+                // Legacy range-stop behavior is intentionally disabled by default on
+                // same-platform chase. Zalayty should not Wait/attack from distance;
+                // he stops only when the main bodies touch.
+                if (!requireMainBoxContactToStopAndAttackOnSamePlatform)
                 {
-                    StopMoveTowardCoroutine();
-                    yield return new WaitForSeconds(repathInterval);
-                    continue;
+                    inRangeOrAttacking = TryToPerformAttack(warrior.transform);
+
+                    if (inRangeOrAttacking && stopAndAttackWhenInRange && !neverStopOnSamePlatformWithWarrior)
+                    {
+                        StopMoveTowardCoroutine();
+                        yield return new WaitForSeconds(repathInterval);
+                        continue;
+                    }
                 }
 
                 if (CanMove && activesMoveCoroutine == null && !_isJumping)
@@ -516,6 +676,184 @@ public class ZalaytyMonster : Enemy
         {
             _lastKnownWarriorPlatform = warrior.CurrentplatForm;
             _lastKnownWarriorPlatformTime = Time.time;
+        }
+    }
+
+    private void UpdateWarriorSamePlatformLeaveGraceState(Warrior warrior)
+    {
+        if (!delayPathRecomputeAfterWarriorLeavesSamePlatform)
+            return;
+
+        if (warrior == null || warrior.IsDead || _deathStarted || currentHealth <= 0f)
+        {
+            ClearWarriorSamePlatformLeaveGrace();
+            return;
+        }
+
+        if (_warriorSamePlatformLeaveGraceInstance != null &&
+            _warriorSamePlatformLeaveGraceInstance != warrior)
+        {
+            ClearWarriorSamePlatformLeaveGrace();
+        }
+
+        bool samePlatformNow =
+            CurrentplatForm != null &&
+            warrior.CurrentplatForm != null &&
+            CurrentplatForm == warrior.CurrentplatForm;
+
+        bool warriorGroundedNow = IsWarriorGroundedForSamePlatformLeaveGrace(warrior);
+
+        // This is the only state that is allowed to arm the grace:
+        // Zalayty and Warrior are confirmed on the same platform while Warrior is grounded.
+        if (samePlatformNow && warriorGroundedNow)
+        {
+            _lastConfirmedSharedPlatform = CurrentplatForm;
+            _lastConfirmedSharedPlatformTime = Time.time;
+            ClearWarriorSamePlatformLeaveGrace();
+            return;
+        }
+
+        if (_lastConfirmedSharedPlatform == null)
+            return;
+
+        bool recentlySharedPlatform =
+            Time.time <= _lastConfirmedSharedPlatformTime + warriorSamePlatformLeaveGraceTime;
+
+        if (!recentlySharedPlatform)
+            return;
+
+        PlatFormColliderTrigger myRelevantPlatform = CurrentplatForm != null
+            ? CurrentplatForm
+            : _lastKnownPlatform;
+
+        bool zStillBelongsToLastSharedPlatform = myRelevantPlatform == _lastConfirmedSharedPlatform;
+        if (!zStillBelongsToLastSharedPlatform)
+            return;
+
+        bool warriorLeftBecauseOfJumpOrAirborneState =
+            !warriorGroundedNow ||
+            warrior.IsJumping ||
+            warrior.activesJumpCoroutine != null ||
+            warrior.CurrentplatForm == null;
+
+        if (!warriorLeftBecauseOfJumpOrAirborneState)
+            return;
+
+        if (!IsWarriorSamePlatformLeaveGraceRunning())
+        {
+            _warriorSamePlatformLeaveGracePlatform = _lastConfirmedSharedPlatform;
+            _warriorSamePlatformLeaveGraceUntil = Time.time + warriorSamePlatformLeaveGraceTime;
+            _warriorSamePlatformLeaveGraceInstance = warrior;
+        }
+    }
+
+    private bool ShouldDelayPathRecomputeBecauseWarriorLeftSamePlatform(Warrior warrior)
+    {
+        if (!delayPathRecomputeAfterWarriorLeavesSamePlatform)
+            return false;
+
+        if (!IsWarriorSamePlatformLeaveGraceRunning())
+            return false;
+
+        if (warrior == null || warrior.IsDead || _deathStarted || currentHealth <= 0f)
+        {
+            ClearWarriorSamePlatformLeaveGrace();
+            return false;
+        }
+
+        if (_warriorSamePlatformLeaveGraceInstance != null &&
+            _warriorSamePlatformLeaveGraceInstance != warrior)
+        {
+            ClearWarriorSamePlatformLeaveGrace();
+            return false;
+        }
+
+        bool samePlatformNow =
+            CurrentplatForm != null &&
+            warrior.CurrentplatForm != null &&
+            CurrentplatForm == warrior.CurrentplatForm;
+
+        if (samePlatformNow && IsWarriorGroundedForSamePlatformLeaveGrace(warrior))
+        {
+            // Warrior landed back where he started within the delay.
+            // Normal same-platform chase/attack can continue without any A* recompute.
+            ClearWarriorSamePlatformLeaveGrace();
+            return false;
+        }
+
+        PlatFormColliderTrigger myRelevantPlatform = CurrentplatForm != null
+            ? CurrentplatForm
+            : _lastKnownPlatform;
+
+        if (myRelevantPlatform != _warriorSamePlatformLeaveGracePlatform)
+        {
+            ClearWarriorSamePlatformLeaveGrace();
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool IsWarriorSamePlatformLeaveGraceRunning()
+    {
+        if (_warriorSamePlatformLeaveGracePlatform == null)
+            return false;
+
+        if (Time.time <= _warriorSamePlatformLeaveGraceUntil)
+            return true;
+
+        ClearWarriorSamePlatformLeaveGrace();
+        return false;
+    }
+
+    private void ClearWarriorSamePlatformLeaveGrace()
+    {
+        _warriorSamePlatformLeaveGracePlatform = null;
+        _warriorSamePlatformLeaveGraceUntil = -999f;
+        _warriorSamePlatformLeaveGraceInstance = null;
+    }
+
+    private bool IsWarriorGroundedForSamePlatformLeaveGrace(Warrior warrior)
+    {
+        if (warrior == null)
+            return false;
+
+        // CountGroundPoints is the reliable signal for the exact "temporary lost ground" case.
+        // CurrentplatForm alone can stay assigned for a few frames during a jump.
+        return warrior.CountGroundPoints() > 0;
+    }
+
+    private void ContinueSamePlatformChaseDuringWarriorLeaveGrace(Warrior warrior)
+    {
+        if (warrior == null || warrior.IsDead)
+            return;
+
+        float targetX = GetIndependentFollowTargetX(warrior);
+        SetDirectionVariables(targetX);
+
+        bool mainBoxesTouching = ShouldStopSamePlatformChaseForMainBoxContact(warrior);
+        if (mainBoxesTouching)
+        {
+            inRangeOrAttacking = true;
+            MaintainSamePlatformContactCombat(warrior, true);
+            return;
+        }
+
+        if (_samePlatformContactCombatLocked)
+            ReleaseContactCombatForImmediateChase();
+
+        inRangeOrAttacking = false;
+        ExitWaitAnimation();
+
+        if (IsAttackAnimationActive())
+            return;
+
+        if (CanMove && !_isJumping)
+        {
+            RunAnimationDisplay();
+
+            if (activesMoveCoroutine == null)
+                StartZalaytyMoveToX(targetX);
         }
     }
 
@@ -643,8 +981,26 @@ public class ZalaytyMonster : Enemy
             if (!CanMove || _deathStarted || IsStunned)
                 break;
 
-            if (!IsAttackAnimationActive())
-                FlipCharacter(targetX);
+            Warrior warrior = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
+
+            // Stop as soon as the MAIN bodies touch. If a lock already exists, use
+            // the wider release skin so tiny solver gaps do not cause chase/attack jitter.
+            bool lockedContactStillClose = _samePlatformContactCombatLocked &&
+                                          AreMainBoxesTouchingForContactCombat(warrior);
+            bool mainBoxesTouching = lockedContactStillClose ||
+                                     ShouldStopSamePlatformChaseForMainBoxContact(warrior);
+            if (mainBoxesTouching)
+            {
+                MaintainSamePlatformContactCombat(warrior, true);
+                break;
+            }
+
+            // Separation wins immediately, but only after the release hysteresis says
+            // the bodies are really clear. This avoids one-frame chase restarts.
+            if (_samePlatformContactCombatLocked)
+                ReleaseContactCombatForImmediateChase();
+
+            FlipCharacter(targetX);
 
             Vector2 current = rigidbody2 != null
                 ? rigidbody2.position
@@ -662,13 +1018,23 @@ public class ZalaytyMonster : Enemy
         activesMoveCoroutine = null;
     }
 
-    private void StartZalaytyJumpTo(
+    private bool StartZalaytyJumpTo(
         Vector2 landing,
         float jumpHeight,
         float duration,
         PlatFormColliderTrigger expectedLandingPlatform,
         bool forceJumpTowardPositionAction = false)
     {
+        if (!CanStartZalaytyTakeoff(expectedLandingPlatform, forceJumpTowardPositionAction))
+            return false;
+
+        // Final Zalayty-only safety net: any platform-change jump targeting
+        // Warrior's platform must land beside Warrior, not on Warrior's top bound.
+        landing = ResolvePlatformJumpLandingAwayFromWarriorTop(
+            landing,
+            expectedLandingPlatform,
+            GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null);
+
         StopMoveTowardCoroutine();
         StopJumpTowardCoroutine();
         ExitWaitAnimation();
@@ -685,6 +1051,106 @@ public class ZalaytyMonster : Enemy
             : JumpArcIndependent(landing, jumpHeight, duration, expectedLandingPlatform);
 
         StartCoroutine(activesJumpCoroutine);
+        return true;
+    }
+
+    private bool CanStartZalaytyTakeoff(
+        PlatFormColliderTrigger expectedLandingPlatform,
+        bool forceJumpTowardPositionAction)
+    {
+        if (!onlyTakeOffToChangePlatformsOrRebound)
+            return true;
+
+        // Warrior-top rebound is explicitly allowed, even when the rebound lands back
+        // on the same platform. This is the only same-platform airborne correction.
+        if (forceJumpTowardPositionAction && _warriorTopReboundActive)
+            return true;
+
+        PlatFormColliderTrigger sourcePlatform = CurrentplatForm != null
+            ? CurrentplatForm
+            : _lastKnownPlatform;
+
+        // Normal Zalayty takeoff is allowed only when it has a real destination
+        // platform and that destination is not the source platform.
+        bool changesPlatform =
+            sourcePlatform != null &&
+            expectedLandingPlatform != null &&
+            expectedLandingPlatform != sourcePlatform;
+
+        return changesPlatform;
+    }
+
+    private void PreventUnauthorizedTakeoffLift()
+    {
+        if (!onlyTakeOffToChangePlatformsOrRebound || !cancelUnauthorizedUpwardLift)
+            return;
+
+        if (rigidbody2 == null)
+            return;
+
+        if (_deathStarted || currentHealth <= 0f)
+            return;
+
+        // Do not interfere with the two authorized airborne arcs.
+        if (_isJumping || activesJumpCoroutine != null || _warriorTopReboundActive)
+            return;
+
+        PlatFormColliderTrigger platform = CurrentplatForm != null
+            ? CurrentplatForm
+            : _lastKnownPlatform;
+
+        if (platform == null || platform.platformCollider == null)
+            return;
+
+        bool recentlyBelongedToPlatform =
+            CurrentplatForm == platform ||
+            Time.time <= _lastKnownPlatformTime + temporaryPlatformLossGraceTime;
+
+        if (!recentlyBelongedToPlatform)
+            return;
+
+        Collider2D body = GetZalaytyBodyCollider();
+        if (body == null)
+            return;
+
+        Bounds platformBounds = platform.platformCollider.bounds;
+        Bounds bodyBounds = body.bounds;
+
+        float inset = Mathf.Max(0f, unauthorizedLiftPlatformXInset);
+        bool stillAbovePlatform =
+            bodyBounds.max.x > platformBounds.min.x + inset &&
+            bodyBounds.min.x < platformBounds.max.x - inset;
+
+        if (!stillAbovePlatform)
+            return;
+
+        Vector2 rbPos = rigidbody2.position;
+        float bodyBottomOffsetFromPosition = bodyBounds.min.y - rbPos.y;
+        float groundedPositionY =
+            platformBounds.max.y + landingYOffset - bodyBottomOffsetFromPosition;
+
+        float upwardLift = rbPos.y - groundedPositionY;
+
+        // Cancel only small upward solver lifts. Do not cancel real falls or large
+        // displacement, because those may be platform-edge or gameplay situations.
+        if (upwardLift > 0f && upwardLift <= unauthorizedLiftSnapBand)
+        {
+            rbPos.y = groundedPositionY;
+            rigidbody2.position = rbPos;
+
+            if (CurrentplatForm == null)
+                CurrentplatForm = platform;
+
+            _lastKnownPlatform = platform;
+            _lastKnownPlatformTime = Time.time;
+        }
+
+        Vector2 velocity = rigidbody2.linearVelocity;
+        if (velocity.y > 0f)
+        {
+            velocity.y = 0f;
+            rigidbody2.linearVelocity = velocity;
+        }
     }
 
     private IEnumerator JumpArcIndependent(
@@ -856,7 +1322,15 @@ public class ZalaytyMonster : Enemy
         float resolvedPositionY =
             platformBounds.max.y + landingYOffset - bodyBottomOffsetFromPosition;
 
-        return new Vector2(resolvedPositionX, resolvedPositionY);
+        Vector2 resolvedPosition = new Vector2(resolvedPositionX, resolvedPositionY);
+
+        // Predicted top landing can happen before the final arc target is reached.
+        // If that predicted crossing is still above Warrior, shift the resolved X
+        // beside Warrior before Zalayty is seated on the destination platform.
+        return ResolvePlatformJumpLandingAwayFromWarriorTop(
+            resolvedPosition,
+            platform,
+            GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null);
     }
 
     private void FinishIndependentJumpOnPlatform(PlatFormColliderTrigger platform)
@@ -1072,6 +1546,15 @@ public class ZalaytyMonster : Enemy
 
         Vector2 landing = new Vector2(landingX, nextB.max.y + landingYOffset);
 
+        Warrior warriorInstance = warrior != null
+            ? warrior.GetComponent<Warrior>()
+            : (GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null);
+
+        landing = ResolvePlatformJumpLandingAwayFromWarriorTop(
+            landing,
+            nextPlatform,
+            warriorInstance);
+
         // 3) Zalayty-only jump-down pass-through.
         // Do NOT move Warrior logic and do NOT globally disable the platform.
         // Only the source platform ignores Zalayty's colliders, then restores itself
@@ -1113,7 +1596,9 @@ public class ZalaytyMonster : Enemy
         float jumpHeight = goingDown ? 1.25f : Mathf.Clamp(dy + 2.5f, 2.5f, 10f);
         float duration = Mathf.Clamp((dx / Mathf.Max(0.01f, Speed)) * 0.65f, 0.25f, 0.8f);
         // ExitWaitAnimation();
-        StartZalaytyJumpTo(landing, jumpHeight, duration, nextPlatform);
+        bool platformJumpStarted = StartZalaytyJumpTo(landing, jumpHeight, duration, nextPlatform);
+        if (!platformJumpStarted)
+            yield break;
 
         float landTimeout = 2.0f;
         while (landTimeout > 0f)
@@ -1169,6 +1654,247 @@ public class ZalaytyMonster : Enemy
 
         // Fallback (should be rare): clamp desired into next safe bounds
         return Mathf.Clamp(desiredX, safeMinX, safeMaxX);
+    }
+
+    private bool ShouldStopSamePlatformChaseForMainBoxContact(Warrior warrior)
+    {
+        if (!requireMainBoxContactToStopAndAttackOnSamePlatform)
+            return false;
+
+        if (warrior == null || warrior.IsDead)
+            return false;
+
+        if (!CanUseWarriorMainBoxContactStop(warrior))
+            return false;
+
+        return HasValidMainBoxSideContactForAttack(warrior, samePlatformMainBoxContactSkin);
+    }
+
+    private bool CanUseWarriorMainBoxContactStop(Warrior warrior)
+    {
+        if (warrior == null)
+            return false;
+
+        // Best case: both are known to be on the same platform.
+        if (CurrentplatForm != null && warrior.CurrentplatForm != null)
+            return CurrentplatForm == warrior.CurrentplatForm ||
+                   stopOnWarriorMainBoxContactEvenDuringPlatformMismatch;
+
+        // During jumps, trigger exits, or one-frame platform refresh gaps, CurrentplatForm
+        // may be null even though the main bodies are already physically touching.
+        // Stop anyway, otherwise Zalayty restarts chase and pushes Warrior.
+        return stopOnWarriorMainBoxContactEvenDuringPlatformMismatch;
+    }
+
+    private bool ShouldKeepSamePlatformContactCombatLock(Warrior warrior, bool mainBoxesTouching)
+    {
+        if (!_samePlatformContactCombatLocked)
+            return false;
+
+        if (warrior == null || warrior.IsDead)
+        {
+            ClearSamePlatformContactCombatLock();
+            return false;
+        }
+
+        // While the main bodies touch, the combat lock remains active.
+        if (mainBoxesTouching)
+            return true;
+
+        // Separation has absolute priority: release immediately, even if an attack
+        // animation or cooldown was still active.
+        ReleaseContactCombatForImmediateChase();
+        return false;
+    }
+
+    private void MaintainSamePlatformContactCombat(Warrior warrior, bool mainBoxesTouching)
+    {
+        // Separation wins before animation/cooldown. This is what lets Zalayty
+        // immediately resume chase as soon as the MAIN BoxCollider2D bodies are apart.
+        if (!mainBoxesTouching)
+        {
+            ReleaseContactCombatForImmediateChase();
+            return;
+        }
+
+        StopMoveTowardCoroutine();
+        StopHorizontalVelocityIfNeeded();
+        ExitWaitAnimation();
+
+        if (warrior == null || warrior.IsDead)
+        {
+            ClearSamePlatformContactCombatLock();
+            return;
+        }
+
+        if (requireSideContactForMainBoxAttack && IsZalaytyOnWarriorTopByBounds(warrior))
+        {
+            ReleaseContactCombatForImmediateChase();
+            inRangeOrAttacking = false;
+            return;
+        }
+
+        FaceTowards(warrior.transform);
+        _samePlatformContactCombatLocked = true;
+
+        bool attackActive = IsAttackAnimationActive();
+
+        // Attack animation is still active AND bodies are still touching:
+        // stay stopped and do not restart/stack attacks.
+        if (attackActive)
+        {
+            _samePlatformContactAttackWasActive = true;
+            return;
+        }
+
+        // Attack has just ended while the bodies are still touching. Start the
+        // cooldown window so Warrior has time to answer before Zalayty attacks again.
+        if (_samePlatformContactAttackWasActive)
+        {
+            _samePlatformContactAttackWasActive = false;
+            _nextAllowedSamePlatformContactAttackTime = Time.time + Mathf.Max(0.01f, attackCooldown);
+            return;
+        }
+
+        // Main boxes are still touching. Stay locked in contact combat.
+        // If cooldown has expired, start a new attack. Otherwise remain stopped.
+        if (repeatAttackWhileMainBoxesStillTouchingOnSamePlatform)
+            TryStartSamePlatformContactAttack(warrior);
+    }
+
+    private void ClearSamePlatformContactCombatLock()
+    {
+        _samePlatformContactCombatLocked = false;
+        _samePlatformContactAttackWasActive = false;
+        _nextAllowedSamePlatformContactAttackTime = 0f;
+    }
+
+    private void ReleaseContactCombatForImmediateChase()
+    {
+        ClearSamePlatformContactCombatLock();
+        ResetContactAttackAnimationBooleansForImmediateChase();
+        ExitWaitAnimation();
+    }
+
+    private void ResetContactAttackAnimationBooleansForImmediateChase()
+    {
+        if (animator == null)
+            return;
+
+        // We only cancel attack bools. Do not touch isDying or other state flags.
+        animator.SetBool("isAttacking", false);
+        animator.SetBool("isAttacking2", false);
+        animator.SetBool("isAttacking3", false);
+    }
+
+    private bool AreMainBoxesTouchingForContactCombat(Warrior warrior)
+    {
+        if (!requireMainBoxContactToStopAndAttackOnSamePlatform)
+            return false;
+
+        if (warrior == null || warrior.IsDead)
+            return false;
+
+        float skinToUse = useContactReleaseHysteresis && _samePlatformContactCombatLocked
+            ? Mathf.Max(samePlatformMainBoxContactSkin, samePlatformMainBoxContactReleaseSkin)
+            : samePlatformMainBoxContactSkin;
+
+        return HasValidMainBoxSideContactForAttack(warrior, skinToUse);
+    }
+
+    private bool TryStartSamePlatformContactAttack(Warrior warrior)
+    {
+        if (warrior == null || warrior.collider2 == null || warrior.IsDead)
+            return false;
+
+        if (_deathStarted || currentHealth <= 0f || IsStunned || IsAttackTemporarilyDisabled)
+            return false;
+
+        if (Time.time < _nextAllowedSamePlatformContactAttackTime)
+            return false;
+
+        // Starting a NEW attack must require strict real side contact.
+        // Do not use AreMainBoxesTouchingForContactCombat() here, because that method
+        // may use the wider release hysteresis skin while a previous contact lock is active.
+        // Using the wide release skin to START a new attack is what can create a visible
+        // attack with no damage when there is a tiny solver gap.
+        if (!HasValidMainBoxSideContactForAttack(warrior, samePlatformMainBoxContactSkin))
+            return false;
+
+        // The contact-combat rule requires Zalayty to face Warrior, not to pass
+        // another range/front gate after the real main BoxCollider2D contact is confirmed.
+        FaceTowards(warrior.transform);
+
+        _samePlatformContactCombatLocked = true;
+        _samePlatformContactAttackWasActive = true;
+        AttackAnimationDisplay();
+        return true;
+    }
+
+    private bool AreMainBoxCollidersTouchingOrOverlapping(Warrior warrior)
+    {
+        return AreMainBoxCollidersTouchingOrOverlapping(warrior, samePlatformMainBoxContactSkin);
+    }
+
+    private bool AreMainBoxCollidersTouchingOrOverlapping(Warrior warrior, float contactSkin)
+    {
+        BoxCollider2D zalaytyBox = GetMainBoxColliderForPhysicalContact();
+        BoxCollider2D warriorBox = GetWarriorMainBoxCollider(warrior);
+
+        if (zalaytyBox == null || warriorBox == null)
+            return false;
+
+        if (!zalaytyBox.enabled || !warriorBox.enabled)
+            return false;
+
+        if (zalaytyBox.isTrigger || warriorBox.isTrigger)
+            return false;
+
+        if (zalaytyBox.IsTouching(warriorBox))
+            return true;
+
+        float skin = Mathf.Max(0f, contactSkin);
+
+        ColliderDistance2D distance = Physics2D.Distance(zalaytyBox, warriorBox);
+        if (distance.isValid && (distance.isOverlapped || distance.distance <= skin))
+            return true;
+
+        // Bounds fallback is only a safety net for rare timing cases where MovePosition
+        // has overlapped the bodies before the physics contact pair is available.
+        Bounds z = zalaytyBox.bounds;
+        Bounds w = warriorBox.bounds;
+        z.Expand(skin * 2f);
+        return z.Intersects(w);
+    }
+
+    private BoxCollider2D GetMainBoxColliderForPhysicalContact()
+    {
+        if (NormalCollider is BoxCollider2D normalBox && normalBox.enabled)
+            return normalBox;
+
+        if (collider2 is BoxCollider2D baseBox && baseBox.enabled)
+            return baseBox;
+
+        BoxCollider2D directBox = GetComponent<BoxCollider2D>();
+        if (directBox != null && directBox.enabled)
+            return directBox;
+
+        return null;
+    }
+
+    private BoxCollider2D GetWarriorMainBoxCollider(Warrior warrior)
+    {
+        if (warrior == null)
+            return null;
+
+        if (warrior.collider2 is BoxCollider2D warriorBox && warriorBox.enabled)
+            return warriorBox;
+
+        BoxCollider2D directBox = warrior.GetComponent<BoxCollider2D>();
+        if (directBox != null && directBox.enabled)
+            return directBox;
+
+        return null;
     }
 
     private bool TryToPerformAttack(Transform warrior)
@@ -1262,27 +1988,33 @@ public class ZalaytyMonster : Enemy
         // (only if this matches your CrawlingMonster behavior)
         // if (warriorIsAttackingNow(warrior)) return;
 
-        // Spawn spark at contact (visual) - you can keep it before or after canHit checks
-        SpawnSparkAtContact(warrior);
-
-        // must be same platform/in range like your original logic
-        bool canHit =
+        // Same-platform damage must be validated by the real MAIN BoxCollider2D contact.
+        // This avoids range-only damage and matches the stop/attack rule above.
+        bool samePlatform =
             warrior.CurrentplatForm != null &&
             CurrentplatForm != null &&
-            warrior.CurrentplatForm == CurrentplatForm &&
+            warrior.CurrentplatForm == CurrentplatForm;
+
+        // The attack was already started by strict contact. On the exact impact frame,
+        // allow a small extra skin so a visible hit is not rejected by a tiny physics gap.
+        // This skin is still side-contact validated, so top-bound landings remain invalid.
+        float impactSkin = Mathf.Max(samePlatformMainBoxContactSkin, zalaytyImpactHitSkin);
+        bool mainBoxesTouching = HasValidMainBoxSideContactForAttack(warrior, impactSkin);
+
+        bool canHit =
+            (!requireSamePlatformToHit || samePlatform) &&
             NormalCollider != null &&
-            EnemyRangeService != null &&
-            EnemyRangeService.IsInRange;
+            (!requireTouchingToHit || mainBoxesTouching);
 
         if (!canHit) return;
-
-        // Optional stronger physical-touch check (recommended for Zalayty)
-        if (requireTouchingToHit && !warrior.collider2.IsTouching(NormalCollider))
-            return;
 
         // Optional front check if you want it enabled by inspector flag
         if (requireTargetInFront && !IsWarriorInFront(warrior.transform))
             return;
+
+        // Spawn spark only after the side-contact hit has been validated.
+        // This prevents top-bound landings from showing a fake hit.
+        SpawnSparkAtContact(warrior);
 
         // Shield block (front-only handled inside Warrior.TryBlockEnemyHit)
         bool blocked = warrior.TryBlockEnemyHit(this);
@@ -1307,30 +2039,44 @@ public class ZalaytyMonster : Enemy
 
     private void SpawnSparkAtContact(Warrior warrior)
     {
-        if (sparkPrefab == null) return;
+        if (sparkPrefab == null || warrior == null)
+            return;
 
-        Bounds w = warrior.collider2.bounds;
-        Bounds e = (NormalCollider != null) ? NormalCollider.bounds : collider2.bounds;
+        Collider2D warriorMainCollider = GetWarriorMainBoxCollider(warrior);
+        Collider2D zalaytyMainCollider = GetMainBoxColliderForPhysicalContact();
 
-        // Contact point on the side between enemy and warrior
-        float x = (e.center.x < w.center.x) ? w.min.x : w.max.x;
+        if (warriorMainCollider == null)
+            warriorMainCollider = warrior.collider2;
 
-        // Use a stable y (mid-height) or clamp to overlap region if you want:
+        if (zalaytyMainCollider == null)
+            zalaytyMainCollider = NormalCollider != null ? NormalCollider : collider2;
+
+        if (warriorMainCollider == null || zalaytyMainCollider == null)
+            return;
+
+        Bounds w = warriorMainCollider.bounds;
+        Bounds e = zalaytyMainCollider.bounds;
+
+        // Contact point on the side between enemy and warrior.
+        float x = e.center.x < w.center.x ? w.min.x : w.max.x;
         float y = Mathf.Clamp(e.center.y, w.min.y, w.max.y);
+        Vector3 computedContactPos = new Vector3(x, y, transform.position.z) + sparkOffset;
 
-        Vector3 pos = new Vector3(x, y, 0f) + sparkOffset;
+        // If you assigned a hitPoint in the inspector, use it. Otherwise use the
+        // computed side-contact point. This prevents a null hitPoint crash and fixes
+        // the previous bug where computedContactPos was calculated but ignored.
+        Vector3 spawnPos = hitPoint != null ? hitPoint.position + sparkOffset : computedContactPos;
+        GameObject fx = Instantiate(sparkPrefab, spawnPos, Quaternion.identity);
 
-        GameObject fx = Instantiate(sparkPrefab, hitPoint.position, Quaternion.identity);
-
-        // IMPORTANT: don't parent to warrior (parenting makes it follow!)
+        // IMPORTANT: do not parent to Warrior, or the spark will follow him.
         fx.transform.localScale *= sparkScale;
 
-        // If the prefab has ParticleSystems, ensure they run in world space (optional but helps)
+        // World-space particles stay visually at the impact point even if the enemy/warrior moves.
         var systems = fx.GetComponentsInChildren<ParticleSystem>(true);
         foreach (var ps in systems)
         {
             var main = ps.main;
-            main.simulationSpace = ParticleSystemSimulationSpace.Local; // <- follow parent
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
             ps.Play(true);
         }
 
@@ -1366,14 +2112,63 @@ public class ZalaytyMonster : Enemy
 
     private static readonly ContactPoint2D[] _contacts = new ContactPoint2D[16];
 
+    private void OnCollisionExit2D(Collision2D collision)
+    {
+        Warrior warrior = collision.collider != null
+            ? collision.collider.GetComponentInParent<Warrior>()
+            : null;
+
+        if (warrior == null)
+            return;
+
+        // Do not release only because Unity sent CollisionExit. With MovePosition and
+        // solver separation, Exit can happen for one physics frame while the bodies are
+        // still inside the release skin. The Follow loop will release as soon as the
+        // bodies are truly clear.
+        if (_samePlatformContactCombatLocked && !AreMainBoxesTouchingForContactCombat(warrior))
+        {
+            ReleaseContactCombatForImmediateChase();
+            inRangeOrAttacking = false;
+        }
+    }
+
     private void OnCollisionEnter2D(Collision2D collision)
     {
-        TryHandleWarriorTopReboundCollision(collision);
+        if (TryHandleWarriorTopReboundCollision(collision))
+            return;
+
+        TryHandleSamePlatformWarriorMainBoxContact(collision);
     }
 
     private void OnCollisionStay2D(Collision2D collision)
     {
-        TryHandleWarriorTopReboundCollision(collision);
+        if (TryHandleWarriorTopReboundCollision(collision))
+            return;
+
+        TryHandleSamePlatformWarriorMainBoxContact(collision);
+    }
+
+    private bool TryHandleSamePlatformWarriorMainBoxContact(Collision2D collision)
+    {
+        Warrior warrior = collision.collider != null
+            ? collision.collider.GetComponentInParent<Warrior>()
+            : null;
+
+        if (warrior == null || warrior.collider2 == null || warrior.IsDead)
+            return false;
+
+        if (!CanUseWarriorMainBoxContactStop(warrior))
+            return false;
+
+        // Top contact is handled by the rebound rule, not by the melee stop/attack rule.
+        if (IsZalaytyOnWarriorTop(collision, warrior))
+            return false;
+
+        if (!ShouldStopSamePlatformChaseForMainBoxContact(warrior))
+            return false;
+
+        MaintainSamePlatformContactCombat(warrior, true);
+        return true;
     }
 
     private bool TryHandleWarriorTopReboundCollision(Collision2D collision)
@@ -1431,6 +2226,242 @@ public class ZalaytyMonster : Enemy
         return xOverlap && bottomIsNearWarriorTop && movingDownOrStable;
     }
 
+    private bool IsZalaytyOnWarriorTopByBounds(Warrior warrior)
+    {
+        BoxCollider2D zalaytyBox = GetMainBoxColliderForPhysicalContact();
+        BoxCollider2D warriorBox = GetWarriorMainBoxCollider(warrior);
+
+        if (zalaytyBox == null || warriorBox == null)
+            return false;
+
+        Bounds z = zalaytyBox.bounds;
+        Bounds w = warriorBox.bounds;
+
+        bool xOverlap = z.max.x > w.min.x && z.min.x < w.max.x;
+        bool zalaytyAboveWarrior = z.center.y > w.center.y;
+        bool bottomIsNearWarriorTop =
+            z.min.y >= w.max.y - warriorTopReboundBoundsBand &&
+            z.min.y <= w.max.y + warriorTopReboundBoundsBand * 2f;
+        bool movingDownOrStable = rigidbody2 == null || rigidbody2.linearVelocity.y <= 0.65f;
+
+        return xOverlap && zalaytyAboveWarrior && bottomIsNearWarriorTop && movingDownOrStable;
+    }
+
+    private bool HasValidMainBoxSideContactForAttack(Warrior warrior, float contactSkin)
+    {
+        if (!AreMainBoxCollidersTouchingOrOverlapping(warrior, contactSkin))
+            return false;
+
+        if (!requireSideContactForMainBoxAttack)
+            return true;
+
+        // Landing on Warrior's top bound is rebound-only. It must never start, keep,
+        // or validate a Zalayty melee attack.
+        if (IsZalaytyOnWarriorTopByBounds(warrior))
+            return false;
+
+        return HasEnoughVerticalOverlapForSideAttack(warrior);
+    }
+
+    private bool HasEnoughVerticalOverlapForSideAttack(Warrior warrior)
+    {
+        BoxCollider2D zalaytyBox = GetMainBoxColliderForPhysicalContact();
+        BoxCollider2D warriorBox = GetWarriorMainBoxCollider(warrior);
+
+        if (zalaytyBox == null || warriorBox == null)
+            return false;
+
+        Bounds z = zalaytyBox.bounds;
+        Bounds w = warriorBox.bounds;
+
+        float verticalOverlap = Mathf.Min(z.max.y, w.max.y) - Mathf.Max(z.min.y, w.min.y);
+        if (verticalOverlap <= 0f)
+            return false;
+
+        float requiredByRatio = Mathf.Min(z.size.y, w.size.y) * sideAttackMinVerticalOverlapRatio;
+        float requiredOverlap = Mathf.Max(sideAttackMinVerticalOverlap, requiredByRatio);
+
+        return verticalOverlap >= requiredOverlap;
+    }
+
+    private Vector2 ResolvePlatformJumpLandingAwayFromWarriorTop(
+        Vector2 requestedLanding,
+        PlatFormColliderTrigger destinationPlatform,
+        Warrior warrior)
+    {
+        if (!avoidWarriorTopLandingDuringPlatformJumps)
+            return requestedLanding;
+
+        if (destinationPlatform == null || destinationPlatform.platformCollider == null)
+            return requestedLanding;
+
+        if (warrior == null || warrior.IsDead)
+            return requestedLanding;
+
+        if (onlyAvoidWarriorTopLandingOnWarriorPlatform && warrior.CurrentplatForm != destinationPlatform)
+            return requestedLanding;
+
+        Collider2D zalaytyBody = GetZalaytyBodyCollider();
+        BoxCollider2D warriorBox = GetWarriorMainBoxCollider(warrior);
+
+        if (zalaytyBody == null || warriorBox == null || !warriorBox.enabled)
+            return requestedLanding;
+
+        Bounds platformBounds = destinationPlatform.platformCollider.bounds;
+        Bounds zBounds = zalaytyBody.bounds;
+        Bounds wBounds = warriorBox.bounds;
+
+        Vector2 referencePosition = rigidbody2 != null
+            ? rigidbody2.position
+            : (Vector2)transform.position;
+
+        float bodyHalfX = Mathf.Max(0.01f, zBounds.extents.x);
+        float bodyCenterOffsetX = zBounds.center.x - referencePosition.x;
+        float requestedCenterX = requestedLanding.x + bodyCenterOffsetX;
+
+        float clearGap = Mathf.Max(
+            platformJumpWarriorSideGap,
+            samePlatformMainBoxContactSkin,
+            0.02f);
+
+        float safeLeftMaxCenterX = wBounds.min.x - bodyHalfX - clearGap;
+        float safeRightMinCenterX = wBounds.max.x + bodyHalfX + clearGap;
+
+        bool requestedWouldLandOnWarriorTop =
+            requestedCenterX > safeLeftMaxCenterX &&
+            requestedCenterX < safeRightMinCenterX;
+
+        if (keepOriginalLandingWhenAlreadyBesideWarrior && !requestedWouldLandOnWarriorTop)
+            return requestedLanding;
+
+        GetSafeCenterXRangeOnPlatform(
+            platformBounds,
+            bodyHalfX,
+            platformJumpLandingPlatformInset,
+            out float safeMinCenterX,
+            out float safeMaxCenterX);
+
+        float leftMin = safeMinCenterX;
+        float leftMax = Mathf.Min(safeMaxCenterX, safeLeftMaxCenterX);
+        float rightMin = Mathf.Max(safeMinCenterX, safeRightMinCenterX);
+        float rightMax = safeMaxCenterX;
+
+        bool leftFits = leftMax >= leftMin;
+        bool rightFits = rightMax >= rightMin;
+
+        bool preferLeft = PreferLandingLeftOfWarrior(
+            zBounds,
+            wBounds,
+            destinationPlatform,
+            bodyHalfX,
+            requestedCenterX);
+
+        float chosenCenterX;
+
+        if (leftFits || rightFits)
+        {
+            if (preferLeft && leftFits)
+                chosenCenterX = Mathf.Clamp(requestedCenterX, leftMin, leftMax);
+            else if (!preferLeft && rightFits)
+                chosenCenterX = Mathf.Clamp(requestedCenterX, rightMin, rightMax);
+            else if (leftFits)
+                chosenCenterX = Mathf.Clamp(requestedCenterX, leftMin, leftMax);
+            else
+                chosenCenterX = Mathf.Clamp(requestedCenterX, rightMin, rightMax);
+        }
+        else
+        {
+            // Tiny platform fallback: choose the valid platform point with the best
+            // separation from Warrior. This may not be a perfect side interval, but
+            // it still avoids choosing Warrior's center/top whenever possible.
+            float leftEdgeCandidate = safeMinCenterX;
+            float rightEdgeCandidate = safeMaxCenterX;
+
+            float leftSeparation = Mathf.Abs(leftEdgeCandidate - wBounds.center.x);
+            float rightSeparation = Mathf.Abs(rightEdgeCandidate - wBounds.center.x);
+
+            if (preferLeft && leftEdgeCandidate <= wBounds.center.x)
+                chosenCenterX = leftEdgeCandidate;
+            else if (!preferLeft && rightEdgeCandidate >= wBounds.center.x)
+                chosenCenterX = rightEdgeCandidate;
+            else
+                chosenCenterX = leftSeparation >= rightSeparation ? leftEdgeCandidate : rightEdgeCandidate;
+        }
+
+        chosenCenterX = Mathf.Clamp(chosenCenterX, safeMinCenterX, safeMaxCenterX);
+
+        // Convert from desired body-center X back to the Rigidbody/transform position X.
+        requestedLanding.x = chosenCenterX - bodyCenterOffsetX;
+        return requestedLanding;
+    }
+
+    private bool PreferLandingLeftOfWarrior(
+        Bounds zBounds,
+        Bounds warriorBounds,
+        PlatFormColliderTrigger destinationPlatform,
+        float bodyHalfX,
+        float requestedCenterX)
+    {
+        // Best attack position = stay on the side from which Zalayty approached,
+        // so after landing he faces Warrior instead of landing on top/crossing over.
+        if (zBounds.center.x < warriorBounds.center.x - sideEpsilon)
+            return true;
+
+        if (zBounds.center.x > warriorBounds.center.x + sideEpsilon)
+            return false;
+
+        if (requestedCenterX < warriorBounds.center.x - sideEpsilon)
+            return true;
+
+        if (requestedCenterX > warriorBounds.center.x + sideEpsilon)
+            return false;
+
+        return GetAvailableLeftSpaceForPlatformJump(destinationPlatform, warriorBounds, bodyHalfX) >=
+               GetAvailableRightSpaceForPlatformJump(destinationPlatform, warriorBounds, bodyHalfX);
+    }
+
+    private float GetAvailableLeftSpaceForPlatformJump(
+        PlatFormColliderTrigger platform,
+        Bounds warriorBounds,
+        float bodyHalfX)
+    {
+        if (platform == null || platform.platformCollider == null)
+            return 0f;
+
+        Bounds p = platform.platformCollider.bounds;
+        GetSafeCenterXRangeOnPlatform(
+            p,
+            bodyHalfX,
+            platformJumpLandingPlatformInset,
+            out float safeMinCenterX,
+            out _);
+
+        float clearGap = Mathf.Max(platformJumpWarriorSideGap, samePlatformMainBoxContactSkin, 0.02f);
+        float leftMax = warriorBounds.min.x - bodyHalfX - clearGap;
+        return Mathf.Max(0f, leftMax - safeMinCenterX);
+    }
+
+    private float GetAvailableRightSpaceForPlatformJump(
+        PlatFormColliderTrigger platform,
+        Bounds warriorBounds,
+        float bodyHalfX)
+    {
+        if (platform == null || platform.platformCollider == null)
+            return 0f;
+
+        Bounds p = platform.platformCollider.bounds;
+        GetSafeCenterXRangeOnPlatform(
+            p,
+            bodyHalfX,
+            platformJumpLandingPlatformInset,
+            out _,
+            out float safeMaxCenterX);
+
+        float clearGap = Mathf.Max(platformJumpWarriorSideGap, samePlatformMainBoxContactSkin, 0.02f);
+        float rightMin = warriorBounds.max.x + bodyHalfX + clearGap;
+        return Mathf.Max(0f, safeMaxCenterX - rightMin);
+    }
+
     private bool StartControlledWarriorTopRebound(Warrior warrior)
     {
         if (!TryComputeWarriorTopReboundLanding(
@@ -1454,12 +2485,19 @@ public class ZalaytyMonster : Enemy
         // Important: Warrior-top rebound must enter the normal Zalayty jump entry point.
         // Only this special rebound forces JumpTowardPositionAction. Normal Zalayty
         // movement remains independent and Warrior platform behavior remains untouched.
-        StartZalaytyJumpTo(
+        bool reboundStarted = StartZalaytyJumpTo(
             landing,
             jumpHeight,
             duration,
             landingPlatform,
             forceJumpTowardPositionAction: true);
+
+        if (!reboundStarted)
+        {
+            _warriorTopReboundActive = false;
+            RestoreIgnoredWarriorTopReboundCollisions();
+            return false;
+        }
 
         return true;
     }
@@ -1620,7 +2658,22 @@ public class ZalaytyMonster : Enemy
 
     private void GetSafeCenterXRangeOnPlatform(Bounds platformBounds, float bodyHalfX, out float safeMinCenterX, out float safeMaxCenterX)
     {
-        float inset = Mathf.Max(0f, warriorTopReboundPlatformInset);
+        GetSafeCenterXRangeOnPlatform(
+            platformBounds,
+            bodyHalfX,
+            warriorTopReboundPlatformInset,
+            out safeMinCenterX,
+            out safeMaxCenterX);
+    }
+
+    private void GetSafeCenterXRangeOnPlatform(
+        Bounds platformBounds,
+        float bodyHalfX,
+        float requestedInset,
+        out float safeMinCenterX,
+        out float safeMaxCenterX)
+    {
+        float inset = Mathf.Max(0f, requestedInset);
 
         safeMinCenterX = platformBounds.min.x + inset + bodyHalfX;
         safeMaxCenterX = platformBounds.max.x - inset - bodyHalfX;
