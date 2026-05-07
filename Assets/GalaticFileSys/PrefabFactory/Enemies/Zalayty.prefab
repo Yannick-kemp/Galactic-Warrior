@@ -408,6 +408,9 @@ MonoBehaviour:
   temporaryPlatformLossGraceTime: 0.45
   temporaryPlatformLossRetryDelay: 0.04
   recoverPlatformFromGroundPointsWhenMissing: 1
+  delayPathRecomputeAfterWarriorLeavesSamePlatform: 1
+  warriorSamePlatformLeaveGraceTime: 0.5
+  warriorSamePlatformLeaveRetryDelay: 0.04
   landingYOffset: 0.2
   takeoffEdgeMargin: 0.25
   dropSideOutEpsilon: 0.35
@@ -420,7 +423,7 @@ MonoBehaviour:
   requireSideContactForMainBoxAttack: 1
   sideAttackMinVerticalOverlap: 0.12
   sideAttackMinVerticalOverlapRatio: 0.18
-  samePlatformMainBoxContactSkin: 0.09
+  samePlatformMainBoxContactSkin: 0.11
   zalaytyImpactHitSkin: 0.1
   samePlatformMainBoxContactReleaseSkin: 0.12
   stopOnWarriorMainBoxContactEvenDuringPlatformMismatch: 1
@@ -444,6 +447,10 @@ MonoBehaviour:
   requireSqueezeThreatMarker: 1
   sideEpsilon: 0.05
   allowSqueezeExtraJump: 1
+  onlyTakeOffToChangePlatformsOrRebound: 1
+  cancelUnauthorizedUpwardLift: 1
+  unauthorizedLiftSnapBand: 0.25
+  unauthorizedLiftPlatformXInset: 0.02
   inRangeOrAttacking: 0
   useIndependentMovement: 1
   independentMoveArriveDistance: 0.08
@@ -453,6 +460,11 @@ MonoBehaviour:
   predictedLandingMaxDropPastTop: 0.45
   predictedLandingHorizontalSkin: 0.03
   stopHorizontalVelocityOnIndependentStop: 1
+  avoidWarriorTopLandingDuringPlatformJumps: 1
+  platformJumpWarriorSideGap: 0.18
+  platformJumpLandingPlatformInset: 0.3
+  onlyAvoidWarriorTopLandingOnWarriorPlatform: 1
+  keepOriginalLandingWhenAlreadyBesideWarrior: 1
   enableWarriorTopRebound: 1
   warriorTopReboundNormalY: 0.711
   warriorTopReboundBoundsBand: 0.1

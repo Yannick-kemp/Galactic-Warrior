@@ -39,6 +39,16 @@ namespace Assets.Scripts.Platforms
         [Tooltip("Vertical contact normal threshold used to recognize top-surface contacts.")]
         [SerializeField, Range(0f, 1f)] private float topContactNormalThreshold = 0.45f;
 
+        [Header("Respawn On Lift")]
+        [Tooltip("Extra surface offset used only when a character is respawned directly onto this lift.")]
+        [SerializeField, Min(0f)] private float respawnSurfaceOffset = 0.04f;
+
+        [Tooltip("Horizontal skin used when clamping the respawn X inside the lift top bounds.")]
+        [SerializeField, Min(0f)] private float respawnHorizontalSkin = 0.08f;
+
+        [Tooltip("Small fixed-update grace period that keeps the respawned character registered as a lift rider.")]
+        [SerializeField, Min(0f)] private float respawnSeatGraceSeconds = 0.25f;
+
         [Header("System")]
         [SerializeField] private string respawnId;
 
@@ -51,6 +61,7 @@ namespace Assets.Scripts.Platforms
         private readonly HashSet<CharacterController> _riders = new HashSet<CharacterController>();
         private readonly List<CharacterController> _ridersToRemove = new List<CharacterController>();
         private readonly Dictionary<int, Coroutine> _exitValidationCoroutines = new Dictionary<int, Coroutine>();
+        private readonly Dictionary<int, Coroutine> _respawnSeatCoroutines = new Dictionary<int, Coroutine>();
 
         public string RespawnId => respawnId;
         public bool IsMovingUpNow => _isMovingUp;
@@ -162,18 +173,19 @@ namespace Assets.Scripts.Platforms
                 return;
 
             AddRider(character);
-
             character.CurrentplatForm = this;
 
             if (character is Warrior warrior)
             {
                 warrior.CanMove = true;
+                warrior.CanAttackWarrior = true;
                 warrior.IsFallingEdge = false;
                 warrior.IsFallingPlfExit = false;
                 warrior.IsFallingHitEnemy = false;
                 warrior.IsFallingGrazesEdge = false;
                 warrior._blockAction = false;
                 warrior.LastSafePlatform = this;
+                warrior.LastSafePosition = GetSafeRespawnPositionFor(warrior, warrior.transform.position.x);
             }
             else if (character is ZalaytyMonster zalayty)
             {
@@ -186,6 +198,174 @@ namespace Assets.Scripts.Platforms
                 MoveRiderToSurface(character, Vector2.zero);
         }
 
+        public Vector3 GetSafeRespawnPositionFor(CharacterController character, float preferredWorldX)
+        {
+            Physics2D.SyncTransforms();
+
+            if (platformCollider == null)
+                return transform.position;
+
+            Collider2D support = GetStandingCollider(character);
+            Bounds platformBounds = platformCollider.bounds;
+
+            float halfWidth = support != null ? support.bounds.extents.x : 0.4f;
+            float halfHeight = support != null ? support.bounds.extents.y : 0.8f;
+
+            float minX = platformBounds.min.x + halfWidth + respawnHorizontalSkin;
+            float maxX = platformBounds.max.x - halfWidth - respawnHorizontalSkin;
+
+            float safeX = minX <= maxX
+                ? Mathf.Clamp(preferredWorldX, minX, maxX)
+                : platformBounds.center.x;
+
+            float safeY =
+                platformBounds.max.y +
+                halfHeight +
+                Mathf.Max(riderSurfaceOffset, respawnSurfaceOffset);
+
+            float safeZ = character != null
+                ? character.transform.position.z
+                : transform.position.z;
+
+            return new Vector3(safeX, safeY, safeZ);
+        }
+
+        public void RespawnRiderOnLift(CharacterController character, float preferredWorldX)
+        {
+            if (character == null || platformCollider == null)
+                return;
+
+            Physics2D.SyncTransforms();
+
+            Vector3 safePosition = GetSafeRespawnPositionFor(character, preferredWorldX);
+
+            SetPlatformCollisionForCharacter(character, ignore: false);
+
+            if (character is Warrior warrior)
+            {
+                warrior.StopMoveTowardCoroutine();
+                warrior.StopJumpTowardCoroutine();
+
+                warrior.CanMove = true;
+                warrior.CanAttackWarrior = true;
+
+                warrior.IsFallingEdge = false;
+                warrior.IsFallingPlfExit = false;
+                warrior.IsFallingHitEnemy = false;
+                warrior.IsFallingGrazesEdge = false;
+
+                warrior._blockAction = false;
+                warrior.LastSafePlatform = this;
+                warrior.LastSafePosition = safePosition;
+            }
+            else if (character is ZalaytyMonster zalayty)
+            {
+                zalayty.StopMoveTowardCoroutine();
+                zalayty.StopJumpTowardCoroutine();
+                zalayty.SetJumping(false);
+            }
+
+            if (character.rigidbody2 != null)
+            {
+                character.rigidbody2.simulated = true;
+                character.rigidbody2.linearVelocity = Vector2.zero;
+                character.rigidbody2.angularVelocity = 0f;
+                character.rigidbody2.constraints = RigidbodyConstraints2D.FreezeRotation;
+                character.rigidbody2.position = new Vector2(safePosition.x, safePosition.y);
+                character.transform.position = safePosition;
+                character.rigidbody2.WakeUp();
+            }
+            else
+            {
+                character.transform.position = safePosition;
+            }
+
+            Physics2D.SyncTransforms();
+
+            AddRider(character);
+            character.CurrentplatForm = this;
+
+            StopDownwardVelocity(character);
+
+            if (keepRidersSeatedOnSurface)
+                MoveRiderToSurface(character, Vector2.zero);
+
+            StartRespawnSeatGrace(character);
+        }
+
+        private void StartRespawnSeatGrace(CharacterController character)
+        {
+            if (character == null)
+                return;
+
+            int id = character.GetInstanceID();
+
+            if (_respawnSeatCoroutines.TryGetValue(id, out Coroutine oldRoutine) && oldRoutine != null)
+                StopCoroutine(oldRoutine);
+
+            _respawnSeatCoroutines[id] = StartCoroutine(RespawnSeatGraceRoutine(character, id));
+        }
+
+        private IEnumerator RespawnSeatGraceRoutine(CharacterController character, int id)
+        {
+            WaitForFixedUpdate wait = new WaitForFixedUpdate();
+            float endTime = Time.time + respawnSeatGraceSeconds;
+
+            while (character != null &&
+                   platformCollider != null &&
+                   Time.time < endTime)
+            {
+                SetPlatformCollisionForCharacter(character, ignore: false);
+
+                AddRider(character);
+                character.CurrentplatForm = this;
+
+                StopDownwardVelocity(character);
+
+                if (keepRidersSeatedOnSurface)
+                    MoveRiderToSurface(character, Vector2.zero);
+
+                if (character is Warrior warrior)
+                {
+                    warrior.CanMove = true;
+                    warrior.CanAttackWarrior = true;
+                    warrior.IsFallingEdge = false;
+                    warrior.IsFallingPlfExit = false;
+                    warrior.IsFallingHitEnemy = false;
+                    warrior.IsFallingGrazesEdge = false;
+                    warrior._blockAction = false;
+                    warrior.LastSafePlatform = this;
+                    warrior.LastSafePosition = GetSafeRespawnPositionFor(warrior, warrior.transform.position.x);
+                }
+                else if (character is ZalaytyMonster zalayty)
+                {
+                    zalayty.SetJumping(false);
+                }
+
+                yield return wait;
+            }
+
+            _respawnSeatCoroutines.Remove(id);
+        }
+
+        private void SetPlatformCollisionForCharacter(CharacterController character, bool ignore)
+        {
+            if (character == null || platformCollider == null)
+                return;
+
+            Collider2D[] colliders = character.GetComponentsInChildren<Collider2D>(true);
+
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                Collider2D col = colliders[i];
+
+                if (col == null || col.isTrigger)
+                    continue;
+
+                Physics2D.IgnoreCollision(platformCollider, col, ignore);
+            }
+        }
+
         private void AddRider(CharacterController character)
         {
             if (character == null)
@@ -194,6 +374,7 @@ namespace Assets.Scripts.Platforms
             _riders.Add(character);
 
             int id = character.GetInstanceID();
+
             if (_exitValidationCoroutines.TryGetValue(id, out Coroutine routine) && routine != null)
                 StopCoroutine(routine);
 
@@ -223,8 +404,15 @@ namespace Assets.Scripts.Platforms
                 MoveRiderByDelta(rider, finalDelta);
                 rider.CurrentplatForm = this;
 
-                if (rider is ZalaytyMonster zalayty)
+                if (rider is Warrior warrior)
+                {
+                    warrior.LastSafePlatform = this;
+                    warrior.LastSafePosition = GetSafeRespawnPositionFor(warrior, warrior.transform.position.x);
+                }
+                else if (rider is ZalaytyMonster zalayty)
+                {
                     zalayty.SetJumping(false);
+                }
             }
 
             for (int i = 0; i < _ridersToRemove.Count; i++)
@@ -334,6 +522,19 @@ namespace Assets.Scripts.Platforms
             if (rider == null || delta.sqrMagnitude <= 0.0000001f)
                 return;
 
+            // Zalayty has his own horizontal AI movement. When the lift executes after
+            // Zalayty's MovePosition in the same fixed step, Rigidbody2D.position still
+            // contains the old X. Using old position + lift delta would cancel his X move.
+            // Merge the lift delta into Zalayty's pending movement target instead.
+            if (rider is ZalaytyMonster zalayty &&
+                zalayty.TryGetIndependentMoveRequestForCurrentFixedStep(out Vector2 requestedPosition))
+            {
+                Vector2 mergedPosition = requestedPosition + delta;
+                zalayty.ApplyMovingPlatformMergedIndependentMove(mergedPosition);
+                Physics2D.SyncTransforms();
+                return;
+            }
+
             if (rider.rigidbody2 != null)
             {
                 Vector2 target = rider.rigidbody2.position + delta;
@@ -416,14 +617,21 @@ namespace Assets.Scripts.Platforms
             _riders.Remove(character);
 
             int id = character.GetInstanceID();
-            if (_exitValidationCoroutines.TryGetValue(id, out Coroutine routine) && routine != null)
-                StopCoroutine(routine);
+
+            if (_exitValidationCoroutines.TryGetValue(id, out Coroutine exitRoutine) && exitRoutine != null)
+                StopCoroutine(exitRoutine);
 
             _exitValidationCoroutines.Remove(id);
+
+            if (_respawnSeatCoroutines.TryGetValue(id, out Coroutine respawnRoutine) && respawnRoutine != null)
+                StopCoroutine(respawnRoutine);
+
+            _respawnSeatCoroutines.Remove(id);
 
             if (clearPlatformIfDetached && character.CurrentplatForm == this)
             {
                 Collider2D support = GetStandingCollider(character);
+
                 bool stillGeometricallyOnTop =
                     support != null &&
                     !IsPlatformIgnoredByCharacter(character) &&
@@ -443,7 +651,14 @@ namespace Assets.Scripts.Platforms
                     StopCoroutine(pair.Value);
             }
 
+            foreach (KeyValuePair<int, Coroutine> pair in _respawnSeatCoroutines)
+            {
+                if (pair.Value != null)
+                    StopCoroutine(pair.Value);
+            }
+
             _exitValidationCoroutines.Clear();
+            _respawnSeatCoroutines.Clear();
             _riders.Clear();
             _ridersToRemove.Clear();
         }

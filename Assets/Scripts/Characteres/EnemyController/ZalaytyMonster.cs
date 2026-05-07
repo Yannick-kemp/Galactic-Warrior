@@ -2,6 +2,7 @@
 using Assets.Scripts.Characteres.EnemyController;
 using Assets.Scripts.Characteres.WarriorController;
 using Assets.Scripts.Services;
+using Assets.Scripts.Platforms;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -97,17 +98,10 @@ public class ZalaytyMonster : Enemy
     [Tooltip("When true, Zalayty does not restart chase while a previous body-contact lock is still inside the release skin.")]
     [SerializeField] private bool useContactReleaseHysteresis = true;
 
-    [Tooltip("How often the same-platform contact lock is rechecked while Zalayty is touching/attacking.")]
-    [SerializeField, Min(0.01f)] private float samePlatformContactRecheckDelay = 0.04f;
-
     [Tooltip("When true, Zalayty keeps repeating contact attacks after cooldown while the MAIN BoxCollider2D bodies remain touching on the same platform.")]
     [SerializeField] private bool repeatAttackWhileMainBoxesStillTouchingOnSamePlatform = true;
-
     [Header("ExtraJump Conditions")]
-    [SerializeField] private float closeToWarriorDistance = 0.9f;   // "very close" distance
-    [SerializeField] private float warriorEdgeMargin = 1.80f;        // how near to platform edge counts as "near edge"
-    [SerializeField] private float touchingExtraRadius = 0.05f;     // optional small inflate
-
+    [SerializeField] private float warriorEdgeMargin = 1.80f;
 
     [Header("Hit Spark FX (Zalayty)")]
     [SerializeField] private GameObject sparkPrefab;          // assign Sparks.prefab
@@ -116,14 +110,11 @@ public class ZalaytyMonster : Enemy
     [SerializeField] private Vector3 sparkOffset = Vector3.zero;
     [SerializeField] private Transform hitPoint;
 
-
     [Header("Hit Gate")]
     [SerializeField] private bool requireTouchingToHit = true;
     [SerializeField] private bool requireSamePlatformToHit = true;
     [SerializeField] private bool requireTargetInFront = false;
-
     [Header("Squeeze ExtraJump (Group Logic)")]
-    [SerializeField] private bool enableSqueezeExtraJump = true;
 
     // how often we evaluate the group condition (cheap, but don’t do every frame)
     [SerializeField] private float squeezeCheckInterval = 0.12f;
@@ -153,13 +144,11 @@ public class ZalaytyMonster : Enemy
     [Tooltip("Horizontal inset used when checking whether Zalayty is still above the last known platform before cancelling unauthorized lift.")]
     [SerializeField, Min(0f)] private float unauthorizedLiftPlatformXInset = 0.02f;
 
-
     private float _nextSqueezeCheckTime;
     private float _lastSqueezeJumpTime;
     private float _nextAllowedSamePlatformContactAttackTime;
     private bool _samePlatformContactCombatLocked;
     private bool _samePlatformContactAttackWasActive;
-
 
     private Coroutine followRoutine;
 
@@ -167,7 +156,6 @@ public class ZalaytyMonster : Enemy
     public bool IsOnEdgePlatform => isOnEdgePlatform;
 
     public void SetJumping(bool v) => isOnEdgePlatform = v;
-
 
     public override bool HardAnchorToMovingPlatforms => false;
 
@@ -182,6 +170,64 @@ public class ZalaytyMonster : Enemy
 
     [Tooltip("Small tolerance used when deciding if Zalayty landed on a platform top.")]
     [SerializeField, Min(0f)] private float independentLandingBand = 0.16f;
+
+    [Header("Moving Platform Landing Validation - Zalayty Only")]
+    [Tooltip("When true, Zalayty does not finish a jump as grounded unless his body / ground points are really on the destination platform.")]
+    [SerializeField] private bool validateZalaytyLandingBeforeGrounded = true;
+
+    [Tooltip("When true, a jump target that belongs to a moving platform is refreshed during the arc using the platform's current bounds.")]
+    [SerializeField] private bool trackMovingLandingPlatformDuringJump = true;
+
+    [Tooltip("Extra horizontal tolerance used when validating that Zalayty is really above the target platform top.")]
+    [SerializeField, Min(0f)] private float movingLandingHorizontalSkin = 0.04f;
+
+    [Tooltip("How far above the platform top Zalayty may be and still be safely snapped onto the surface after a moving-platform jump.")]
+    [SerializeField, Min(0f)] private float movingLandingSnapMaxVerticalDistance = 0.42f;
+
+    [Tooltip("How far outside the platform side Zalayty may be and still be snapped back during a moving-platform landing correction.")]
+    [SerializeField, Min(0f)] private float movingLandingSnapMaxHorizontalDistance = 0.28f;
+
+    [Tooltip("Minimum time after a missed moving-platform landing where run/walk animations are blocked.")]
+    [SerializeField, Min(0f)] private float missedLandingAirborneAnimationLockTime = 0.18f;
+
+    [Tooltip("Gravity scale forced after a missed moving-platform landing so Zalayty falls/recover naturally instead of staying visually suspended.")]
+    [SerializeField, Min(0f)] private float missedLandingGravityScale = 2.5f;
+
+    [Header("Grounded Chase Stability - Zalayty Only")]
+    [Tooltip("Prevents chase jitter by keeping Zalayty grounded for a few frames after a valid platform contact. This does NOT validate jump landing; it is only used after Zalayty was already confirmed grounded.")]
+    [SerializeField] private bool useGroundedStickGraceDuringChase = true;
+
+    [Tooltip("Very short grounded grace used only during normal chase to absorb one-frame moving-platform/contact gaps.")]
+    [SerializeField, Min(0f)] private float groundedStickGraceTime = 0.08f;
+
+    [Tooltip("Maximum body-bottom distance above the platform top allowed during the short grounded chase grace.")]
+    [SerializeField, Min(0f)] private float groundedStickMaxVerticalSeparation = 0.12f;
+
+    [Header("Same Platform Micro-Separation - Zalayty Only")]
+    [Tooltip("When true, tiny same-platform body/ground-point gaps do not cancel Zalayty's ground chase or force airborne animation.")]
+    [SerializeField] private bool preserveSamePlatformChaseDuringMicroSeparation = true;
+
+    [Tooltip("How long after a confirmed shared platform Zalayty may treat a tiny gap as micro-separation instead of real takeoff.")]
+    [SerializeField, Min(0f)] private float samePlatformMicroSeparationGraceTime = 0.18f;
+
+    [Tooltip("Maximum Zalayty body-bottom gap above the platform top that is still considered same-platform micro-separation.")]
+    [SerializeField, Min(0f)] private float samePlatformMicroSeparationMaxVerticalGap = 0.18f;
+
+    [Tooltip("Horizontal tolerance used when checking whether Zalayty's body is still above the shared platform during micro-separation.")]
+    [SerializeField, Min(0f)] private float samePlatformMicroSeparationHorizontalSkin = 0.04f;
+
+    private bool _missedMovingPlatformLandingRecoveryActive;
+    private float _forceAirborneAnimationUntil = -999f;
+    private PlatFormColliderTrigger _lastReallyGroundedPlatform;
+    private float _lastReallyGroundedTime = -999f;
+
+    // Heartbeat sent by MovingHorizontalPlatform / moving lift passenger systems
+    // while Zalayty is physically supported on their top surface.
+    // This is intentionally separate from GroundPoints because child-collider contact
+    // or Rigidbody2D.MovePosition timing can make ground points miss one/few frames
+    // even though the lift is correctly carrying Zalayty.
+    private PlatFormColliderTrigger _lastMovingPlatformTopSupportPlatform;
+    private float _lastMovingPlatformTopSupportTime = -999f;
 
     [Header("Independent Jump Anti-Tunneling")]
     [Tooltip("If true, Zalayty predicts destination platform top crossing during independent jumps instead of waiting for collision callbacks.")]
@@ -198,6 +244,178 @@ public class ZalaytyMonster : Enemy
 
     [Tooltip("Stops only Zalayty horizontal velocity when his independent movement is interrupted.")]
     [SerializeField] private bool stopHorizontalVelocityOnIndependentStop = true;
+
+    // MovingVerticalPlatform can execute after Zalayty's independent MovePosition
+    // inside the same physics step. Rigidbody2D.MovePosition does not immediately
+    // update rigidbody2.position, so the lift must know Zalayty's pending X target
+    // and add only its vertical elevator correction instead of overwriting X.
+    private Vector2 _lastRequestedIndependentMovePosition;
+    private float _lastRequestedIndependentMoveFixedTime = -999f;
+
+    // Dynamic same-platform chase target.
+    // IMPORTANT: activesMoveCoroutine can stay non-null while the coroutine is alive.
+    // Therefore FollowWarriorLoop must be able to retarget the existing coroutine
+    // instead of waiting for activesMoveCoroutine to become null.
+    private float _currentIndependentMoveTargetX;
+    private Warrior _currentIndependentMoveTargetWarrior;
+    private bool _hasCurrentIndependentMoveTarget;
+
+    public bool TryGetIndependentMoveRequestForCurrentFixedStep(out Vector2 requestedPosition)
+    {
+        requestedPosition = _lastRequestedIndependentMovePosition;
+
+        if (!useIndependentMovement)
+            return false;
+
+        if (rigidbody2 == null)
+            return false;
+
+        if (!_isMoving || _isJumping || activesMoveCoroutine == null || activesJumpCoroutine != null)
+            return false;
+
+        return Mathf.Abs(_lastRequestedIndependentMoveFixedTime - Time.fixedTime) <= 0.0001f;
+    }
+
+    public void ApplyMovingPlatformMergedIndependentMove(Vector2 mergedPosition)
+    {
+        _lastRequestedIndependentMovePosition = mergedPosition;
+        _lastRequestedIndependentMoveFixedTime = Time.fixedTime;
+
+        if (rigidbody2 != null)
+            rigidbody2.MovePosition(mergedPosition);
+        else
+            transform.position = new Vector3(mergedPosition.x, mergedPosition.y, transform.position.z);
+    }
+
+    /// <summary>
+    /// MovingHorizontalPlatform uses this to avoid overwriting Zalayty's own
+    /// WaitForFixedUpdate movement. When this returns true, the platform exposes its
+    /// delta and Zalayty adds it inside MoveZalaytyBody().
+    /// </summary>
+    public bool ShouldApplyHorizontalMovingPlatformCarryInsideOwnMove()
+    {
+        if (!useIndependentMovement)
+            return false;
+
+        if (!_isMoving || !_hasCurrentIndependentMoveTarget || activesMoveCoroutine == null)
+            return false;
+
+        if (_isJumping || activesJumpCoroutine != null)
+            return false;
+
+        if (!CanMove || _deathStarted || IsStunned)
+            return false;
+
+        return true;
+    }
+
+    private bool TryGetHorizontalMovingPlatformCarryDeltaForOwnMove(out Vector2 carryDelta)
+    {
+        carryDelta = Vector2.zero;
+
+        if (!useIndependentMovement)
+            return false;
+
+        if (_isJumping || activesJumpCoroutine != null)
+            return false;
+
+        MovingHorizontalPlatform movingPlatform = CurrentplatForm as MovingHorizontalPlatform;
+        if (movingPlatform == null)
+            movingPlatform = _lastKnownPlatform as MovingHorizontalPlatform;
+
+        if (movingPlatform == null)
+            return false;
+
+        if (!HasRecentMovingPlatformTopSupportForGroundMovement(movingPlatform))
+            return false;
+
+        if (!movingPlatform.TryGetHorizontalCarryDeltaForCurrentFixedStep(this, out carryDelta))
+            return false;
+
+        return Mathf.Abs(carryDelta.x) > 0.000001f;
+    }
+
+    private void RememberIndependentMoveRequest(Vector2 position)
+    {
+        if (!useIndependentMovement)
+            return;
+
+        _lastRequestedIndependentMovePosition = position;
+        _lastRequestedIndependentMoveFixedTime = Time.fixedTime;
+    }
+
+    private void ClearIndependentMoveRequest()
+    {
+        _lastRequestedIndependentMoveFixedTime = -999f;
+    }
+
+    /// <summary>
+    /// Called by a moving platform that has already verified that Zalayty is a real
+    /// top-surface passenger. This lets the chase guard accept the moving platform
+    /// as valid ground even when GroundPoints miss for one physics step.
+    /// </summary>
+    public void NotifyMovingPlatformTopSupport(PlatFormColliderTrigger platform)
+    {
+        if (platform == null || platform.platformCollider == null)
+            return;
+
+        if (_deathStarted || currentHealth <= 0f)
+            return;
+
+        // Do not convert a Warrior-top rebound into normal ground chase.
+        if (_warriorTopReboundActive)
+            return;
+
+        // A verified top-surface contact with this moving platform is the landing
+        // confirmation. Clear stale jump state so CanUseZalaytyGroundMovementNow()
+        // does not reject the chase while Zalayty is visibly seated on the platform.
+        if (activesJumpCoroutine != null)
+        {
+            StopCoroutine(activesJumpCoroutine);
+            activesJumpCoroutine = null;
+        }
+
+        _isJumping = false;
+        SetJumping(false);
+        DescendentPhase = false;
+        targetReached = true;
+
+        CurrentplatForm = platform;
+        _lastKnownPlatform = platform;
+        _lastKnownPlatformTime = Time.time;
+
+        _lastReallyGroundedPlatform = platform;
+        _lastReallyGroundedTime = Time.time;
+
+        _lastMovingPlatformTopSupportPlatform = platform;
+        _lastMovingPlatformTopSupportTime = Time.time;
+
+        _missedMovingPlatformLandingRecoveryActive = false;
+        _forceAirborneAnimationUntil = -999f;
+    }
+
+    private bool HasRecentMovingPlatformTopSupportForGroundMovement(PlatFormColliderTrigger platform)
+    {
+        if (platform == null || platform.platformCollider == null)
+            return false;
+
+        if (_lastMovingPlatformTopSupportPlatform != platform)
+            return false;
+
+        if (_deathStarted || currentHealth <= 0f)
+            return false;
+
+        if (_warriorTopReboundActive)
+            return false;
+
+        if (_missedMovingPlatformLandingRecoveryActive)
+            return false;
+
+        // Slightly larger than groundedStickGraceTime so a coroutine running between
+        // two FixedUpdate ticks does not reject a valid lift passenger.
+        float grace = Mathf.Max(groundedStickGraceTime, Time.fixedDeltaTime * 3f, 0.10f);
+        return Time.time <= _lastMovingPlatformTopSupportTime + grace;
+    }
 
     [Header("Platform Jump Landing - Avoid Warrior Top")]
     [Tooltip("When true, Zalayty adjusts platform-change landing X so he lands beside Warrior instead of on Warrior's top bound.")]
@@ -285,12 +503,6 @@ public class ZalaytyMonster : Enemy
         if (followRoutine != null) StopCoroutine(followRoutine);
         followRoutine = StartCoroutine(FollowWarriorLoop());
     }
-
-    [SerializeField] private float maxFallSpeed = 25f;
-
-    [SerializeField] private LayerMask platformMask;
-
-    [SerializeField] private float skin = 0.02f;
 
     protected override void Update()
     {
@@ -451,7 +663,6 @@ public class ZalaytyMonster : Enemy
         return false;
     }
 
-
     private bool IsWarriorNearPlatformEdge(Warrior warrior)
     {
         if (CurrentplatForm == null || CurrentplatForm.platformCollider == null) return false;
@@ -463,11 +674,6 @@ public class ZalaytyMonster : Enemy
         // Warrior near left edge OR near right edge.
         bool nearLeft = war.min.x <= plat.min.x + warriorEdgeMargin;
         bool nearRight = war.max.x >= plat.max.x - warriorEdgeMargin;
-
-        if (nearLeft || nearRight)
-        {
-            int t = 0;
-        }
         return nearLeft || nearRight;
     }
 
@@ -507,6 +713,16 @@ public class ZalaytyMonster : Enemy
             TryRecoverCurrentPlatformFromGroundPoints();
             RememberKnownPlatforms(warrior);
             UpdateWarriorSamePlatformLeaveGraceState(warrior);
+
+            // Zalayty-only moonwalk guard:
+            // If a moving platform has shifted away or a stale CurrentplatForm says
+            // "grounded" while the body/ground-points are not really on that platform,
+            // block chase/run immediately and stay in airborne recovery.
+            if (ShouldBlockGroundLogicBecauseZalaytyIsAirborne())
+            {
+                yield return new WaitForSeconds(temporaryPlatformLossRetryDelay);
+                continue;
+            }
 
             // First priority: real body contact with Warrior means STOP NOW.
             // Do this before platform-null/path checks so a temporary CurrentplatForm
@@ -617,11 +833,22 @@ public class ZalaytyMonster : Enemy
                     }
                 }
 
-                if (CanMove && activesMoveCoroutine == null && !_isJumping)
+                bool canUseGroundMovement = CanUseZalaytyGroundMovementNow(warrior);
+
+                if (CanMove && canUseGroundMovement)
                 {
                     ExitWaitAnimation();
                     RunAnimationDisplay();
-                    StartZalaytyMoveToX(targetX);
+
+                    // Do NOT gate this with activesMoveCoroutine == null.
+                    // On a moving platform the coroutine may stay alive while Warrior's
+                    // world X changes. StartZalaytyMoveToX now retargets the active loop.
+                    StartZalaytyMoveToX(targetX, warrior);
+                }
+                else if (!canUseGroundMovement)
+                {
+                    StopMoveTowardCoroutine();
+                    ForceZalaytyAirborneAnimationOnly();
                 }
 
                 yield return new WaitForSeconds(repathInterval);
@@ -828,6 +1055,12 @@ public class ZalaytyMonster : Enemy
         if (warrior == null || warrior.IsDead)
             return;
 
+        if (!CanUseZalaytyGroundMovementNow(warrior))
+        {
+            ForceZalaytyAirborneAnimationOnly();
+            return;
+        }
+
         float targetX = GetIndependentFollowTargetX(warrior);
         SetDirectionVariables(targetX);
 
@@ -853,7 +1086,7 @@ public class ZalaytyMonster : Enemy
             RunAnimationDisplay();
 
             if (activesMoveCoroutine == null)
-                StartZalaytyMoveToX(targetX);
+                StartZalaytyMoveToX(targetX, warrior);
         }
     }
 
@@ -882,6 +1115,9 @@ public class ZalaytyMonster : Enemy
 
                 PlatFormColliderTrigger platform = hit.GetComponentInParent<PlatFormColliderTrigger>();
                 if (platform == null || platform.platformCollider == null)
+                    continue;
+
+                if (!IsZalaytyReallyGroundedOnPlatform(platform))
                     continue;
 
                 CurrentplatForm = platform;
@@ -938,9 +1174,15 @@ public class ZalaytyMonster : Enemy
         if (IsAttackAnimationActive())
             return;
 
-        if (_isJumping || activesJumpCoroutine != null || CountGroundPoints() == 0)
-            JumpAnimationDisplay();
-        else if (CanMove)
+        Warrior warrior = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
+
+        if (!CanUseZalaytyGroundMovementNow(warrior))
+        {
+            ForceZalaytyAirborneAnimationOnly();
+            return;
+        }
+
+        if (CanMove)
             RunAnimationDisplay();
     }
 
@@ -955,16 +1197,48 @@ public class ZalaytyMonster : Enemy
         return warrior.transform.position.x;
     }
 
-    private void StartZalaytyMoveToX(float targetX)
+    private void StartZalaytyMoveToX(float targetX, Warrior warrior = null)
     {
-        StopMoveTowardCoroutine();
+        if (!CanUseZalaytyGroundMovementNow(warrior))
+        {
+            StopMoveTowardCoroutine();
+            ForceZalaytyAirborneAnimationOnly();
+            return;
+        }
+
         ExitWaitAnimation();
         RunAnimationDisplay();
 
-        activesMoveCoroutine = useIndependentMovement
-            ? MoveTowardXIndependent(targetX)
-            : MoveTowardPostionAction(targetX);
+        if (useIndependentMovement)
+        {
+            // Retarget the current chase. This is required on moving platforms:
+            // activesMoveCoroutine may remain non-null while Warrior's world X changes.
+            _currentIndependentMoveTargetX = targetX;
+            _currentIndependentMoveTargetWarrior = warrior;
+            _hasCurrentIndependentMoveTarget = true;
 
+            // If the existing independent coroutine is alive, do not start another one.
+            // It will read the refreshed target on the next FixedUpdate.
+            if (activesMoveCoroutine != null && _isMoving)
+                return;
+
+            // Stale case: an IEnumerator reference exists, but no movement loop owns it.
+            // Clear it before starting a clean coroutine.
+            if (activesMoveCoroutine != null)
+                StopMoveTowardCoroutine();
+
+            _currentIndependentMoveTargetX = targetX;
+            _currentIndependentMoveTargetWarrior = warrior;
+            _hasCurrentIndependentMoveTarget = true;
+
+            activesMoveCoroutine = MoveTowardXIndependent(targetX);
+            StartCoroutine(activesMoveCoroutine);
+            return;
+        }
+
+        // Legacy CharacterController movement still uses one fixed target, so restart it.
+        StopMoveTowardCoroutine();
+        activesMoveCoroutine = MoveTowardPostionAction(targetX);
         StartCoroutine(activesMoveCoroutine);
     }
 
@@ -973,15 +1247,38 @@ public class ZalaytyMonster : Enemy
         if (_isMoving)
             yield break;
 
+        _currentIndependentMoveTargetX = targetX;
+        _hasCurrentIndependentMoveTarget = true;
+
         _isMoving = true;
         WaitForFixedUpdate wait = new WaitForFixedUpdate();
 
-        while (this != null && Mathf.Abs(targetX - transform.position.x) > independentMoveArriveDistance)
+        while (this != null && _hasCurrentIndependentMoveTarget)
         {
             if (!CanMove || _deathStarted || IsStunned)
                 break;
 
-            Warrior warrior = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
+            Warrior warrior = _currentIndependentMoveTargetWarrior != null
+                ? _currentIndependentMoveTargetWarrior
+                : (GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null);
+
+            if (warrior != null)
+            {
+                // Dynamic target: keep following Warrior's current world X while the
+                // horizontal platform is also moving both bodies.
+                _currentIndependentMoveTargetX = GetIndependentFollowTargetX(warrior);
+            }
+
+            targetX = _currentIndependentMoveTargetX;
+
+            // Important: this check must receive Warrior context. Without it, a tiny
+            // same-platform ground-point/body gap makes Zalayty look airborne even
+            // while he is still logically chasing Warrior on the shared platform.
+            if (!CanUseZalaytyGroundMovementNow(warrior))
+            {
+                ForceZalaytyAirborneAnimationOnly();
+                break;
+            }
 
             // Stop as soon as the MAIN bodies touch. If a lock already exists, use
             // the wider release skin so tiny solver gaps do not cause chase/attack jitter.
@@ -1000,11 +1297,15 @@ public class ZalaytyMonster : Enemy
             if (_samePlatformContactCombatLocked)
                 ReleaseContactCombatForImmediateChase();
 
-            FlipCharacter(targetX);
-
             Vector2 current = rigidbody2 != null
                 ? rigidbody2.position
                 : (Vector2)transform.position;
+
+            float distanceX = Mathf.Abs(targetX - current.x);
+            if (distanceX <= independentMoveArriveDistance)
+                break;
+
+            FlipCharacter(targetX);
 
             float step = Speed * Time.fixedDeltaTime;
             float nextX = Mathf.MoveTowards(current.x, targetX, step);
@@ -1014,6 +1315,8 @@ public class ZalaytyMonster : Enemy
         }
 
         StopHorizontalVelocityIfNeeded();
+        _hasCurrentIndependentMoveTarget = false;
+        _currentIndependentMoveTargetWarrior = null;
         _isMoving = false;
         activesMoveCoroutine = null;
     }
@@ -1165,11 +1468,23 @@ public class ZalaytyMonster : Enemy
         _isJumping = true;
         targetReached = false;
         DescendentPhase = false;
-        SetJumping(false);
+        SetJumping(true);
+        _missedMovingPlatformLandingRecoveryActive = false;
+        _forceAirborneAnimationUntil = Time.time + missedLandingAirborneAnimationLockTime;
+        JumpAnimationDisplay();
 
         Vector2 start = rigidbody2 != null
             ? rigidbody2.position
             : (Vector2)transform.position;
+
+        float targetOffsetFromPlatformCenterX = 0f;
+        bool canTrackPlatformTarget =
+            trackMovingLandingPlatformDuringJump &&
+            expectedLandingPlatform != null &&
+            expectedLandingPlatform.platformCollider != null;
+
+        if (canTrackPlatformTarget)
+            targetOffsetFromPlatformCenterX = landing.x - expectedLandingPlatform.platformCollider.bounds.center.x;
 
         float elapsed = 0f;
         float previousY = start.y;
@@ -1186,16 +1501,22 @@ public class ZalaytyMonster : Enemy
                 ? rigidbody2.position
                 : (Vector2)transform.position;
 
+            Vector2 currentLanding = ResolveLiveLandingTargetForPlatform(
+                landing,
+                expectedLandingPlatform,
+                targetOffsetFromPlatformCenterX,
+                canTrackPlatformTarget);
+
             elapsed += Time.fixedDeltaTime;
             float t = Mathf.Clamp01(elapsed / duration);
 
-            Vector2 nextPosition = Vector2.Lerp(start, landing, t);
+            Vector2 nextPosition = Vector2.Lerp(start, currentLanding, t);
             nextPosition.y += height * Mathf.Sin(Mathf.PI * t);
 
             DescendentPhase = nextPosition.y < previousY;
             previousY = nextPosition.y;
 
-            FlipCharacter(landing.x);
+            FlipCharacter(currentLanding.x);
 
             if (TryResolveIndependentPredictedTopLanding(
                     currentPosition,
@@ -1205,16 +1526,32 @@ public class ZalaytyMonster : Enemy
                     out PlatFormColliderTrigger resolvedPlatform))
             {
                 MoveZalaytyBody(resolvedLanding);
-                FinishIndependentJumpOnPlatform(resolvedPlatform);
+
+                // Whether the landing is accepted or rejected, this controlled arc
+                // is finished. If rejected, TryFinish... already switched Zalayty
+                // to natural airborne recovery and must not be overwritten by the
+                // rest of this coroutine.
+                TryFinishIndependentJumpOnPlatformIfReallyGrounded(resolvedPlatform, resolvedLanding.x);
                 yield break;
             }
 
             MoveZalaytyBody(nextPosition);
+            ForceZalaytyAirborneAnimationOnly();
             yield return wait;
         }
 
-        MoveZalaytyBody(landing);
-        FinishIndependentJumpOnPlatform(expectedLandingPlatform);
+        Vector2 finalLanding = ResolveLiveLandingTargetForPlatform(
+            landing,
+            expectedLandingPlatform,
+            targetOffsetFromPlatformCenterX,
+            canTrackPlatformTarget);
+
+        MoveZalaytyBody(finalLanding);
+
+        if (TryFinishIndependentJumpOnPlatformIfReallyGrounded(expectedLandingPlatform, finalLanding.x))
+            yield break;
+
+        BeginMissedMovingPlatformLandingRecovery(expectedLandingPlatform);
     }
 
     private bool TryResolveIndependentPredictedTopLanding(
@@ -1353,18 +1690,491 @@ public class ZalaytyMonster : Enemy
         _isJumping = false;
         activesJumpCoroutine = null;
         SetJumping(false);
+        _missedMovingPlatformLandingRecoveryActive = false;
+        _forceAirborneAnimationUntil = -999f;
+        RememberReallyGroundedOnPlatform(platform);
+    }
+
+    private Vector2 ResolveLiveLandingTargetForPlatform(
+        Vector2 originalLanding,
+        PlatFormColliderTrigger expectedLandingPlatform,
+        float targetOffsetFromPlatformCenterX,
+        bool canTrackPlatformTarget)
+    {
+        if (!canTrackPlatformTarget || expectedLandingPlatform == null || expectedLandingPlatform.platformCollider == null)
+            return originalLanding;
+
+        float liveWantedX = expectedLandingPlatform.platformCollider.bounds.center.x + targetOffsetFromPlatformCenterX;
+        return BuildIndependentTopLandingPosition(expectedLandingPlatform, liveWantedX);
+    }
+
+    private bool TryFinishIndependentJumpOnPlatformIfReallyGrounded(
+        PlatFormColliderTrigger platform,
+        float preferredLandingX)
+    {
+        if (platform == null || platform.platformCollider == null)
+        {
+            BeginMissedMovingPlatformLandingRecovery(platform);
+            return false;
+        }
+
+        if (!validateZalaytyLandingBeforeGrounded)
+        {
+            FinishIndependentJumpOnPlatform(platform);
+            return true;
+        }
+
+        Physics2D.SyncTransforms();
+
+        if (IsZalaytyReallyGroundedOnPlatform(platform))
+        {
+            FinishIndependentJumpOnPlatform(platform);
+            return true;
+        }
+
+        if (TrySeatZalaytyOnPlatformIfClose(platform, preferredLandingX, out Vector2 seatedPosition))
+        {
+            MoveZalaytyBody(seatedPosition);
+            Physics2D.SyncTransforms();
+
+            if (IsZalaytyReallyGroundedOnPlatform(platform))
+            {
+                FinishIndependentJumpOnPlatform(platform);
+                return true;
+            }
+        }
+
+        BeginMissedMovingPlatformLandingRecovery(platform);
+        return false;
+    }
+
+    public bool IsZalaytyReallyGroundedOnPlatform(PlatFormColliderTrigger platform)
+    {
+        if (platform == null || platform.platformCollider == null)
+            return false;
+
+        Physics2D.SyncTransforms();
+
+        Collider2D body = GetZalaytyBodyCollider();
+        if (body == null || !body.enabled)
+            return false;
+
+        Bounds platformBounds = platform.platformCollider.bounds;
+        Bounds bodyBounds = body.bounds;
+
+        bool horizontallyOverPlatform =
+            bodyBounds.max.x > platformBounds.min.x + movingLandingHorizontalSkin &&
+            bodyBounds.min.x < platformBounds.max.x - movingLandingHorizontalSkin;
+
+        if (!horizontallyOverPlatform)
+            return false;
+
+        // IMPORTANT:
+        // Ground points are the strongest signal. Do this BEFORE checking vertical
+        // velocity, because a MovingVerticalPlatform that carries Zalayty upward can
+        // give his Rigidbody2D a positive Y velocity while he is still perfectly seated.
+        // If we reject that frame, the follow loop alternates Run/Jump/Stop and creates
+        // chase jitter.
+        if (CountGroundPointsOnSpecificPlatform(platform) > 0)
+        {
+            RememberReallyGroundedOnPlatform(platform);
+            return true;
+        }
+
+        // Bounds fallback is weaker than real ground points. Use it for landing and
+        // one-frame contact timing, but only when Zalayty is descending/stable. This
+        // keeps the anti-moonwalk protection: a real upward takeoff is not accepted
+        // as grounded just because the bounds are still close to the platform top.
+        bool movingDownOrStable =
+            rigidbody2 == null ||
+            rigidbody2.linearVelocity.y <= 0.08f ||
+            DescendentPhase;
+
+        if (!movingDownOrStable)
+            return false;
+
+        float bottomAboveTop = bodyBounds.min.y - platformBounds.max.y;
+        float maxAllowedAboveTop = Mathf.Max(
+            independentLandingBand,
+            landingYOffset + movingLandingSnapMaxVerticalDistance);
+
+        bool bottomCloseToTop =
+            bottomAboveTop >= -independentLandingBand &&
+            bottomAboveTop <= maxAllowedAboveTop;
+
+        if (bottomCloseToTop)
+        {
+            RememberReallyGroundedOnPlatform(platform);
+            return true;
+        }
+
+        return false;
+    }
+
+    private void RememberReallyGroundedOnPlatform(PlatFormColliderTrigger platform)
+    {
+        if (platform == null)
+            return;
+
+        _lastReallyGroundedPlatform = platform;
+        _lastReallyGroundedTime = Time.time;
+    }
+
+    private bool IsZalaytyGroundedEnoughForGroundMovement(PlatFormColliderTrigger platform)
+    {
+        if (IsZalaytyReallyGroundedOnPlatform(platform))
+            return true;
+
+        if (!useGroundedStickGraceDuringChase)
+            return false;
+
+        if (platform == null || platform.platformCollider == null)
+            return false;
+
+        if (_missedMovingPlatformLandingRecoveryActive)
+            return false;
+
+        if (_isJumping || activesJumpCoroutine != null)
+            return false;
+
+        if (_lastReallyGroundedPlatform != platform)
+            return false;
+
+        if (Time.time > _lastReallyGroundedTime + groundedStickGraceTime)
+            return false;
+
+        return IsBodyStillCloseEnoughToPlatformForGroundMovement(platform);
+    }
+
+    private bool IsBodyStillCloseEnoughToPlatformForGroundMovement(PlatFormColliderTrigger platform)
+    {
+        if (platform == null || platform.platformCollider == null)
+            return false;
+
+        Collider2D body = GetZalaytyBodyCollider();
+        if (body == null || !body.enabled)
+            return false;
+
+        Physics2D.SyncTransforms();
+
+        Bounds platformBounds = platform.platformCollider.bounds;
+        Bounds bodyBounds = body.bounds;
+
+        bool horizontallyOverPlatform =
+            bodyBounds.max.x > platformBounds.min.x + movingLandingHorizontalSkin &&
+            bodyBounds.min.x < platformBounds.max.x - movingLandingHorizontalSkin;
+
+        if (!horizontallyOverPlatform)
+            return false;
+
+        float bottomAboveTop = bodyBounds.min.y - platformBounds.max.y;
+        float maxAllowedAboveTop = landingYOffset + groundedStickMaxVerticalSeparation;
+
+        return bottomAboveTop >= -independentLandingBand &&
+               bottomAboveTop <= maxAllowedAboveTop;
+    }
+
+    private int CountGroundPointsOnSpecificPlatform(PlatFormColliderTrigger platform)
+    {
+        if (platform == null || platform.platformCollider == null || GroundPoints == null)
+            return 0;
+
+        int count = 0;
+
+        for (int p = 0; p < GroundPoints.Length; p++)
+        {
+            Transform point = GroundPoints[p];
+            if (point == null)
+                continue;
+
+            Collider2D[] hits = Physics2D.OverlapCircleAll(point.position, Groundradius, PlatformLayer);
+            for (int i = 0; i < hits.Length; i++)
+            {
+                Collider2D hit = hits[i];
+                if (hit == null)
+                    continue;
+
+                if (hit == platform.platformCollider || hit.GetComponentInParent<PlatFormColliderTrigger>() == platform)
+                {
+                    count++;
+                    break;
+                }
+            }
+        }
+
+        return count;
+    }
+
+    private bool TrySeatZalaytyOnPlatformIfClose(
+        PlatFormColliderTrigger platform,
+        float preferredLandingX,
+        out Vector2 seatedPosition)
+    {
+        seatedPosition = rigidbody2 != null
+            ? rigidbody2.position
+            : (Vector2)transform.position;
+
+        if (platform == null || platform.platformCollider == null)
+            return false;
+
+        Collider2D body = GetZalaytyBodyCollider();
+        if (body == null)
+            return false;
+
+        Physics2D.SyncTransforms();
+
+        Bounds platformBounds = platform.platformCollider.bounds;
+        Bounds bodyBounds = body.bounds;
+
+        bool horizontallyClose =
+            bodyBounds.max.x > platformBounds.min.x - movingLandingSnapMaxHorizontalDistance &&
+            bodyBounds.min.x < platformBounds.max.x + movingLandingSnapMaxHorizontalDistance;
+
+        if (!horizontallyClose)
+            return false;
+
+        float bottomAboveTop = bodyBounds.min.y - platformBounds.max.y;
+        bool verticallyClose =
+            bottomAboveTop >= -independentLandingBand &&
+            bottomAboveTop <= landingYOffset + movingLandingSnapMaxVerticalDistance;
+
+        if (!verticallyClose)
+            return false;
+
+        if (rigidbody2 != null && rigidbody2.linearVelocity.y > 0.08f && !DescendentPhase)
+            return false;
+
+        seatedPosition = BuildIndependentTopLandingPosition(platform, preferredLandingX);
+        return true;
+    }
+
+    private void BeginMissedMovingPlatformLandingRecovery(PlatFormColliderTrigger missedPlatform)
+    {
+        if (CurrentplatForm == missedPlatform)
+            CurrentplatForm = null;
+        else if (CurrentplatForm != null && !IsZalaytyReallyGroundedOnPlatform(CurrentplatForm))
+            CurrentplatForm = null;
+
+        if (_activeJumpTargetPlatform == missedPlatform)
+            _activeJumpTargetPlatform = null;
+
+        RestoreActiveJumpDownSourcePlatformNow();
+
+        _missedMovingPlatformLandingRecoveryActive = true;
+        _forceAirborneAnimationUntil = Time.time + missedLandingAirborneAnimationLockTime;
+        _lastReallyGroundedPlatform = null;
+        _lastReallyGroundedTime = -999f;
+
+        targetReached = false;
+        DescendentPhase = true;
+        _isJumping = false;
+        activesJumpCoroutine = null;
+        SetJumping(true);
+
+        StopHorizontalVelocityIfNeeded();
+
+        if (rigidbody2 != null)
+        {
+            rigidbody2.gravityScale = Mathf.Max(rigidbody2.gravityScale, missedLandingGravityScale);
+
+            Vector2 v = rigidbody2.linearVelocity;
+            if (v.y > -0.05f)
+                v.y = -0.05f;
+            rigidbody2.linearVelocity = v;
+        }
+
+        ForceZalaytyAirborneAnimationOnly();
+    }
+
+    private bool CanUseZalaytyGroundMovementNow(Warrior warrior = null)
+    {
+        if (_deathStarted || currentHealth <= 0f)
+            return false;
+
+        if (_isJumping || activesJumpCoroutine != null)
+            return false;
+
+        if (Time.time < _forceAirborneAnimationUntil)
+            return false;
+
+        if (CurrentplatForm != null && CurrentplatForm.platformCollider != null)
+        {
+            if (IsZalaytyGroundedEnoughForGroundMovement(CurrentplatForm))
+                return true;
+
+            // Moving platforms can have valid top support even when Zalayty's
+            // GroundPoints / main body bounds miss for a frame because the passenger
+            // system applies its own MovePosition later in the same physics step.
+            if (HasRecentMovingPlatformTopSupportForGroundMovement(CurrentplatForm))
+                return true;
+        }
+
+        if (HasRecentMovingPlatformTopSupportForGroundMovement(_lastKnownPlatform))
+            return true;
+
+        return ShouldPreserveSamePlatformChaseDuringMicroSeparation(warrior);
+    }
+
+    private bool ShouldPreserveSamePlatformChaseDuringMicroSeparation(Warrior warrior)
+    {
+        if (!preserveSamePlatformChaseDuringMicroSeparation)
+            return false;
+
+        if (warrior == null || warrior.IsDead)
+            return false;
+
+        if (_deathStarted || currentHealth <= 0f)
+            return false;
+
+        if (_isJumping || activesJumpCoroutine != null || _warriorTopReboundActive)
+            return false;
+
+        if (_missedMovingPlatformLandingRecoveryActive || Time.time < _forceAirborneAnimationUntil)
+            return false;
+
+        PlatFormColliderTrigger myPlatform = CurrentplatForm != null
+            ? CurrentplatForm
+            : _lastKnownPlatform;
+
+        if (myPlatform == null || myPlatform.platformCollider == null)
+            return false;
+
+        bool warriorCurrentlySamePlatform =
+            warrior.CurrentplatForm != null &&
+            warrior.CurrentplatForm == myPlatform;
+
+        bool recentlyConfirmedSharedPlatform =
+            _lastConfirmedSharedPlatform == myPlatform &&
+            Time.time <= _lastConfirmedSharedPlatformTime + samePlatformMicroSeparationGraceTime;
+
+        bool warriorRecentlySamePlatform =
+            _lastKnownWarriorPlatform == myPlatform &&
+            Time.time <= _lastKnownWarriorPlatformTime + samePlatformMicroSeparationGraceTime;
+
+        if (!warriorCurrentlySamePlatform && !recentlyConfirmedSharedPlatform && !warriorRecentlySamePlatform)
+            return false;
+
+        return IsBodyWithinSamePlatformMicroSeparationTolerance(myPlatform);
+    }
+
+    private bool IsBodyWithinSamePlatformMicroSeparationTolerance(PlatFormColliderTrigger platform)
+    {
+        if (platform == null || platform.platformCollider == null)
+            return false;
+
+        Collider2D body = GetZalaytyBodyCollider();
+        if (body == null || !body.enabled)
+            return false;
+
+        Physics2D.SyncTransforms();
+
+        Bounds platformBounds = platform.platformCollider.bounds;
+        Bounds bodyBounds = body.bounds;
+
+        float horizontalSkin = Mathf.Max(
+            samePlatformMicroSeparationHorizontalSkin,
+            movingLandingHorizontalSkin);
+
+        bool horizontallyStillOnPlatform =
+            bodyBounds.max.x > platformBounds.min.x - horizontalSkin &&
+            bodyBounds.min.x < platformBounds.max.x + horizontalSkin;
+
+        if (!horizontallyStillOnPlatform)
+            return false;
+
+        float bottomAboveTop = bodyBounds.min.y - platformBounds.max.y;
+        float maxAllowedGap = Mathf.Max(
+            samePlatformMicroSeparationMaxVerticalGap,
+            groundedStickMaxVerticalSeparation,
+            Groundradius);
+
+        return bottomAboveTop >= -independentLandingBand &&
+               bottomAboveTop <= maxAllowedGap;
+    }
+
+    private bool ShouldBlockGroundLogicBecauseZalaytyIsAirborne()
+    {
+        if (_deathStarted || currentHealth <= 0f)
+            return false;
+
+        if (IsAttackAnimationActive())
+            return false;
+
+        bool controlledJumpActive = _isJumping || activesJumpCoroutine != null;
+        if (controlledJumpActive)
+        {
+            ForceZalaytyAirborneAnimationOnly();
+            return true;
+        }
+
+        Warrior warrior = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
+        bool preserveSamePlatformMicroSeparation = ShouldPreserveSamePlatformChaseDuringMicroSeparation(warrior);
+
+        bool platformMissing = CurrentplatForm == null || CurrentplatForm.platformCollider == null;
+        bool platformIsStale = !platformMissing && !IsZalaytyGroundedEnoughForGroundMovement(CurrentplatForm);
+        bool forcedAirborneLock = Time.time < _forceAirborneAnimationUntil;
+
+        if (preserveSamePlatformMicroSeparation)
+        {
+            _missedMovingPlatformLandingRecoveryActive = false;
+            return false;
+        }
+
+        if (!platformMissing && !platformIsStale && !forcedAirborneLock)
+        {
+            _missedMovingPlatformLandingRecoveryActive = false;
+            return false;
+        }
+
+        if (platformIsStale)
+            CurrentplatForm = null;
+
+        bool noGroundPoints = CountGroundPoints() == 0;
+
+        if (platformMissing || platformIsStale || noGroundPoints || forcedAirborneLock || _missedMovingPlatformLandingRecoveryActive)
+        {
+            StopMoveTowardCoroutine();
+            ForceZalaytyAirborneAnimationOnly();
+            return true;
+        }
+
+        return false;
+    }
+
+    private void ForceZalaytyAirborneAnimationOnly()
+    {
+        ExitWaitAnimation();
+
+        if (IsAttackAnimationActive())
+            return;
+
+        JumpAnimationDisplay();
     }
 
     private void MoveZalaytyBody(Vector2 position)
     {
+        Vector2 finalPosition = position;
+
+        // MovingHorizontalPlatform behaves like an elevator/carrier. Zalayty's
+        // independent chase coroutine can run after the platform FixedUpdate, so the
+        // platform must not be the only object applying the carry delta. When Zalayty
+        // is actively chasing, add the current platform delta here:
+        // finalPosition = ownMovePosition + platformDelta.
+        if (TryGetHorizontalMovingPlatformCarryDeltaForOwnMove(out Vector2 carryDelta))
+            finalPosition += carryDelta;
+
+        RememberIndependentMoveRequest(finalPosition);
+
         if (rigidbody2 != null)
-            rigidbody2.MovePosition(position);
+            rigidbody2.MovePosition(finalPosition);
         else
-            transform.position = new Vector3(position.x, position.y, transform.position.z);
+            transform.position = new Vector3(finalPosition.x, finalPosition.y, transform.position.z);
     }
 
     private void StopHorizontalVelocityIfNeeded()
     {
+        ClearIndependentMoveRequest();
+
         if (!stopHorizontalVelocityOnIndependentStop || rigidbody2 == null)
             return;
 
@@ -1394,6 +2204,9 @@ public class ZalaytyMonster : Enemy
     public override void StopMoveTowardCoroutine()
     {
         base.StopMoveTowardCoroutine();
+        _hasCurrentIndependentMoveTarget = false;
+        _currentIndependentMoveTargetWarrior = null;
+        ClearIndependentMoveRequest();
         StopHorizontalVelocityIfNeeded();
     }
 
@@ -1413,27 +2226,14 @@ public class ZalaytyMonster : Enemy
         if (!IsIndependentTopLanding(platform))
             return;
 
-        CurrentplatForm = platform;
-        _lastKnownPlatform = platform;
-        _lastKnownPlatformTime = Time.time;
-
         if (activesJumpCoroutine != null)
             StopCoroutine(activesJumpCoroutine);
 
-        targetReached = true;
-        DescendentPhase = false;
-        _isJumping = false;
-        activesJumpCoroutine = null;
-        SetJumping(false);
+        Vector2 preferredPosition = rigidbody2 != null
+            ? rigidbody2.position
+            : (Vector2)transform.position;
 
-        if (rigidbody2 != null && rigidbody2.linearVelocity.y < 0f)
-        {
-            Vector2 v = rigidbody2.linearVelocity;
-            v.y = 0f;
-            rigidbody2.linearVelocity = v;
-        }
-
-        RestoreActiveJumpDownSourcePlatformNow();
+        TryFinishIndependentJumpOnPlatformIfReallyGrounded(platform, preferredPosition.x);
     }
 
     private bool IsIndependentTopLanding(PlatFormColliderTrigger platform)
@@ -1448,8 +2248,15 @@ public class ZalaytyMonster : Enemy
         Bounds pb = platform.platformCollider.bounds;
         Bounds cb = body.bounds;
 
-        bool horizontallyOverTop = cb.max.x > pb.min.x && cb.min.x < pb.max.x;
-        bool closeToTop = cb.min.y >= pb.max.y - independentLandingBand;
+        bool horizontallyOverTop =
+            cb.max.x > pb.min.x + movingLandingHorizontalSkin &&
+            cb.min.x < pb.max.x - movingLandingHorizontalSkin;
+
+        float bottomAboveTop = cb.min.y - pb.max.y;
+        bool closeToTop =
+            bottomAboveTop >= -independentLandingBand &&
+            bottomAboveTop <= landingYOffset + movingLandingSnapMaxVerticalDistance;
+
         bool movingDownOrStable = rigidbody2 == null || rigidbody2.linearVelocity.y <= 0.08f;
 
         return horizontallyOverTop && closeToTop && movingDownOrStable;
@@ -1525,7 +2332,6 @@ public class ZalaytyMonster : Enemy
         }
         StopMoveTowardCoroutine();
         ExitWaitAnimation();
-
 
         // 2) Landing X:
         // - going down: use your ChooseBestLocationForTransition (fixed + clamped)
@@ -1606,10 +2412,25 @@ public class ZalaytyMonster : Enemy
             if (CurrentplatForm == nextPlatform)
                 break;
 
+            // If the moving target was missed, JumpArcIndependent has already
+            // switched Zalayty to natural airborne recovery. Do not wait the full
+            // timeout while the follow loop is blocked inside this transition.
+            if (!_isJumping && activesJumpCoroutine == null)
+                break;
+
+            // If he landed safely on another platform, let the main loop recompute
+            // from that real grounded state instead of forcing the old target.
+            if (CurrentplatForm != null &&
+                CurrentplatForm != nextPlatform &&
+                IsZalaytyReallyGroundedOnPlatform(CurrentplatForm))
+                break;
+
             landTimeout -= Time.deltaTime;
             yield return null;
         }
-        StopJumpTowardCoroutine();
+
+        if (activesJumpCoroutine != null)
+            StopJumpTowardCoroutine();
     }
 
     private Side ChooseBestSideForTransition(Bounds curB, Bounds nextB, float desiredX)
@@ -1685,28 +2506,6 @@ public class ZalaytyMonster : Enemy
         // Stop anyway, otherwise Zalayty restarts chase and pushes Warrior.
         return stopOnWarriorMainBoxContactEvenDuringPlatformMismatch;
     }
-
-    private bool ShouldKeepSamePlatformContactCombatLock(Warrior warrior, bool mainBoxesTouching)
-    {
-        if (!_samePlatformContactCombatLocked)
-            return false;
-
-        if (warrior == null || warrior.IsDead)
-        {
-            ClearSamePlatformContactCombatLock();
-            return false;
-        }
-
-        // While the main bodies touch, the combat lock remains active.
-        if (mainBoxesTouching)
-            return true;
-
-        // Separation has absolute priority: release immediately, even if an attack
-        // animation or cooldown was still active.
-        ReleaseContactCombatForImmediateChase();
-        return false;
-    }
-
     private void MaintainSamePlatformContactCombat(Warrior warrior, bool mainBoxesTouching)
     {
         // Separation wins before animation/cooldown. This is what lets Zalayty
@@ -1829,11 +2628,6 @@ public class ZalaytyMonster : Enemy
         _samePlatformContactAttackWasActive = true;
         AttackAnimationDisplay();
         return true;
-    }
-
-    private bool AreMainBoxCollidersTouchingOrOverlapping(Warrior warrior)
-    {
-        return AreMainBoxCollidersTouchingOrOverlapping(warrior, samePlatformMainBoxContactSkin);
     }
 
     private bool AreMainBoxCollidersTouchingOrOverlapping(Warrior warrior, float contactSkin)
@@ -1970,7 +2764,6 @@ public class ZalaytyMonster : Enemy
         return count;
     }
 
-
     // Animation Event: put this on the exact HIT frame in the attack clip
     public void AE_Zalayty_Impact()
     {
@@ -2082,33 +2875,6 @@ public class ZalaytyMonster : Enemy
 
         Destroy(fx, sparkDestroyAfter);
     }
-
-
-    //private void SpawnSparkAtContact(Warrior warrior)
-    //{
-    //    if (sparkPrefab == null) return;
-
-    //    Bounds w = warrior.collider2.bounds;
-    //    Bounds e = (NormalCollider != null) ? NormalCollider.bounds : collider2.bounds;
-
-    //    float x = (e.center.x < w.center.x) ? w.min.x : w.max.x;
-    //    float y = Mathf.Clamp(e.center.y, w.min.y, w.max.y);
-
-    //    Vector3 pos = new Vector3(x, y, 0f) + sparkOffset;
-
-    //    GameObject fx = Instantiate(sparkPrefab, pos, Quaternion.identity);
-    //    fx.transform.localScale *= sparkScale;
-
-    //    var systems = fx.GetComponentsInChildren<ParticleSystem>(true);
-    //    foreach (var ps in systems)
-    //    {
-    //        var main = ps.main;
-    //        main.simulationSpace = ParticleSystemSimulationSpace.Local;
-    //        ps.Play(true);
-    //    }
-
-    //    Destroy(fx, sparkDestroyAfter);
-    //}
 
     private static readonly ContactPoint2D[] _contacts = new ContactPoint2D[16];
 
@@ -2692,8 +3458,6 @@ public class ZalaytyMonster : Enemy
         safeMinCenterX = center;
         safeMaxCenterX = center;
     }
-
-
 
     private void OnDisable()
     {

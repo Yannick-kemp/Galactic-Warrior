@@ -473,22 +473,39 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         void LateUpdate()
         {
-            if (_deathStarted) return;
+            if (_deathStarted)
+                return;
 
-            if (CurrentplatForm != null && collider2 != null)
+            if (CurrentplatForm == null || collider2 == null)
+                return;
+
+            LastSafePlatform = CurrentplatForm;
+
+            if (CurrentplatForm is Assets.Scripts.Platforms.MovingVerticalPlatform movingVerticalPlatform)
             {
-                Bounds pb = CurrentplatForm.platformCollider.bounds;
+                _lastSafePosition = movingVerticalPlatform.GetSafeRespawnPositionFor(
+                    this,
+                    transform.position.x
+                );
 
-                float safeY = pb.max.y + collider2.bounds.extents.y + 0.02f;
-
-                //float safeMargin = 0.15f;
-                float minX = pb.min.x + platformSafeMargin;
-                float maxX = pb.max.x - platformSafeMargin;
-
-                float clampedX = Mathf.Clamp(transform.position.x, minX, maxX);
-
-                _lastSafePosition = new Vector3(clampedX, safeY, transform.position.z);
+                return;
             }
+
+            if (CurrentplatForm.platformCollider == null)
+                return;
+
+            Bounds pb = CurrentplatForm.platformCollider.bounds;
+
+            float safeY = pb.max.y + collider2.bounds.extents.y + 0.02f;
+
+            float minX = pb.min.x + platformSafeMargin;
+            float maxX = pb.max.x - platformSafeMargin;
+
+            float clampedX = minX <= maxX
+                ? Mathf.Clamp(transform.position.x, minX, maxX)
+                : pb.center.x;
+
+            _lastSafePosition = new Vector3(clampedX, safeY, transform.position.z);
         }
         #endregion
 
