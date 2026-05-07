@@ -516,6 +516,23 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         #region Hit Reaction
 
+        [Header("Zalayty Different-Platform Impact Absorption")]
+        [SerializeField] private bool enableZalaytyDifferentPlatformImpactAbsorption = true;
+
+        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMinSpeed = 3.0f;
+        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMaxSpeed = 13.0f;
+
+        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMinKnockbackX = 0.45f;
+        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMaxKnockbackX = 2.0f;
+
+        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMinStun = 0.06f;
+        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMaxStun = 0.18f;
+
+        [SerializeField, Range(0f, 1f)] private float zalaytyDifferentPlatformImpactVerticalDamping = 0.20f;
+        [SerializeField, Min(0.01f)] private float zalaytyDifferentPlatformImpactAbsorbCooldown = 0.16f;
+
+        private float _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime = -999f;
+
         public void ApplyHitReaction(HitKind kind, Vector2 fromWorldPos, float stunSeconds, float knockbackVel)
         {
             if (_sprintActive) return;
@@ -578,6 +595,76 @@ namespace Assets.Scripts.Characteres.WarriorController
             _stunImmuneUntil = Time.time + stunRecoveryImmunity;
 
             _hitReactRoutine = null;
+        }
+
+        public bool TryAbsorbZalaytyDifferentPlatformImpact(
+            ZalaytyMonster zalayty,
+            Vector2 impactFromWorldPos,
+            Vector2 incomingVelocity,
+            float incomingSpeed)
+        {
+            if (!enableZalaytyDifferentPlatformImpactAbsorption)
+                return false;
+
+            if (zalayty == null)
+                return false;
+
+            if (IsDeadOrDying || _deathStarted || CanDie)
+                return false;
+
+            if (_sprintActive || _reviveInvulnerable)
+                return false;
+
+            if (Time.time < _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime)
+                return false;
+
+            incomingSpeed = Mathf.Abs(incomingSpeed);
+            if (incomingSpeed < zalaytyDifferentPlatformImpactMinSpeed)
+                return false;
+
+            _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime =
+                Time.time + Mathf.Max(0.01f, zalaytyDifferentPlatformImpactAbsorbCooldown);
+
+            float t = Mathf.InverseLerp(
+                zalaytyDifferentPlatformImpactMinSpeed,
+                zalaytyDifferentPlatformImpactMaxSpeed,
+                incomingSpeed);
+
+            float knockbackX = Mathf.Lerp(
+                zalaytyDifferentPlatformImpactMinKnockbackX,
+                zalaytyDifferentPlatformImpactMaxKnockbackX,
+                t);
+
+            float stunSeconds = Mathf.Lerp(
+                zalaytyDifferentPlatformImpactMinStun,
+                zalaytyDifferentPlatformImpactMaxStun,
+                t);
+
+            float dir = Mathf.Sign(incomingVelocity.x);
+
+            if (Mathf.Abs(dir) < 0.01f)
+                dir = Mathf.Sign(transform.position.x - impactFromWorldPos.x);
+
+            if (Mathf.Abs(dir) < 0.01f)
+                dir = leftFacing ? -1f : 1f;
+
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+            IsFallingGrazesEdge = false;
+            WaitAnimationDisplay();
+
+            if (rigidbody2 != null)
+            {
+                Vector2 v = rigidbody2.linearVelocity;
+
+                // Absorb vertical shock so Warrior does not pop upward brutally.
+                v.y *= zalaytyDifferentPlatformImpactVerticalDamping;
+
+                rigidbody2.linearVelocity = v;
+            }
+
+            StartHitStun(stunSeconds, knockbackX * dir);
+            return true;
         }
 
         #endregion

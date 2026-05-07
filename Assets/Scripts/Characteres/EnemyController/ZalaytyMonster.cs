@@ -260,6 +260,34 @@ public class ZalaytyMonster : Enemy
     private Warrior _currentIndependentMoveTargetWarrior;
     private bool _hasCurrentIndependentMoveTarget;
 
+    [Header("Different-Platform Warrior Impact - Zalayty Only")]
+    [Tooltip("When true, a fast Zalayty platform-change/body collision with Warrior on another platform is converted into controlled Warrior impact absorption instead of raw physics push.")]
+    [SerializeField] private bool enableDifferentPlatformWarriorImpactAbsorption = true;
+
+    [Tooltip("Minimum impact speed required before the different-platform absorber runs. This prevents normal small touches from triggering stun/knockback.")]
+    [SerializeField, Min(0f)] private float differentPlatformImpactMinSpeed = 3.0f;
+
+    [Tooltip("Minimum dot product required to prove Zalayty was moving into Warrior, not sliding away from him.")]
+    [SerializeField, Range(-1f, 1f)] private float differentPlatformImpactMinIntoWarriorDot = 0.15f;
+
+    [Tooltip("Cooldown that prevents repeated absorption every physics frame while the bodies remain in contact.")]
+    [SerializeField, Min(0.01f)] private float differentPlatformImpactCooldown = 0.16f;
+
+    [Tooltip("Short movement lock applied to Zalayty after a different-platform impact so the jump arc cannot keep driving through Warrior.")]
+    [SerializeField, Min(0f)] private float differentPlatformImpactZalaytyLockSeconds = 0.10f;
+
+    [Tooltip("When true, a side impact while Zalayty is in a controlled platform-change jump interrupts the arc and lets him recover/fall naturally.")]
+    [SerializeField] private bool interruptZalaytyJumpOnDifferentPlatformImpact = true;
+
+    [Tooltip("If true, the absorber requires both CurrentplatForm values to be known and different. This keeps same-platform combat untouched.")]
+    [SerializeField] private bool requireKnownDifferentPlatformsForImpactAbsorption = true;
+
+    private Vector2 _lastZalaytyBodyMoveVelocity;
+    private float _lastZalaytyBodyMoveVelocityTime = -999f;
+    private bool _lastZalaytyBodyMoveWasPlatformChangeJump;
+    private float _nextAllowedDifferentPlatformImpactTime = -999f;
+    private float _differentPlatformImpactLockUntil = -999f;
+
     public bool TryGetIndependentMoveRequestForCurrentFixedStep(out Vector2 requestedPosition)
     {
         requestedPosition = _lastRequestedIndependentMovePosition;
@@ -1258,6 +1286,13 @@ public class ZalaytyMonster : Enemy
             if (!CanMove || _deathStarted || IsStunned)
                 break;
 
+            if (Time.time < _differentPlatformImpactLockUntil)
+            {
+                StopHorizontalVelocityIfNeeded();
+                yield return wait;
+                continue;
+            }
+
             Warrior warrior = _currentIndependentMoveTargetWarrior != null
                 ? _currentIndependentMoveTargetWarrior
                 : (GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null);
@@ -2163,12 +2198,33 @@ public class ZalaytyMonster : Enemy
         if (TryGetHorizontalMovingPlatformCarryDeltaForOwnMove(out Vector2 carryDelta))
             finalPosition += carryDelta;
 
+        RememberZalaytyBodyMoveVelocity(finalPosition);
         RememberIndependentMoveRequest(finalPosition);
 
         if (rigidbody2 != null)
             rigidbody2.MovePosition(finalPosition);
         else
             transform.position = new Vector3(finalPosition.x, finalPosition.y, transform.position.z);
+    }
+
+    private void RememberZalaytyBodyMoveVelocity(Vector2 finalPosition)
+    {
+        Vector2 currentPosition = rigidbody2 != null
+            ? rigidbody2.position
+            : (Vector2)transform.position;
+
+        Vector2 delta = finalPosition - currentPosition;
+
+        _lastZalaytyBodyMoveVelocity = Time.fixedDeltaTime > 0f
+            ? delta / Time.fixedDeltaTime
+            : Vector2.zero;
+
+        _lastZalaytyBodyMoveVelocityTime = Time.time;
+        _lastZalaytyBodyMoveWasPlatformChangeJump =
+            _isJumping ||
+            activesJumpCoroutine != null ||
+            _activeJumpTargetPlatform != null ||
+            CurrentplatForm == null;
     }
 
     private void StopHorizontalVelocityIfNeeded()
@@ -2903,6 +2959,9 @@ public class ZalaytyMonster : Enemy
         if (TryHandleWarriorTopReboundCollision(collision))
             return;
 
+        if (TryHandleDifferentPlatformWarriorImpact(collision))
+            return;
+
         TryHandleSamePlatformWarriorMainBoxContact(collision);
     }
 
@@ -2911,7 +2970,194 @@ public class ZalaytyMonster : Enemy
         if (TryHandleWarriorTopReboundCollision(collision))
             return;
 
+        if (TryHandleDifferentPlatformWarriorImpact(collision))
+            return;
+
         TryHandleSamePlatformWarriorMainBoxContact(collision);
+    }
+
+    private bool TryHandleDifferentPlatformWarriorImpact(Collision2D collision)
+    {
+        if (!enableDifferentPlatformWarriorImpactAbsorption)
+            return false;
+
+        if (collision == null || collision.collider == null)
+            return false;
+
+        if (Time.time < _nextAllowedDifferentPlatformImpactTime)
+            return false;
+
+        Warrior warrior = collision.collider.GetComponentInParent<Warrior>();
+        if (warrior == null || warrior.collider2 == null || warrior.IsDead)
+            return false;
+
+        if (!IsKnownDifferentPlatformFromWarrior(warrior))
+            return false;
+
+        // Do not steal the special top-bound rule. Top contact is handled by
+        // TryHandleWarriorTopReboundCollision() above. This method is only for
+        // side/body shock while Zalayty is moving between different platforms.
+        if (IsZalaytyOnWarriorTop(collision, warrior))
+            return false;
+
+        bool platformChangeMotion =
+            _isJumping ||
+            activesJumpCoroutine != null ||
+            _activeJumpTargetPlatform != null ||
+            _lastZalaytyBodyMoveWasPlatformChangeJump;
+
+        if (!platformChangeMotion)
+            return false;
+
+        Collider2D zalaytyBody = GetMainBoxColliderForPhysicalContact();
+        Collider2D warriorBody = GetWarriorMainBoxCollider(warrior);
+
+        if (zalaytyBody == null || warriorBody == null)
+            return false;
+
+        if (!AreBodyBoundsCloseEnoughForDifferentPlatformImpact(zalaytyBody, warriorBody))
+            return false;
+
+        Vector2 incomingVelocity = ResolveDifferentPlatformImpactVelocity(
+            collision,
+            zalaytyBody,
+            warriorBody,
+            out float incomingSpeed);
+
+        if (incomingSpeed < differentPlatformImpactMinSpeed)
+            return false;
+
+        Vector2 directionToWarrior =
+            (Vector2)warriorBody.bounds.center - (Vector2)zalaytyBody.bounds.center;
+
+        if (directionToWarrior.sqrMagnitude > 0.0001f && incomingVelocity.sqrMagnitude > 0.0001f)
+        {
+            float dot = Vector2.Dot(incomingVelocity.normalized, directionToWarrior.normalized);
+            if (dot < differentPlatformImpactMinIntoWarriorDot)
+                return false;
+        }
+
+        bool absorbed = warrior.TryAbsorbZalaytyDifferentPlatformImpact(
+            this,
+            zalaytyBody.bounds.center,
+            incomingVelocity,
+            incomingSpeed);
+
+        if (!absorbed)
+            return false;
+
+        _nextAllowedDifferentPlatformImpactTime =
+            Time.time + Mathf.Max(0.01f, differentPlatformImpactCooldown);
+
+        InterruptZalaytyAfterDifferentPlatformWarriorImpact();
+        return true;
+    }
+
+    private bool IsKnownDifferentPlatformFromWarrior(Warrior warrior)
+    {
+        if (warrior == null)
+            return false;
+
+        if (CurrentplatForm != null && warrior.CurrentplatForm != null)
+            return CurrentplatForm != warrior.CurrentplatForm;
+
+        // Strict mode avoids changing same-platform combat behavior during one-frame
+        // CurrentplatForm refresh gaps. Turn this off only if you also want null-platform
+        // airborne impacts to be absorbed.
+        if (requireKnownDifferentPlatformsForImpactAbsorption)
+            return false;
+
+        return CurrentplatForm != warrior.CurrentplatForm;
+    }
+
+    private bool AreBodyBoundsCloseEnoughForDifferentPlatformImpact(Collider2D zalaytyBody, Collider2D warriorBody)
+    {
+        Bounds z = zalaytyBody.bounds;
+        Bounds w = warriorBody.bounds;
+
+        // Tiny expansion catches one-frame solver gaps during fast MovePosition arcs.
+        z.Expand(0.04f);
+        w.Expand(0.04f);
+
+        return z.Intersects(w);
+    }
+
+    private Vector2 ResolveDifferentPlatformImpactVelocity(
+        Collision2D collision,
+        Collider2D zalaytyBody,
+        Collider2D warriorBody,
+        out float incomingSpeed)
+    {
+        Vector2 trackedVelocity = Vector2.zero;
+        if (Time.time - _lastZalaytyBodyMoveVelocityTime <= 0.20f)
+            trackedVelocity = _lastZalaytyBodyMoveVelocity;
+
+        Vector2 rbVelocity = rigidbody2 != null
+            ? rigidbody2.linearVelocity
+            : Vector2.zero;
+
+        Vector2 relativeVelocity = collision != null
+            ? collision.relativeVelocity
+            : Vector2.zero;
+
+        float trackedSpeed = trackedVelocity.magnitude;
+        float rbSpeed = rbVelocity.magnitude;
+        float relativeSpeed = relativeVelocity.magnitude;
+
+        incomingSpeed = Mathf.Max(trackedSpeed, rbSpeed, relativeSpeed);
+
+        Vector2 bestVelocity = trackedVelocity;
+
+        if (rbSpeed > bestVelocity.magnitude)
+            bestVelocity = rbVelocity;
+
+        // Collision relativeVelocity is useful for magnitude, but MovePosition can make
+        // its direction awkward. Prefer tracked/rigidbody direction when available.
+        if (bestVelocity.sqrMagnitude < 0.0001f && relativeVelocity.sqrMagnitude > 0.0001f)
+            bestVelocity = relativeVelocity;
+
+        if (bestVelocity.sqrMagnitude < 0.0001f && incomingSpeed > 0f)
+        {
+            Vector2 directionToWarrior =
+                (Vector2)warriorBody.bounds.center - (Vector2)zalaytyBody.bounds.center;
+
+            if (directionToWarrior.sqrMagnitude > 0.0001f)
+                bestVelocity = directionToWarrior.normalized * incomingSpeed;
+        }
+
+        return bestVelocity.sqrMagnitude > 0.0001f
+            ? bestVelocity.normalized * incomingSpeed
+            : Vector2.zero;
+    }
+
+    private void InterruptZalaytyAfterDifferentPlatformWarriorImpact()
+    {
+        _differentPlatformImpactLockUntil =
+            Time.time + Mathf.Max(0f, differentPlatformImpactZalaytyLockSeconds);
+
+        StopMoveTowardCoroutine();
+        StopHorizontalVelocityIfNeeded();
+
+        bool wasControlledPlatformJump =
+            _isJumping ||
+            activesJumpCoroutine != null ||
+            _activeJumpTargetPlatform != null ||
+            _lastZalaytyBodyMoveWasPlatformChangeJump;
+
+        if (interruptZalaytyJumpOnDifferentPlatformImpact && wasControlledPlatformJump)
+        {
+            PlatFormColliderTrigger missedPlatform = _activeJumpTargetPlatform;
+            StopJumpTowardCoroutine();
+            BeginMissedMovingPlatformLandingRecovery(missedPlatform);
+            return;
+        }
+
+        if (rigidbody2 != null)
+        {
+            Vector2 v = rigidbody2.linearVelocity;
+            v.x = 0f;
+            rigidbody2.linearVelocity = v;
+        }
     }
 
     private bool TryHandleSamePlatformWarriorMainBoxContact(Collision2D collision)
