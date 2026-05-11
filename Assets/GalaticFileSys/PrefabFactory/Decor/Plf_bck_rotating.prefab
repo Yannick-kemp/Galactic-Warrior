@@ -113,7 +113,7 @@ Transform:
   m_GameObject: {fileID: 2343156952388197574}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 0, y: 0.9, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -220,6 +220,7 @@ GameObject:
   - component: {fileID: 8062383137721862977}
   - component: {fileID: 31883336412376738}
   - component: {fileID: 5241839290931434373}
+  - component: {fileID: 408357779365454138}
   m_Layer: 6
   m_Name: Plf_bck_rotating
   m_TagString: Untagged
@@ -404,10 +405,52 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   platformCollider: {fileID: 8062383137721862977}
   platformTrigger: {fileID: 31883336412376738}
+  defaultRenderer: {fileID: 0}
   mainRenderer: {fileID: 2685570082510214208}
   overlayRenderer: {fileID: 5078805795568046411}
   initialTheme: {fileID: 11400000, guid: ae44a17c017073046b588620600703ac, type: 2}
   applyInitialThemeOnStart: 1
+  hideDefaultRendererWhenThemeApplied: 1
+  maxWarriorSpeed: 20
+  passThroughBuffer: 0.08
+  landingBand: 0.14
+  horizontalLandingSkin: 0.03
+  restoreAfterTriggerExitTimeout: 0.75
+  zalaytyJumpDownRestoreContactSkin: 0.01
   edgeZoneWidth: 0.35
   Radius: 2
   Speed: 2
+  startAngleDegrees: 0
+  centerOverride: {fileID: 0}
+  carryWarriorAndZalayty: 1
+  topPenetrationTolerance: 0.08
+  topMaxGap: 0.16
+  horizontalSupportSkin: 0.04
+  forceKinematicBody: 1
+--- !u!50 &408357779365454138
+Rigidbody2D:
+  serializedVersion: 5
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5112530203942996760}
+  m_BodyType: 0
+  m_Simulated: 1
+  m_UseFullKinematicContacts: 0
+  m_UseAutoMass: 0
+  m_Mass: 1
+  m_LinearDamping: 0
+  m_AngularDamping: 0.05
+  m_GravityScale: 1
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_Interpolate: 0
+  m_SleepingMode: 1
+  m_CollisionDetection: 0
+  m_Constraints: 0

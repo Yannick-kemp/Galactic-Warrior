@@ -347,20 +347,34 @@ public class ZalaytyMonster : Enemy
         if (_isJumping || activesJumpCoroutine != null)
             return false;
 
-        MovingHorizontalPlatform movingPlatform = CurrentplatForm as MovingHorizontalPlatform;
-        if (movingPlatform == null)
-            movingPlatform = _lastKnownPlatform as MovingHorizontalPlatform;
+        PlatFormColliderTrigger platform = CurrentplatForm;
 
-        if (movingPlatform == null)
+        if (platform == null)
+            platform = _lastKnownPlatform;
+
+        if (platform == null)
             return false;
 
-        if (!HasRecentMovingPlatformTopSupportForGroundMovement(movingPlatform))
+        if (!HasRecentMovingPlatformTopSupportForGroundMovement(platform))
             return false;
 
-        if (!movingPlatform.TryGetHorizontalCarryDeltaForCurrentFixedStep(this, out carryDelta))
-            return false;
+        if (platform is MovingHorizontalPlatform movingPlatform)
+        {
+            if (!movingPlatform.TryGetHorizontalCarryDeltaForCurrentFixedStep(this, out carryDelta))
+                return false;
 
-        return Mathf.Abs(carryDelta.x) > 0.000001f;
+            return carryDelta.sqrMagnitude > 0.0000001f;
+        }
+
+        if (platform is RotatingPlatform rotatingPlatform)
+        {
+            if (!rotatingPlatform.TryGetCarryDeltaForCurrentFixedStep(this, out carryDelta))
+                return false;
+
+            return carryDelta.sqrMagnitude > 0.0000001f;
+        }
+
+        return false;
     }
 
     private void RememberIndependentMoveRequest(Vector2 position)

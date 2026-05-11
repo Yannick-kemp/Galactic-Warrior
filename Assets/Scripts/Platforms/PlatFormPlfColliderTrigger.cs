@@ -179,7 +179,7 @@ namespace Assets.Scripts.Platforms
 
             if (EnteredTriggerFirst(character)) {
                 Debug.Log("Entered trigger first: ignoring platform for " + character.name);
-              //  SetIgnoreForCharacter(character, true);
+                SetIgnoreForCharacter(character, true);
             }
                 
         }

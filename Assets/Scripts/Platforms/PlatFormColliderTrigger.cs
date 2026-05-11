@@ -10,16 +10,30 @@ public class PlatFormColliderTrigger : MonoBehaviour
     public BoxCollider2D platformTrigger;
 
     [Header("Visual Theme")]
+    [Tooltip("The original SpriteRenderer directly on the platform root object.")]
+    [SerializeField] private SpriteRenderer defaultRenderer;
+
+    [Tooltip("The themed main SpriteRenderer, usually VisualRoot/PlatformSprite.")]
     [SerializeField] private SpriteRenderer mainRenderer;
+
+    [Tooltip("The themed overlay SpriteRenderer, usually VisualRoot/OverlaySprite.")]
     [SerializeField] private SpriteRenderer overlayRenderer;
 
     [SerializeField] private PlatformTheme initialTheme;
     [SerializeField] private bool applyInitialThemeOnStart = true;
 
+    [Tooltip("If true, the original root SpriteRenderer is hidden when the theme has a mainSprite.")]
+    [SerializeField] private bool hideDefaultRendererWhenThemeApplied = true;
+
+    private bool _defaultRendererInitialEnabled;
+    private bool _defaultRendererStateCaptured;
+
     protected virtual void Start()
     {
         if (platformCollider != null)
             platformCollider.edgeRadius = 0.02f;
+
+        CaptureDefaultRendererState();
 
         if (applyInitialThemeOnStart && initialTheme != null)
             ApplyVisualTheme(initialTheme);
@@ -31,7 +45,26 @@ public class PlatFormColliderTrigger : MonoBehaviour
 
     public virtual void ApplyVisualTheme(PlatformTheme theme)
     {
-        if (theme == null) return;
+        CaptureDefaultRendererState();
+
+        if (theme == null)
+        {
+            RestoreDefaultRenderer();
+            return;
+        }
+
+        // Important:
+        // Hide the default root SpriteRenderer only when the theme really replaces
+        // the main platform sprite.
+        //
+        // If the theme only has an overlaySprite and no mainSprite,
+        // the default platform sprite should remain visible.
+        bool hasThemeMainSprite = theme.mainSprite != null;
+
+        if (defaultRenderer != null && hideDefaultRendererWhenThemeApplied)
+        {
+            defaultRenderer.enabled = !hasThemeMainSprite;
+        }
 
         ApplyRendererTheme(mainRenderer, theme.mainSprite, theme.mainMaterial, theme.mainColor);
         ApplyRendererTheme(overlayRenderer, theme.overlaySprite, theme.overlayMaterial, theme.overlayColor);
@@ -39,8 +72,16 @@ public class PlatFormColliderTrigger : MonoBehaviour
 
     private void ApplyRendererTheme(SpriteRenderer renderer, Sprite sprite, Material material, Color color)
     {
-        if (renderer == null) return;
+        if (renderer == null)
+            return;
 
+        if (sprite == null)
+        {
+            renderer.enabled = false;
+            return;
+        }
+
+        renderer.enabled = true;
         renderer.sprite = sprite;
         renderer.color = color;
 
@@ -48,13 +89,38 @@ public class PlatFormColliderTrigger : MonoBehaviour
             renderer.material = material;
     }
 
+    private void RestoreDefaultRenderer()
+    {
+        if (defaultRenderer != null)
+            defaultRenderer.enabled = _defaultRendererInitialEnabled;
+
+        if (mainRenderer != null)
+            mainRenderer.enabled = false;
+
+        if (overlayRenderer != null)
+            overlayRenderer.enabled = false;
+    }
+
+    private void CaptureDefaultRendererState()
+    {
+        if (_defaultRendererStateCaptured)
+            return;
+
+        _defaultRendererStateCaptured = true;
+
+        if (defaultRenderer != null)
+            _defaultRendererInitialEnabled = defaultRenderer.enabled;
+    }
+
     protected virtual void OnCollisionExit2D(Collision2D collision)
     {
         CharacterController character = collision.collider.GetComponentInParent<CharacterController>();
 
-        if (character == null) return;
+        if (character == null)
+            return;
 
-        if (character.CurrentplatForm != this) return;
+        if (character.CurrentplatForm != this)
+            return;
 
         StartCoroutine(ClearPlatformIfReallyLeft(character));
     }
@@ -128,16 +194,20 @@ public class PlatFormColliderTrigger : MonoBehaviour
     {
         CharacterController character = collision.collider.GetComponentInParent<CharacterController>();
 
-        if (character == null) return;
+        if (character == null)
+            return;
 
         character.CurrentplatForm = this;
 
-        if (character is Warrior) return;
-        if (character is ZalaytyMonster) return;
+        if (character is Warrior)
+            return;
+
+        if (character is ZalaytyMonster)
+            return;
 
         if (character is Enemy enemy && enemy.rigidbody2 != null)
         {
-            var c = enemy.rigidbody2.constraints;
+            RigidbodyConstraints2D c = enemy.rigidbody2.constraints;
             c |= RigidbodyConstraints2D.FreezeRotation;
             c &= ~RigidbodyConstraints2D.FreezePositionY;
             enemy.rigidbody2.constraints = c;
@@ -148,7 +218,8 @@ public class PlatFormColliderTrigger : MonoBehaviour
     {
         yield return new WaitForFixedUpdate();
 
-        if (ch == null) yield break;
+        if (ch == null)
+            yield break;
 
         if (IsAnyCharacterColliderTouchingPlatform(ch))
             yield break;
@@ -170,6 +241,7 @@ public class PlatFormColliderTrigger : MonoBehaviour
         for (int i = 0; i < cols.Length; i++)
         {
             Collider2D col = cols[i];
+
             if (col == null || col.isTrigger)
                 continue;
 
@@ -204,6 +276,7 @@ public class PlatFormColliderTrigger : MonoBehaviour
         for (int i = 0; i < cols.Length; i++)
         {
             Collider2D col = cols[i];
+
             if (col == null)
                 continue;
 
@@ -276,6 +349,7 @@ public class PlatFormColliderTrigger : MonoBehaviour
         for (int i = 0; i < cols.Length; i++)
         {
             Collider2D col = cols[i];
+
             if (col == null)
                 continue;
 
@@ -321,10 +395,13 @@ public class PlatFormColliderTrigger : MonoBehaviour
 
     protected void SeatCharacterOnTop(CharacterController character, float safeMargin = 0.08f, float seatOffset = 0.02f)
     {
-        if (character == null || platformCollider == null) return;
+        if (character == null || platformCollider == null)
+            return;
 
         Collider2D support = GetStandingCollider(character);
-        if (support == null) return;
+
+        if (support == null)
+            return;
 
         Bounds pb = platformCollider.bounds;
         Bounds cb = support.bounds;

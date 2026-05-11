@@ -225,7 +225,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3246284690234732675, guid: fc18dcf1738d09f4d81545f53a1a218a, type: 3}
       propertyPath: m_Offset.y
-      value: 0.25
+      value: 0.3
       objectReference: {fileID: 0}
     - target: {fileID: 3246284690234732675, guid: fc18dcf1738d09f4d81545f53a1a218a, type: 3}
       propertyPath: m_SpriteTilingProperty.oldSize.x
@@ -261,11 +261,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7181476780801085656, guid: fc18dcf1738d09f4d81545f53a1a218a, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -8.4
+      value: -57.36
       objectReference: {fileID: 0}
     - target: {fileID: 7181476780801085656, guid: fc18dcf1738d09f4d81545f53a1a218a, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 10.44
+      value: 0.4
       objectReference: {fileID: 0}
     - target: {fileID: 7181476780801085656, guid: fc18dcf1738d09f4d81545f53a1a218a, type: 3}
       propertyPath: m_LocalPosition.z
@@ -322,15 +322,15 @@ PrefabInstance:
     - target: {fileID: 8668228748519376013, guid: fc18dcf1738d09f4d81545f53a1a218a, type: 3}
       propertyPath: initialTheme
       value: 
-      objectReference: {fileID: 0}
+      objectReference: {fileID: 11400000, guid: 2b756178fbb418942a1a748a3ff78ec9, type: 2}
     - target: {fileID: 8668228748519376013, guid: fc18dcf1738d09f4d81545f53a1a218a, type: 3}
       propertyPath: mainRenderer
       value: 
-      objectReference: {fileID: 0}
+      objectReference: {fileID: 8710064847712709706}
     - target: {fileID: 8668228748519376013, guid: fc18dcf1738d09f4d81545f53a1a218a, type: 3}
       propertyPath: overlayRenderer
       value: 
-      objectReference: {fileID: 0}
+      objectReference: {fileID: 5366092189276210508}
     - target: {fileID: 9126234893208759708, guid: fc18dcf1738d09f4d81545f53a1a218a, type: 3}
       propertyPath: m_LocalPosition.x
       value: -2.33
