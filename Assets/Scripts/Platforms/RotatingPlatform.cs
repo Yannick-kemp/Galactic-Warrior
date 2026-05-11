@@ -35,6 +35,27 @@ public class RotatingPlatform : PlatFormPlfColliderTrigger
     [Tooltip("If true, the platform Rigidbody2D is forced to Kinematic on Start.")]
     [SerializeField] private bool forceKinematicBody = true;
 
+    [Header("Respawn")]
+    [Tooltip("Stable id used by GameMgr to find this platform again after death/retry.")]
+    [SerializeField] private string respawnId;
+
+    [Tooltip("Horizontal margin from the platform AABB edges when seating Warrior on retry.")]
+    [SerializeField, Min(0f)] private float respawnSafeMargin = 0.12f;
+
+    [Tooltip("Extra vertical offset above the platform top when seating Warrior on retry.")]
+    [SerializeField, Min(0f)] private float respawnSeatOffset = 0.04f;
+
+    public string RespawnId
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(respawnId))
+                respawnId = $"{gameObject.scene.name}_{name}_{GetInstanceID()}";
+
+            return respawnId;
+        }
+    }
+
     private Rigidbody2D _platformBody;
 
     private Vector2 _center;
@@ -138,6 +159,82 @@ public class RotatingPlatform : PlatFormPlfColliderTrigger
 
         if (character != null)
             StartCoroutine(RemovePassengerIfReallyLeft(character));
+    }
+
+    /// <summary>
+    /// Returns a safe world position seated on the platform's current top bounds.
+    /// This is intentionally computed at retry time so orbit movement cannot make
+    /// Warrior respawn at an old/stale LastSafePosition.
+    /// </summary>
+    public Vector3 GetSafeRespawnPositionFor(CharacterController character, float preferredX)
+    {
+        if (character == null)
+            return transform.position;
+
+        if (platformCollider == null)
+            return new Vector3(transform.position.x, transform.position.y, character.transform.position.z);
+
+        Collider2D support = GetStandingCollider(character);
+
+        float halfHeight = support != null
+            ? support.bounds.extents.y
+            : 0.8f;
+
+        Bounds pb = platformCollider.bounds;
+
+        float left = pb.min.x + respawnSafeMargin;
+        float right = pb.max.x - respawnSafeMargin;
+
+        float x = left <= right
+            ? Mathf.Clamp(preferredX, left, right)
+            : pb.center.x;
+
+        float y = pb.max.y + halfHeight + respawnSeatOffset;
+
+        return new Vector3(x, y, character.transform.position.z);
+    }
+
+    /// <summary>
+    /// Called by GameMgr after Warrior.TryRevive() has re-enabled the Rigidbody2D
+    /// and colliders. It seats Warrior on the platform's current surface and
+    /// immediately registers him as a passenger so the next orbit delta carries him.
+    /// </summary>
+    public void RespawnRiderOnLift(Warrior warrior, float preferredX)
+    {
+        if (warrior == null)
+            return;
+
+        Vector3 pos = GetSafeRespawnPositionFor(warrior, preferredX);
+
+        SetPlatformCollisionForCharacter(warrior, ignore: false);
+
+        if (warrior.rigidbody2 != null)
+        {
+            warrior.rigidbody2.simulated = true;
+            warrior.rigidbody2.linearVelocity = Vector2.zero;
+            warrior.rigidbody2.angularVelocity = 0f;
+            warrior.rigidbody2.constraints = RigidbodyConstraints2D.FreezeRotation;
+            warrior.rigidbody2.position = new Vector2(pos.x, pos.y);
+            warrior.rigidbody2.WakeUp();
+        }
+
+        warrior.transform.position = pos;
+
+        warrior.CurrentplatForm = this;
+        warrior.LastSafePlatform = this;
+        warrior.LastSafePosition = pos;
+
+        warrior.IsFallingPlfExit = false;
+        warrior.IsFallingGrazesEdge = false;
+        warrior.IsFallingEdge = false;
+        warrior.IsFallingHitEnemy = false;
+        warrior.CanMove = true;
+        warrior.CanAttackWarrior = true;
+        warrior._blockAction = false;
+
+        _passengers[warrior.GetInstanceID()] = warrior;
+
+        Physics2D.SyncTransforms();
     }
 
     /// <summary>
@@ -287,6 +384,12 @@ public class RotatingPlatform : PlatFormPlfColliderTrigger
                 return false;
             }
         }
+
+        // Coming from below: never mark the character as a passenger while he is
+        // still moving upward through the platform. This prevents solid/ignored
+        // collision ping-pong on the first top-contact frames.
+        if (character.rigidbody2 != null && character.rigidbody2.linearVelocity.y > 0.05f)
+            return false;
 
         Collider2D support = GetStandingCollider(character);
 

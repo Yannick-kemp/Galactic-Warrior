@@ -108,6 +108,10 @@ public class GameMgr : MonoBehaviour, IGame
     private MovingHorizontalPlatform _deathMovingHorizontalPlatform;
     private string _deathMovingHorizontalPlatformId;
 
+    private bool _deathWasOnRotatingPlatform;
+    private RotatingPlatform _deathRotatingPlatform;
+    private string _deathRotatingPlatformId;
+
     private bool _hasPendingReviveMovingPlatformRespawn;
     private string _pendingReviveMovingPlatformId;
 
@@ -436,6 +440,7 @@ public class GameMgr : MonoBehaviour, IGame
         PlatFormColliderTrigger respawnMovingPlatform = null;
         MovingVerticalPlatform respawnMovingVerticalPlatform = null;
         MovingHorizontalPlatform respawnMovingHorizontalPlatform = null;
+        RotatingPlatform respawnRotatingPlatform = null;
         bool usedMovingPlatformRespawn = false;
 
         bool useForcedMeteorRespawn = ShouldUseForcedRetryZoneRespawn();
@@ -455,6 +460,11 @@ public class GameMgr : MonoBehaviour, IGame
             respawnMovingPlatform = respawnMovingHorizontalPlatform;
             usedMovingPlatformRespawn = true;
         }
+        else if (TryGetDeathRotatingPlatformRespawn(warrior, out respawnPosition, out respawnRotatingPlatform))
+        {
+            respawnMovingPlatform = respawnRotatingPlatform;
+            usedMovingPlatformRespawn = true;
+        }
         else if (currentCheckpoint != null && useCheckpointRespawn)
         {
             respawnPosition = currentCheckpoint.position;
@@ -471,6 +481,13 @@ public class GameMgr : MonoBehaviour, IGame
         {
             respawnMovingPlatform = lastSafeHorizontalPlatform;
             respawnPosition = BuildSurfaceRespawnOnMovingHorizontalPlatform(lastSafeHorizontalPlatform, warrior);
+            usedMovingPlatformRespawn = true;
+        }
+        else if (warrior.LastSafePlatform is RotatingPlatform lastSafeRotatingPlatform &&
+                 lastSafeRotatingPlatform.platformCollider != null)
+        {
+            respawnMovingPlatform = lastSafeRotatingPlatform;
+            respawnPosition = BuildSurfaceRespawnOnRotatingPlatform(lastSafeRotatingPlatform, warrior);
             usedMovingPlatformRespawn = true;
         }
         else if (warrior.LastSafePosition != Vector3.zero)
@@ -926,6 +943,9 @@ public class GameMgr : MonoBehaviour, IGame
         _deathWasOnMovingHorizontalPlatform = false;
         _deathMovingHorizontalPlatform = null;
         _deathMovingHorizontalPlatformId = null;
+        _deathWasOnRotatingPlatform = false;
+        _deathRotatingPlatform = null;
+        _deathRotatingPlatformId = null;
         _hasPendingReviveMovingPlatformRespawn = false;
 
         ScoreManager.Instance?.StartNewRun();
@@ -997,6 +1017,9 @@ public class GameMgr : MonoBehaviour, IGame
         _deathWasOnMovingHorizontalPlatform = false;
         _deathMovingHorizontalPlatform = null;
         _deathMovingHorizontalPlatformId = null;
+        _deathWasOnRotatingPlatform = false;
+        _deathRotatingPlatform = null;
+        _deathRotatingPlatformId = null;
         _hasPendingReviveMovingPlatformRespawn = false;
         _pendingReviveMovingPlatformId = null;
         _level2EntryFlowShownThisLoad = false;
@@ -1061,6 +1084,10 @@ public class GameMgr : MonoBehaviour, IGame
         _deathMovingHorizontalPlatform = null;
         _deathMovingHorizontalPlatformId = null;
 
+        _deathWasOnRotatingPlatform = false;
+        _deathRotatingPlatform = null;
+        _deathRotatingPlatformId = null;
+
         Warrior warrior = WarriorInstance;
         if (warrior == null) return;
 
@@ -1087,6 +1114,17 @@ public class GameMgr : MonoBehaviour, IGame
             _deathMovingHorizontalPlatformId = horizontalPlatform.RespawnId;
 
             Debug.Log($"[GameMgr] Death horizontal moving platform locked: {horizontalPlatform.RespawnId}");
+            return;
+        }
+
+        if (candidate is RotatingPlatform rotatingPlatform &&
+            rotatingPlatform.platformCollider != null)
+        {
+            _deathWasOnRotatingPlatform = true;
+            _deathRotatingPlatform = rotatingPlatform;
+            _deathRotatingPlatformId = rotatingPlatform.RespawnId;
+
+            Debug.Log($"[GameMgr] Death rotating platform locked: {rotatingPlatform.RespawnId}");
         }
     }
 
@@ -1128,6 +1166,25 @@ public class GameMgr : MonoBehaviour, IGame
         return null;
     }
 
+    private RotatingPlatform FindRotatingPlatformByRespawnId(string respawnId)
+    {
+        if (string.IsNullOrWhiteSpace(respawnId))
+            return null;
+
+        var platforms = FindObjectsByType<RotatingPlatform>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        foreach (var p in platforms)
+        {
+            if (p == null) continue;
+            if (p.RespawnId == respawnId)
+                return p;
+        }
+
+        return null;
+    }
+
     private Vector3 BuildSurfaceRespawnOnMovingPlatform(MovingVerticalPlatform platform, Warrior warrior)
     {
         if (platform == null || warrior == null)
@@ -1144,6 +1201,21 @@ public class GameMgr : MonoBehaviour, IGame
     }
 
     private Vector3 BuildSurfaceRespawnOnMovingHorizontalPlatform(MovingHorizontalPlatform platform, Warrior warrior)
+    {
+        if (platform == null || warrior == null)
+            return lastDeathPosition;
+
+        if (platform.platformCollider == null)
+            return platform.transform.position;
+
+        float preferredX = warrior.LastSafePosition != Vector3.zero
+            ? warrior.LastSafePosition.x
+            : warrior.transform.position.x;
+
+        return platform.GetSafeRespawnPositionFor(warrior, preferredX);
+    }
+
+    private Vector3 BuildSurfaceRespawnOnRotatingPlatform(RotatingPlatform platform, Warrior warrior)
     {
         if (platform == null || warrior == null)
             return lastDeathPosition;
@@ -1216,6 +1288,35 @@ public class GameMgr : MonoBehaviour, IGame
         return true;
     }
 
+    private bool TryGetDeathRotatingPlatformRespawn(
+        Warrior warrior,
+        out Vector3 respawnPosition,
+        out RotatingPlatform respawnPlatform)
+    {
+        respawnPosition = default;
+        respawnPlatform = null;
+
+        if (!_deathWasOnRotatingPlatform)
+            return false;
+
+        if (warrior == null || warrior.collider2 == null)
+            return false;
+
+        RotatingPlatform platform = _deathRotatingPlatform;
+
+        if (platform == null)
+            platform = FindRotatingPlatformByRespawnId(_deathRotatingPlatformId);
+
+        if (platform == null || platform.platformCollider == null)
+            return false;
+
+        Physics2D.SyncTransforms();
+
+        respawnPosition = BuildSurfaceRespawnOnRotatingPlatform(platform, warrior);
+        respawnPlatform = platform;
+        return true;
+    }
+
     private void ApplyRespawnToWarrior(
         Warrior warrior,
         Vector3 respawnPosition,
@@ -1240,6 +1341,13 @@ public class GameMgr : MonoBehaviour, IGame
         {
             float preferredX = respawnPosition.x;
             movingHorizontalPlatform.RespawnRiderOnLift(warrior, preferredX);
+            return;
+        }
+
+        if (platform is RotatingPlatform rotatingPlatform)
+        {
+            float preferredX = respawnPosition.x;
+            rotatingPlatform.RespawnRiderOnLift(warrior, preferredX);
             return;
         }
 

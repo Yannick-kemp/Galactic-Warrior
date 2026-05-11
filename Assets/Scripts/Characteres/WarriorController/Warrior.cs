@@ -501,6 +501,16 @@ namespace Assets.Scripts.Characteres.WarriorController
                 return;
             }
 
+            if (CurrentplatForm is global::RotatingPlatform rotatingPlatform)
+            {
+                _lastSafePosition = rotatingPlatform.GetSafeRespawnPositionFor(
+                    this,
+                    transform.position.x
+                );
+
+                return;
+            }
+
             if (CurrentplatForm.platformCollider == null)
                 return;
 

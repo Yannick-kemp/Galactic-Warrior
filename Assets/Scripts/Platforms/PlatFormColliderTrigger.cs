@@ -10,30 +10,37 @@ public class PlatFormColliderTrigger : MonoBehaviour
     public BoxCollider2D platformTrigger;
 
     [Header("Visual Theme")]
-    [Tooltip("The original SpriteRenderer directly on the platform root object.")]
+    [Tooltip("The original SpriteRenderer directly on the platform root object. Example: Plf_bck_rotating SpriteRenderer.")]
     [SerializeField] private SpriteRenderer defaultRenderer;
 
-    [Tooltip("The themed main SpriteRenderer, usually VisualRoot/PlatformSprite.")]
+    [Tooltip("The themed main SpriteRenderer. Example: VisualRoot/PlatformSprite.")]
     [SerializeField] private SpriteRenderer mainRenderer;
 
-    [Tooltip("The themed overlay SpriteRenderer, usually VisualRoot/OverlaySprite.")]
+    [Tooltip("The themed overlay SpriteRenderer. Example: VisualRoot/OverlaySprite.")]
     [SerializeField] private SpriteRenderer overlayRenderer;
 
     [SerializeField] private PlatformTheme initialTheme;
     [SerializeField] private bool applyInitialThemeOnStart = true;
 
-    [Tooltip("If true, the original root SpriteRenderer is hidden when the theme has a mainSprite.")]
+    [Tooltip("If true, the original/default SpriteRenderer is hidden when a theme sprite exists.")]
     [SerializeField] private bool hideDefaultRendererWhenThemeApplied = true;
+
+    [Tooltip("If true, the script tries to find the root SpriteRenderer automatically if Default Renderer is not assigned.")]
+    [SerializeField] private bool autoBindDefaultRenderer = true;
+
+    [Tooltip("If true, the script tries to find child renderers named PlatformSprite and OverlaySprite when they are not assigned.")]
+    [SerializeField] private bool autoBindThemeRenderers = true;
 
     private bool _defaultRendererInitialEnabled;
     private bool _defaultRendererStateCaptured;
 
     protected virtual void Start()
     {
+        AutoBindVisualRenderersIfNeeded();
+        CaptureDefaultRendererState();
+
         if (platformCollider != null)
             platformCollider.edgeRadius = 0.02f;
-
-        CaptureDefaultRendererState();
 
         if (applyInitialThemeOnStart && initialTheme != null)
             ApplyVisualTheme(initialTheme);
@@ -45,6 +52,7 @@ public class PlatFormColliderTrigger : MonoBehaviour
 
     public virtual void ApplyVisualTheme(PlatformTheme theme)
     {
+        AutoBindVisualRenderersIfNeeded();
         CaptureDefaultRendererState();
 
         if (theme == null)
@@ -53,17 +61,25 @@ public class PlatFormColliderTrigger : MonoBehaviour
             return;
         }
 
-        // Important:
-        // Hide the default root SpriteRenderer only when the theme really replaces
-        // the main platform sprite.
-        //
-        // If the theme only has an overlaySprite and no mainSprite,
-        // the default platform sprite should remain visible.
-        bool hasThemeMainSprite = theme.mainSprite != null;
+        bool hasThemeVisual =
+            theme.mainSprite != null ||
+            theme.overlaySprite != null;
 
         if (defaultRenderer != null && hideDefaultRendererWhenThemeApplied)
         {
-            defaultRenderer.enabled = !hasThemeMainSprite;
+            if (defaultRenderer == mainRenderer || defaultRenderer == overlayRenderer)
+            {
+                Debug.LogWarning(
+                    $"{name}: Default Renderer is also used as Main Renderer or Overlay Renderer. " +
+                    "The script will not disable it because that would also hide the themed sprite.",
+                    this);
+            }
+            else
+            {
+                // This disables only the root/default SpriteRenderer component.
+                // It does NOT disable the platform GameObject, collider, or script.
+                defaultRenderer.enabled = !hasThemeVisual;
+            }
         }
 
         ApplyRendererTheme(mainRenderer, theme.mainSprite, theme.mainMaterial, theme.mainColor);
@@ -110,6 +126,42 @@ public class PlatFormColliderTrigger : MonoBehaviour
 
         if (defaultRenderer != null)
             _defaultRendererInitialEnabled = defaultRenderer.enabled;
+    }
+
+    private void AutoBindVisualRenderersIfNeeded()
+    {
+        if (autoBindDefaultRenderer && defaultRenderer == null)
+            defaultRenderer = GetComponent<SpriteRenderer>();
+
+        if (autoBindThemeRenderers)
+        {
+            if (mainRenderer == null)
+                mainRenderer = FindChildSpriteRendererByName("PlatformSprite");
+
+            if (overlayRenderer == null)
+                overlayRenderer = FindChildSpriteRendererByName("OverlaySprite");
+        }
+    }
+
+    private SpriteRenderer FindChildSpriteRendererByName(string childName)
+    {
+        SpriteRenderer[] renderers = GetComponentsInChildren<SpriteRenderer>(true);
+
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            SpriteRenderer renderer = renderers[i];
+
+            if (renderer == null)
+                continue;
+
+            if (renderer.gameObject == gameObject)
+                continue;
+
+            if (renderer.name == childName)
+                return renderer;
+        }
+
+        return null;
     }
 
     protected virtual void OnCollisionExit2D(Collision2D collision)

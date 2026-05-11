@@ -411,6 +411,8 @@ MonoBehaviour:
   initialTheme: {fileID: 11400000, guid: ae44a17c017073046b588620600703ac, type: 2}
   applyInitialThemeOnStart: 1
   hideDefaultRendererWhenThemeApplied: 1
+  autoBindDefaultRenderer: 1
+  autoBindThemeRenderers: 1
   maxWarriorSpeed: 20
   passThroughBuffer: 0.08
   landingBand: 0.14
