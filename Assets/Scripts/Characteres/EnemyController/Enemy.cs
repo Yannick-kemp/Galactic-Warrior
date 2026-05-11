@@ -665,13 +665,59 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
                 Vector3 newPos = Vector3.Lerp(startPos, targetPos, elapsed / duration);
                 newPos.x = ClampToCurrentPlatform(newPos.x);
-                transform.position = newPos;
+                newPos = ResolveStepBackPositionOnMovingVerticalPlatform(newPos);
+                MoveStepBackBody(newPos);
+
                 elapsed += Time.deltaTime;
                 yield return null;
             }
 
             targetPos.x = ClampToCurrentPlatform(targetPos.x);
-            transform.position = targetPos;
+            targetPos = ResolveStepBackPositionOnMovingVerticalPlatform(targetPos);
+            MoveStepBackBody(targetPos);
+        }
+
+        private void MoveStepBackBody(Vector3 position)
+        {
+            if (rigidbody2 != null)
+                rigidbody2.MovePosition(position);
+            else
+                transform.position = position;
+        }
+
+        private Vector3 ResolveStepBackPositionOnMovingVerticalPlatform(Vector3 desiredPosition)
+        {
+            if (CurrentplatForm is not MovingVerticalPlatform movingPlatform)
+                return desiredPosition;
+
+            if (movingPlatform.platformCollider == null)
+                return desiredPosition;
+
+            Collider2D support = NormalCollider != null && NormalCollider.enabled
+                ? NormalCollider
+                : collider2;
+
+            if (support == null)
+                return desiredPosition;
+
+            Bounds platformBounds = movingPlatform.platformCollider.bounds;
+            Bounds supportBounds = support.bounds;
+
+            bool horizontallyOverLift =
+                supportBounds.max.x > platformBounds.min.x + 0.03f &&
+                supportBounds.min.x < platformBounds.max.x - 0.03f;
+
+            if (!horizontallyOverLift)
+                return desiredPosition;
+
+            // Keep Y seated on the lift during hit step-back. The old implementation
+            // wrote transform.position with a fixed start Y; when the lift moved upward
+            // during the 0.1s step-back, that fixed Y pushed the enemy down into/through
+            // the platform. Preserve only the horizontal knockback and let the lift own Y.
+            float bottomOffsetFromTransform = supportBounds.min.y - transform.position.y;
+            desiredPosition.y = platformBounds.max.y + 0.02f - bottomOffsetFromTransform;
+
+            return desiredPosition;
         }
 
         public virtual bool CanStepBack(bool positif)

@@ -491,6 +491,16 @@ namespace Assets.Scripts.Characteres.WarriorController
                 return;
             }
 
+            if (CurrentplatForm is Assets.Scripts.Platforms.MovingHorizontalPlatform movingHorizontalPlatform)
+            {
+                _lastSafePosition = movingHorizontalPlatform.GetSafeRespawnPositionFor(
+                    this,
+                    transform.position.x
+                );
+
+                return;
+            }
+
             if (CurrentplatForm.platformCollider == null)
                 return;
 

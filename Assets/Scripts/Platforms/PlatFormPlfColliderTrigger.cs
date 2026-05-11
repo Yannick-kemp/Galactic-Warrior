@@ -149,14 +149,15 @@ namespace Assets.Scripts.Platforms
             }
 
             if (IsZalaytyJumpDownLocked(character))
-            {
+            {Debug
+                    .Log("Zalayty jump-down source platform still locked on trigger enter for " + character.name);      
                 SetIgnoreForCharacter(character, true);
                 StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
                 return;
             }
 
             if (IsSourceFallThroughLocked(character))
-            {
+            {Debug.Log("Source fall-through still locked on trigger enter for " + character.name);
                 // This is the platform source of the edge fall. It must remain
                 // pass-through until Warrior fully leaves this trigger/body area.
                 SetIgnoreForCharacter(character, true);
@@ -176,8 +177,11 @@ namespace Assets.Scripts.Platforms
             // Direction does not matter.
             RememberTriggerContactWithPriority(character);
 
-            if (EnteredTriggerFirst(character))
-                SetIgnoreForCharacter(character, true);
+            if (EnteredTriggerFirst(character)) {
+                Debug.Log("Entered trigger first: ignoring platform for " + character.name);
+              //  SetIgnoreForCharacter(character, true);
+            }
+                
         }
 
         private void OnTriggerStay2D(Collider2D other)
@@ -200,13 +204,14 @@ namespace Assets.Scripts.Platforms
 
             if (IsZalaytyJumpDownLocked(character))
             {
+                Debug.Log("Zalayty jump-down source platform still locked on trigger stay for " + character.name);
                 SetIgnoreForCharacter(character, true);
                 StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
                 return;
             }
 
             if (IsSourceFallThroughLocked(character))
-            {
+            {   Debug.Log("Source fall-through still locked on trigger stay for " + character.name);
                 SetIgnoreForCharacter(character, true);
                 return;
             }
@@ -236,6 +241,7 @@ namespace Assets.Scripts.Platforms
             // and do not let the platform artificially catch the character.
             if (ShouldKeepNaturalJumpPath(character))
             {
+                Debug.Log("Keeping natural jump path for " + character.name);
                 SetIgnoreForCharacter(character, true);
                 return;
             }
@@ -248,8 +254,11 @@ namespace Assets.Scripts.Platforms
             {
                 if (IsCharacterLandingOnTopNow(character))
                     SetIgnoreForCharacter(character, false);
-                else
+                else {
+                        Debug.Log("Not landing on top yet for " + character.name + ", keeping platform ignored");
                     SetIgnoreForCharacter(character, true);
+                }
+                   
             }
         }
 
@@ -276,14 +285,14 @@ namespace Assets.Scripts.Platforms
             }
 
             if (IsZalaytyJumpDownLocked(character))
-            {
+            {   Debug.Log("Zalayty jump-down source platform still locked on trigger exit for " + character.name);
                 SetIgnoreForCharacter(character, true);
                 StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
                 return;
             }
 
             if (IsSourceFallThroughLocked(character))
-            {
+            {   Debug.Log("Source fall-through still locked on trigger exit for " + character.name);
                 // Do not restore on the first child-collider exit. Restore only after
                 // all Warrior colliders have left this trigger and no body overlap remains.
                 SetIgnoreForCharacter(character, true);
@@ -304,8 +313,11 @@ namespace Assets.Scripts.Platforms
             // while another Warrior/Zalayty body collider is still inside this trigger.
             if (IsCharacterStillInsideThisTrigger(character))
             {
-                if (EnteredTriggerFirst(character))
-                    SetIgnoreForCharacter(character, true);
+                if (EnteredTriggerFirst(character)) {
+                        Debug.Log("Still inside trigger after exit, but entered trigger first for " + character.name + ", keeping platform ignored");
+                  SetIgnoreForCharacter(character, true);
+                }
+                    
 
                 return;
             }
@@ -325,14 +337,14 @@ namespace Assets.Scripts.Platforms
             if (IsValidPlatformCharacter(character))
             {
                 if (IsZalaytyJumpDownLocked(character))
-                {
+                {   Debug.Log("Zalayty jump-down source platform still locked on collision enter for " + character.name);
                     SetIgnoreForCharacter(character, true);
                     StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
                     return;
                 }
 
                 if (IsSourceFallThroughLocked(character))
-                {
+                {   Debug.Log("Source fall-through still locked on collision enter for " + character.name);
                     SetIgnoreForCharacter(character, true);
                     StartRestoreSourceFallThroughWhenFullyClear(character);
                     return;
@@ -358,14 +370,14 @@ namespace Assets.Scripts.Platforms
             if (IsValidPlatformCharacter(character))
             {
                 if (IsZalaytyJumpDownLocked(character))
-                {
+                {   Debug.Log("Zalayty jump-down source platform still locked on collision stay for " + character.name);
                     SetIgnoreForCharacter(character, true);
                     StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
                     return;
                 }
 
                 if (IsSourceFallThroughLocked(character))
-                {
+                {   Debug.Log("Source fall-through still locked on collision stay for " + character.name);
                     SetIgnoreForCharacter(character, true);
                     StartRestoreSourceFallThroughWhenFullyClear(character);
                     return;
@@ -431,6 +443,7 @@ namespace Assets.Scripts.Platforms
                         warrior.IsFallingHitEnemy = false;
                         warrior.CanMove = false;
 
+                  Debug.Log("Warrior edge fall triggered for " + warrior.name);
                         SetIgnoreForCharacter(warrior, true);
 
                         if (warrior.rigidbody2 != null)
@@ -485,6 +498,7 @@ namespace Assets.Scripts.Platforms
 
             if (IsValidPlatformCharacter(character) && IsZalaytyJumpDownLocked(character))
             {
+                Debug.Log("Zalayty jump-down source platform still locked on collision exit for " + character.name);
                 SetIgnoreForCharacter(character, true);
                 StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
                 return;
@@ -492,6 +506,7 @@ namespace Assets.Scripts.Platforms
 
             if (IsValidPlatformCharacter(character) && IsSourceFallThroughLocked(character))
             {
+                Debug.Log("Source fall-through still locked on collision exit for " + character.name);
                 SetIgnoreForCharacter(character, true);
                 StartRestoreSourceFallThroughWhenFullyClear(character);
             }
@@ -610,7 +625,7 @@ namespace Assets.Scripts.Platforms
             {
                 if (!IsAnyCharacterColliderTouchingOrOverlappingPlatformBody(zalayty, zalaytyJumpDownRestoreContactSkin))
                     break;
-
+                Debug.Log("Zalayty jump-down still unsafe because of body contact for " + zalayty.name);
                 SetIgnoreForCharacter(zalayty, true);
                 yield return wait;
             }
@@ -665,7 +680,8 @@ namespace Assets.Scripts.Platforms
                 return false;
 
             if (IsZalaytyJumpDownLocked(character))
-            {
+            {       
+                Debug.Log("Zalayty jump-down still locked for " + character.name);
                 SetIgnoreForCharacter(character, true);
                 StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
                 return false;
@@ -680,6 +696,7 @@ namespace Assets.Scripts.Platforms
                 // physical fall.
                 if (IsSourceFallThroughStillUnsafe(character))
                 {
+                    Debug.Log("Source fall-through still unsafe for " + character.name);
                     SetIgnoreForCharacter(character, true);
                     StartRestoreSourceFallThroughWhenFullyClear(character);
                     return false;
@@ -722,7 +739,8 @@ namespace Assets.Scripts.Platforms
 
             // The source platform is not a destination landing candidate anymore.
             _predictedTopLandingLockedCharacters.Remove(id);
-
+            
+            Debug.Log("Source fall-through locked for " + character.name);
             SetIgnoreForCharacter(character, true);
         }
 
@@ -757,7 +775,8 @@ namespace Assets.Scripts.Platforms
             {
                 if (!IsSourceFallThroughStillUnsafe(character))
                     break;
-
+                
+                Debug.Log("Source fall-through still unsafe for " + character.name);
                 SetIgnoreForCharacter(character, true);
                 yield return new WaitForFixedUpdate();
             }
@@ -1196,7 +1215,7 @@ namespace Assets.Scripts.Platforms
             }
 
             if (ShouldKeepNaturalJumpPath(character))
-            {
+            {   Debug.Log("Keeping natural jump path on collision stay for " + character.name);
                 SetIgnoreForCharacter(character, true);
                 return;
             }
@@ -1208,8 +1227,11 @@ namespace Assets.Scripts.Platforms
             {
                 if (IsCharacterLandingOnTopNow(character))
                     SetIgnoreForCharacter(character, false);
-                else
+                else {
+                    Debug.Log("Edge jump pass-through for " + character.name);
                     SetIgnoreForCharacter(character, true);
+                }
+                    
             }
         }
 

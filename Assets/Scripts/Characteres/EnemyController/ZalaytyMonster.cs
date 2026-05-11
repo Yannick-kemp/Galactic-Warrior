@@ -3839,4 +3839,70 @@ public class ZalaytyMonster : Enemy
         if (z.overrideRepathInterval)
             repathInterval = Mathf.Max(0.01f, z.repathInterval);
     }
+
+    public void ForceNaturalEdgeFallFromPlatform(
+    PlatFormColliderTrigger sourcePlatform,
+    float gravityScale = 2.5f,
+    float minimumDownVelocity = 0.08f)
+    {
+        if (_deathStarted || currentHealth <= 0f)
+            return;
+
+        StopMoveTowardCoroutine();
+        StopJumpTowardCoroutine();
+
+        _activeJumpTargetPlatform = null;
+        _isJumping = false;
+        activesJumpCoroutine = null;
+        targetReached = false;
+        DescendentPhase = true;
+
+        // Important:
+        // Do not keep stale platform ownership while Zalayty is beside / leaving the platform.
+        if (CurrentplatForm == sourcePlatform)
+            CurrentplatForm = null;
+
+        if (_lastKnownPlatform == sourcePlatform)
+        {
+            _lastKnownPlatform = null;
+            _lastKnownPlatformTime = -999f;
+        }
+
+        if (_lastReallyGroundedPlatform == sourcePlatform)
+        {
+            _lastReallyGroundedPlatform = null;
+            _lastReallyGroundedTime = -999f;
+        }
+
+        if (_lastConfirmedSharedPlatform == sourcePlatform)
+        {
+            _lastConfirmedSharedPlatform = null;
+            _lastConfirmedSharedPlatformTime = -999f;
+        }
+
+        _missedMovingPlatformLandingRecoveryActive = true;
+        _forceAirborneAnimationUntil = Time.time + missedLandingAirborneAnimationLockTime;
+
+        SetJumping(true);
+
+        if (rigidbody2 != null)
+        {
+            RigidbodyConstraints2D constraints = rigidbody2.constraints;
+            constraints &= ~RigidbodyConstraints2D.FreezePositionY;
+            constraints |= RigidbodyConstraints2D.FreezeRotation;
+            rigidbody2.constraints = constraints;
+
+            rigidbody2.gravityScale = Mathf.Max(rigidbody2.gravityScale, gravityScale);
+
+            Vector2 velocity = rigidbody2.linearVelocity;
+
+            if (velocity.y > -minimumDownVelocity)
+                velocity.y = -minimumDownVelocity;
+
+            rigidbody2.linearVelocity = velocity;
+            rigidbody2.WakeUp();
+        }
+
+        ForceZalaytyAirborneAnimationOnly();
+    }
 }

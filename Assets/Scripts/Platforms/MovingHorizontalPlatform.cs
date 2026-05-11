@@ -76,6 +76,31 @@ namespace Assets.Scripts.Platforms
         [Tooltip("Maximum vertical correction per FixedUpdate. Keep this small so the platform cannot pull a falling/jumping character back onto the edge.")]
         [Min(0f)] public float maxSeatCorrectionPerFixedStep = 0.06f;
 
+        [Header("Respawn / Spawn Safety")]
+        [Tooltip("Stable identifier used by GameMgr to find this moving platform again after Warrior death/retry.")]
+        [SerializeField] private string respawnId;
+
+        [Tooltip("Vertical space kept between Warrior bottom and the platform top when respawning on this moving platform.")]
+        [SerializeField, Min(0f)] private float respawnSeatOffset = 0.05f;
+
+        [Tooltip("Horizontal safety margin from the platform edges when choosing a respawn X on this moving platform.")]
+        [SerializeField, Min(0f)] private float respawnHorizontalSkin = 0.08f;
+
+        [Tooltip("Tiny extra clearance to avoid immediate re-overlap with the platform collider after Rigidbody2D.position is changed.")]
+        [SerializeField, Min(0f)] private float respawnVerticalClearance = 0.01f;
+
+        [Tooltip("Immediately registers the respawned Warrior as a platform passenger so the next FixedUpdate carries him with the platform.")]
+        [SerializeField] private bool registerRespawnedWarriorAsPassenger = true;
+
+        public string RespawnId
+        {
+            get
+            {
+                EnsureRespawnId();
+                return respawnId;
+            }
+        }
+
         [Header("Zalayty / Independent Movement Merge")]
         [Tooltip("When true, if Zalayty requested his own MovePosition in this FixedUpdate, the platform adds its horizontal delta on top of that requested position instead of overwriting it.")]
         [SerializeField] private bool mergeZalaytyIndependentMoveWithPlatformDelta = true;
@@ -115,6 +140,7 @@ namespace Assets.Scripts.Platforms
 
             _startPos = transform.position;
             BuildPathPositions();
+            EnsureRespawnId();
         }
 
         protected override void FixedUpdate()
@@ -788,6 +814,177 @@ namespace Assets.Scripts.Platforms
             _pendingRemove.Remove(passengerId);
         }
 
+        public Vector3 GetSafeRespawnPositionFor(Warrior warrior, float preferredX)
+        {
+            return GetSafeRespawnPositionFor((CharacterController)warrior, preferredX);
+        }
+
+        public Vector3 GetSafeRespawnPositionFor(CharacterController character, float preferredX)
+        {
+            if (platformCollider == null)
+            {
+                Vector3 fallback = transform.position;
+                if (character != null)
+                    fallback.z = character.transform.position.z;
+                return fallback;
+            }
+
+            Physics2D.SyncTransforms();
+
+            Bounds platformBounds = platformCollider.bounds;
+            Collider2D standingCollider = character != null ? GetStandingCollider(character) : null;
+
+            Vector2 halfSize = GetColliderHalfSizeSafe(standingCollider, new Vector2(0.35f, 0.80f));
+
+            float minX = platformBounds.min.x + halfSize.x + respawnHorizontalSkin;
+            float maxX = platformBounds.max.x - halfSize.x - respawnHorizontalSkin;
+
+            float safeX = minX <= maxX
+                ? Mathf.Clamp(preferredX, minX, maxX)
+                : platformBounds.center.x;
+
+            float safeY = platformBounds.max.y + halfSize.y + respawnSeatOffset + respawnVerticalClearance;
+            float safeZ = character != null ? character.transform.position.z : transform.position.z;
+
+            return new Vector3(safeX, safeY, safeZ);
+        }
+
+        public void RespawnRiderOnLift(Warrior warrior, float preferredX)
+        {
+            if (warrior == null)
+                return;
+
+            RestorePlatformCollisionForCharacter(warrior);
+
+            Vector3 safePosition = GetSafeRespawnPositionFor(warrior, preferredX);
+
+            if (warrior.rigidbody2 != null)
+            {
+                warrior.rigidbody2.simulated = true;
+                warrior.rigidbody2.linearVelocity = Vector2.zero;
+                warrior.rigidbody2.angularVelocity = 0f;
+                warrior.rigidbody2.constraints = RigidbodyConstraints2D.FreezeRotation;
+                warrior.rigidbody2.position = new Vector2(safePosition.x, safePosition.y);
+                warrior.rigidbody2.WakeUp();
+            }
+
+            warrior.transform.position = safePosition;
+
+            warrior.CurrentplatForm = this;
+            warrior.LastSafePlatform = this;
+            warrior.LastSafePosition = safePosition;
+
+            warrior.IsFallingPlfExit = false;
+            warrior.IsFallingGrazesEdge = false;
+            warrior.IsFallingEdge = false;
+            warrior.IsFallingHitEnemy = false;
+            warrior.CanMove = true;
+            warrior.CanAttackWarrior = true;
+            warrior._blockAction = false;
+
+            warrior.StopJumpTowardCoroutine();
+            warrior.StopMoveTowardCoroutine();
+            warrior.WaitAnimationDisplay();
+
+            Physics2D.SyncTransforms();
+
+            if (registerRespawnedWarriorAsPassenger)
+                ForceRegisterRespawnedPassenger(warrior);
+        }
+
+        public void ForceRegisterRespawnedPassenger(CharacterController character)
+        {
+            if (character == null || platformCollider == null)
+                return;
+
+            RestorePlatformCollisionForCharacter(character);
+            Physics2D.SyncTransforms();
+
+            Collider2D standingCollider = GetStandingCollider(character);
+            if (standingCollider == null)
+                return;
+
+            Passenger passenger;
+            if (!TryBuildPassengerFromCollider(standingCollider, character.rigidbody2, out passenger))
+                return;
+
+            CacheOrRefreshPassenger(passenger);
+            passenger.lastTopSupportTime = Time.time;
+            _pendingRemove.Remove(passenger.id);
+
+            character.CurrentplatForm = this;
+
+            Warrior warrior = character as Warrior;
+            if (warrior != null)
+            {
+                warrior.LastSafePlatform = this;
+                warrior.LastSafePosition = GetSafeRespawnPositionFor(warrior, warrior.transform.position.x);
+            }
+        }
+
+        private void RestorePlatformCollisionForCharacter(CharacterController character)
+        {
+            if (character == null || platformCollider == null)
+                return;
+
+            Collider2D[] cols = character.GetComponentsInChildren<Collider2D>(true);
+            for (int i = 0; i < cols.Length; i++)
+            {
+                Collider2D col = cols[i];
+                if (col == null || col.isTrigger)
+                    continue;
+
+                Physics2D.IgnoreCollision(platformCollider, col, false);
+            }
+        }
+
+        private Vector2 GetColliderHalfSizeSafe(Collider2D col, Vector2 fallback)
+        {
+            if (col == null)
+                return fallback;
+
+            Bounds bounds = col.bounds;
+            if (bounds.size.x > 0.0001f && bounds.size.y > 0.0001f)
+                return bounds.extents;
+
+            BoxCollider2D box = col as BoxCollider2D;
+            if (box != null)
+            {
+                Vector3 scale = box.transform.lossyScale;
+                return new Vector2(
+                    Mathf.Abs(box.size.x * scale.x) * 0.5f,
+                    Mathf.Abs(box.size.y * scale.y) * 0.5f
+                );
+            }
+
+            return fallback;
+        }
+
+        private void EnsureRespawnId()
+        {
+            if (!string.IsNullOrWhiteSpace(respawnId))
+                return;
+
+            respawnId = GetHierarchyPath(transform);
+        }
+
+        private static string GetHierarchyPath(Transform node)
+        {
+            if (node == null)
+                return "MovingHorizontalPlatform";
+
+            string path = node.name;
+            Transform parent = node.parent;
+
+            while (parent != null)
+            {
+                path = parent.name + "/" + path;
+                parent = parent.parent;
+            }
+
+            return path;
+        }
+
         private void BuildPathPositions()
         {
             float minOffset = Mathf.Min(xMin, xMax);
@@ -804,6 +1001,7 @@ namespace Assets.Scripts.Platforms
 
             movingMinRiderWidthOverlapRatio = Mathf.Min(movingMinRiderWidthOverlapRatio, minRiderWidthOverlapRatio);
             movingSupportFallbackSideTolerance = Mathf.Min(movingSupportFallbackSideTolerance, supportFallbackSideTolerance);
+            EnsureRespawnId();
         }
 
         private void OnDrawGizmosSelected()

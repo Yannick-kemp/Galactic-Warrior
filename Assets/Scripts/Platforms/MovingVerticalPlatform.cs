@@ -1,4 +1,4 @@
-using Assets.Scripts.Characteres.EnemyContoller;
+﻿using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Characteres.WarriorController;
 using System.Collections;
 using System.Collections.Generic;
@@ -431,18 +431,32 @@ namespace Assets.Scripts.Platforms
             if (support == null || !support.enabled)
                 return false;
 
-            if (IsPlatformIgnoredByCharacter(rider))
+            if (IsPlatformIgnoredByCharacter(rider)) {
+                Debug.Log("[LiftDetach] platform ignored for " + rider.name);
                 return false;
+            }
 
-            if (rider.IsJumping)
+
+            if (rider.IsJumping) {
+                Debug.Log("[LiftDetach] IsJumping true for " + rider.name);
                 return false;
+            }
 
-            if (rider.rigidbody2 != null && rider.rigidbody2.linearVelocity.y > jumpOffVelocity)
+
+            if (rider.rigidbody2 != null && rider.rigidbody2.linearVelocity.y > jumpOffVelocity) {
+                Debug.Log("[LiftDetach] upward velocity too high: " + rider.rigidbody2.linearVelocity.y);
+                return false; 
+            }
+
+
+            if (!IsHorizontallyOverPlatform(support)) {
+
+                    Debug.Log("[LiftDetach] not horizontally over platform for " + rider.name);
                 return false;
+            }
 
-            if (!IsHorizontallyOverPlatform(support))
-                return false;
-
+            if (!IsBottomCloseToPlatformTop(support))
+                Debug.Log("[LiftDetach] bottom not close to platform top");
             return IsBottomCloseToPlatformTop(support);
         }
 
