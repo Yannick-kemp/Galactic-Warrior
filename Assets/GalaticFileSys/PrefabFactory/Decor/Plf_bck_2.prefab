@@ -492,8 +492,18 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   platformCollider: {fileID: 8227066668684094598}
   platformTrigger: {fileID: 3246284690234732675}
+  defaultRenderer: {fileID: 0}
   mainRenderer: {fileID: 307011748652669811}
   overlayRenderer: {fileID: 8123464748528790312}
   initialTheme: {fileID: 11400000, guid: 50569dccf28ffad4eafa997addf5caa8, type: 2}
   applyInitialThemeOnStart: 1
+  hideDefaultRendererWhenThemeApplied: 1
+  autoBindDefaultRenderer: 1
+  autoBindThemeRenderers: 1
+  maxWarriorSpeed: 20
+  passThroughBuffer: 0.08
+  landingBand: 0.14
+  horizontalLandingSkin: 0.03
+  restoreAfterTriggerExitTimeout: 0.75
+  zalaytyJumpDownRestoreContactSkin: 0.01
   edgeZoneWidth: 0.35

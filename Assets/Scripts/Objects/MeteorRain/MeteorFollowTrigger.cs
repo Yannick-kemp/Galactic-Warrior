@@ -46,6 +46,7 @@ public sealed class MeteorFollowTrigger : MonoBehaviour
     {
         if (_used && oneShot) return;
         if (meteorRain == null) return;
+        if (meteorRain.IsStartBlockedByStopPoint) return;
         if (GameMgr.Instance?.IsRestarting == true) return;
 
         Warrior warrior = other.GetComponentInParent<Warrior>();
@@ -77,6 +78,7 @@ public sealed class MeteorFollowTrigger : MonoBehaviour
         _startRoutine = null;
 
         if (meteorRain == null) yield break;
+        if (meteorRain.IsStartBlockedByStopPoint) yield break;
         if (warrior == null) yield break;
         if (!warrior.gameObject.activeInHierarchy) yield break;
         if (GameMgr.Instance?.IsRestarting == true) yield break;
@@ -111,6 +113,11 @@ public sealed class MeteorFollowTrigger : MonoBehaviour
         }
 
         _used = false;
+
+        // Reset means recover normal trigger behaviour.
+        // Without this, a previous stop-point block can stay sticky across retry/reset.
+        if (meteorRain != null)
+            meteorRain.ClearStopPointRestartLock();
     }
 
     private void OnDisable()

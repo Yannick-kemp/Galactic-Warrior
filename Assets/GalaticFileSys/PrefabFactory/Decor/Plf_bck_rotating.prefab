@@ -429,6 +429,9 @@ MonoBehaviour:
   topMaxGap: 0.16
   horizontalSupportSkin: 0.04
   forceKinematicBody: 1
+  respawnId: 
+  respawnSafeMargin: 0.12
+  respawnSeatOffset: 0.04
 --- !u!50 &408357779365454138
 Rigidbody2D:
   serializedVersion: 5

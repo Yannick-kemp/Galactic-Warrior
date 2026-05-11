@@ -70,6 +70,11 @@ public sealed class MeteorRainFollowWarrior : MonoBehaviour
     private float _baseY;
     private float _resolvedMoveDirectionX = 1f;
 
+    // Runtime-only lock. It is controlled by MeteorRainStopTrigger.
+    // False = default behaviour; MeteorFollowTrigger may start the rain normally.
+    // True  = Warrior reached a stop point that explicitly blocks future starts.
+    private bool _stopPointReachedRestartLocked;
+
     private Vector3 _initialPosition;
     private Quaternion _initialRotation;
 
@@ -79,11 +84,18 @@ public sealed class MeteorRainFollowWarrior : MonoBehaviour
     public bool IsFollowing => _isFollowing;
     public float CurrentMoveDirectionX => _resolvedMoveDirectionX;
 
+    /// <summary>
+    /// MeteorFollowTrigger reads this before starting the rain.
+    /// It is true only when a stop trigger explicitly asked to block future starts.
+    /// </summary>
+    public bool IsStartBlockedByStopPoint => _stopPointReachedRestartLocked;
+
     private void Awake()
     {
         _initialPosition = transform.position;
         _initialRotation = transform.rotation;
         _baseY = _initialPosition.y;
+        _stopPointReachedRestartLocked = false;
 
         CacheSystems();
 
@@ -150,8 +162,27 @@ public sealed class MeteorRainFollowWarrior : MonoBehaviour
         SetTravelDirection(MeteorRainTravelDirection.RightToLeft);
     }
 
+    /// <summary>
+    /// Called by MeteorRainStopTrigger when Warrior reaches MeteorStopPoint.
+    /// IMPORTANT: this assigns the state exactly.
+    /// If blockFutureStarts is false, any previous runtime lock is cleared so the rain
+    /// recovers its original/default start behaviour.
+    /// </summary>
+    public void NotifyStopPointReached(bool blockFutureStarts)
+    {
+        _stopPointReachedRestartLocked = blockFutureStarts;
+    }
+
+    public void ClearStopPointRestartLock()
+    {
+        _stopPointReachedRestartLocked = false;
+    }
+
     public void StartRainAndFollow(Warrior warrior = null)
     {
+        if (_stopPointReachedRestartLocked)
+            return;
+
         if (warrior != null)
             SetTarget(warrior);
 
@@ -425,6 +456,8 @@ public sealed class MeteorRainFollowWarrior : MonoBehaviour
 
     public void ResetMeteorState(bool clearTarget = true)
     {
+        _stopPointReachedRestartLocked = false;
+
         StopRainImmediate();
         RestoreInitialTransform();
 
