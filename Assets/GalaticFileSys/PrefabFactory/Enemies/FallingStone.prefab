@@ -186,3 +186,5 @@ MonoBehaviour:
   platformRepulseDistance: 3.25
   platformRepulseDuration: 0.48
   platformRepulseControlLock: 0.25
+  reserveCanExplodeFromWarriorIceBullet: 1
+  destroyIceBulletWhenReserveExplodes: 1

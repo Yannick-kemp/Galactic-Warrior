@@ -1,4 +1,5 @@
 ﻿using Assets.Scripts.Characteres.WarriorController;
+using Assets.Scripts.Relics.Projectiles;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -60,14 +61,31 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private float platformRepulseDuration = 0.18f;
         [SerializeField] private float platformRepulseControlLock = 0.25f;
 
+        [Header("Reserve Ice Bullet Reaction")]
+        [Tooltip("When true, a stored reserve stone reacts to Warrior's IceBulletProjectile and asks its StoneReserve to explode all active stones in that reserve.")]
+        [SerializeField] private bool reserveCanExplodeFromWarriorIceBullet = true;
+
+        [Tooltip("When true, the ice bullet is destroyed after it triggers the reserve explosion.")]
+        [SerializeField] private bool destroyIceBulletWhenReserveExplodes = true;
+
         private Rigidbody2D rb;
         private Collider2D[] stoneColliders;
         private bool[] originalColliderEnabledStates;
+        private bool[] originalColliderTriggerStates;
+
+        private bool originalRigidbodyStateCached;
+        private bool originalRigidbodySimulated;
+        private RigidbodyType2D originalRigidbodyBodyType;
+        private RigidbodyConstraints2D originalRigidbodyConstraints;
 
         private bool launched;
         private bool impactResolved;
         private bool carriedByMorvex;
+        private bool storedInReserve;
+        private StoneReserve owningReserve;
         private int shieldLaserLayer = -1;
+
+        public bool IsStoredInReserve => storedInReserve;
 
         private bool ignoringWarriorBecauseSprint;
         private readonly List<Collider2D> sprintIgnoredWarriorColliders = new List<Collider2D>();
@@ -93,6 +111,38 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         }
 
         /// <summary>
+        /// Called by StoneReserve for stones that are physically placed in the scene as reserve stock.
+        /// A stored reserve stone is visible/countable only: no gravity, no collider contact,
+        /// no platform hit, no impact VFX, and no Destroy().
+        /// </summary>
+        public void SetReserveStorageMode(bool stored)
+        {
+            SetReserveStorageMode(stored, stored ? owningReserve : null);
+        }
+
+        public void SetReserveStorageMode(bool stored, StoneReserve reserveOwner)
+        {
+            CacheOwnPhysicsReferences();
+
+            storedInReserve = stored;
+            owningReserve = stored ? reserveOwner : null;
+
+            if (stored)
+            {
+                carriedByMorvex = false;
+                launched = false;
+                impactResolved = false;
+
+                ClearSprintWarriorCollisionIgnore();
+                ClearPlatformCollisionIgnoredWhileCarried();
+                ConfigureReserveSensorPhysics();
+                return;
+            }
+
+            RestorePhysicsBeforeLaunchOrReuse();
+        }
+
+        /// <summary>
         /// Call this ONLY for the stone object that Morvex visually holds.
         /// This makes the carried object completely safe: no platform hit, no shield hit,
         /// no Warrior hit, no impact VFX, and no Destroy() while it is attached to Morvex.
@@ -101,6 +151,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             CacheOwnPhysicsReferences();
 
+            storedInReserve = false;
+            owningReserve = null;
             carriedByMorvex = true;
             launched = false;
             impactResolved = false;
@@ -130,6 +182,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         public void EndMorvexCarryWithoutLaunch()
         {
             carriedByMorvex = false;
+            owningReserve = null;
             RestorePhysicsBeforeLaunchOrReuse();
             ClearPlatformCollisionIgnoredWhileCarried();
         }
@@ -138,6 +191,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             CacheOwnPhysicsReferences();
 
+            storedInReserve = false;
+            owningReserve = null;
             carriedByMorvex = false;
             launched = true;
             impactResolved = false;
@@ -152,13 +207,13 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             }
 
             RefreshSprintCollisionIgnore();
-            
+
             Destroy(gameObject, lifeTime);
         }
 
         private void Update()
         {
-            if (carriedByMorvex || !launched)
+            if (storedInReserve || carriedByMorvex || !launched)
                 return;
 
             transform.Rotate(0f, 0f, spinSpeed * Time.deltaTime);
@@ -166,6 +221,21 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private void FixedUpdate()
         {
+            if (storedInReserve)
+            {
+                if (rb != null)
+                {
+                    rb.simulated = true;
+                    rb.bodyType = RigidbodyType2D.Kinematic;
+                    rb.constraints = RigidbodyConstraints2D.FreezeAll;
+                    rb.linearVelocity = Vector2.zero;
+                    rb.angularVelocity = 0f;
+                    rb.gravityScale = 0f;
+                }
+
+                return;
+            }
+
             if (carriedByMorvex)
             {
                 if (rb != null)
@@ -226,6 +296,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private void OnTriggerEnter2D(Collider2D other)
         {
+            if (storedInReserve)
+            {
+                TryTriggerReserveIceBulletExplosion(other);
+                return;
+            }
+
             if (ShouldIgnoreImpactCallbacks())
                 return;
 
@@ -242,6 +318,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (impactResolved)
                 return true;
 
+            if (storedInReserve)
+                return true;
+
             if (carriedByMorvex && ignoreAllImpactsWhileCarried)
                 return true;
 
@@ -253,13 +332,58 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (rb == null)
                 rb = GetComponent<Rigidbody2D>();
 
+            if (rb != null && !originalRigidbodyStateCached)
+            {
+                originalRigidbodySimulated = rb.simulated;
+                originalRigidbodyBodyType = rb.bodyType;
+                originalRigidbodyConstraints = rb.constraints;
+                originalRigidbodyStateCached = true;
+            }
+
             if (stoneColliders == null || stoneColliders.Length == 0)
             {
                 stoneColliders = GetComponentsInChildren<Collider2D>(true);
                 originalColliderEnabledStates = new bool[stoneColliders.Length];
+                originalColliderTriggerStates = new bool[stoneColliders.Length];
 
                 for (int i = 0; i < stoneColliders.Length; i++)
+                {
                     originalColliderEnabledStates[i] = stoneColliders[i] != null && stoneColliders[i].enabled;
+                    originalColliderTriggerStates[i] = stoneColliders[i] != null && stoneColliders[i].isTrigger;
+                }
+            }
+        }
+
+        private void ConfigureReserveSensorPhysics()
+        {
+            CacheOwnPhysicsReferences();
+
+            if (rb != null)
+            {
+                rb.simulated = true;
+                rb.bodyType = RigidbodyType2D.Kinematic;
+                rb.constraints = RigidbodyConstraints2D.FreezeAll;
+                rb.linearVelocity = Vector2.zero;
+                rb.angularVelocity = 0f;
+                rb.gravityScale = 0f;
+            }
+
+            if (stoneColliders == null)
+                return;
+
+            for (int i = 0; i < stoneColliders.Length; i++)
+            {
+                Collider2D stoneCollider = stoneColliders[i];
+                if (stoneCollider == null)
+                    continue;
+
+                bool shouldBeEnabled = true;
+                if (originalColliderEnabledStates != null && i < originalColliderEnabledStates.Length)
+                    shouldBeEnabled = originalColliderEnabledStates[i];
+
+                stoneCollider.enabled = shouldBeEnabled;
+                if (shouldBeEnabled)
+                    stoneCollider.isTrigger = true;
             }
         }
 
@@ -283,7 +407,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             CacheOwnPhysicsReferences();
 
             if (rb != null)
-                rb.simulated = true;
+            {
+                rb.simulated = originalRigidbodyStateCached ? originalRigidbodySimulated : true;
+                if (originalRigidbodyStateCached)
+                {
+                    rb.bodyType = originalRigidbodyBodyType;
+                    rb.constraints = originalRigidbodyConstraints;
+                }
+            }
 
             if (stoneColliders == null)
                 return;
@@ -300,6 +431,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                     shouldBeEnabled = originalColliderEnabledStates[i];
 
                 stoneCollider.enabled = shouldBeEnabled;
+
+                if (originalColliderTriggerStates != null && i < originalColliderTriggerStates.Length)
+                    stoneCollider.isTrigger = originalColliderTriggerStates[i];
             }
         }
 
@@ -377,6 +511,27 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             carriedIgnoredPlatformColliders.Clear();
             ignoringPlatformsBecauseCarried = false;
+        }
+
+        private bool TryTriggerReserveIceBulletExplosion(Collider2D other)
+        {
+            if (!reserveCanExplodeFromWarriorIceBullet || other == null)
+                return false;
+
+            IceBulletProjectile iceBullet = other.GetComponent<IceBulletProjectile>() ?? other.GetComponentInParent<IceBulletProjectile>();
+            if (iceBullet == null)
+                return false;
+
+            StoneReserve reserve = owningReserve != null ? owningReserve : GetComponentInParent<StoneReserve>();
+            if (reserve == null)
+                return false;
+
+            reserve.ExplodeAllStonesFromIceBullet(transform.position);
+
+            if (destroyIceBulletWhenReserveExplodes)
+                Destroy(iceBullet.gameObject);
+
+            return true;
         }
 
         private bool TryIgnoreWarriorCollisionBecauseSprint(Collider2D touchedCollider)
@@ -591,7 +746,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (impactResolved)
                 return;
 
-            // Absolute safety: the held reserve/carry visual is never allowed to destroy itself.
+            // Absolute safety: reserve stock and held carry visuals are never allowed to destroy themselves.
+            if (storedInReserve)
+                return;
+
             if (carriedByMorvex && ignoreAllImpactsWhileCarried)
                 return;
 

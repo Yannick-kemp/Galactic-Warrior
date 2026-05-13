@@ -201,28 +201,28 @@ namespace Assets.Scripts.Platforms
         protected override void OnCollisionEnter2D(Collision2D collision)
         {
             base.OnCollisionEnter2D(collision);
-            TryAddPassenger(collision);
+            //TryAddPassenger(collision);
         }
 
         protected override void OnCollisionStay2D(Collision2D collision)
         {
             base.OnCollisionStay2D(collision);
-            TryAddPassenger(collision);
+          //  TryAddPassenger(collision);
         }
 
         protected override void OnCollisionExit2D(Collision2D collision)
         {
             base.OnCollisionExit2D(collision);
 
-            Passenger passenger;
-            if (!TryBuildPassengerFromCollision(collision, out passenger))
-                return;
+            //Passenger passenger;
+            //if (!TryBuildPassengerFromCollision(collision, out passenger))
+            //    return;
 
-            if (!_pendingRemove.Contains(passenger.id))
-            {
-                _pendingRemove.Add(passenger.id);
-                StartCoroutine(RemovePassengerIfReallyLeft(passenger.id));
-            }
+            //if (!_pendingRemove.Contains(passenger.id))
+            //{
+            //    _pendingRemove.Add(passenger.id);
+            //    StartCoroutine(RemovePassengerIfReallyLeft(passenger.id));
+            //}
         }
 
         private void RememberPlatformDelta(Vector2 platformDelta)

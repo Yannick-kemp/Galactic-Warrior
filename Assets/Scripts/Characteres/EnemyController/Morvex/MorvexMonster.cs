@@ -67,6 +67,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private State currentState;
         private StoneReserve currentReserve;
+        private bool currentReserveReserved;
         private bool hasStone;
         private float stateTimer;
         private float noReserveRecheckTimer;
@@ -215,7 +216,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 DropStone();
 
             if (killed || IsDeadOrDying)
+            {
+                if (!hasStone)
+                    CancelCurrentReserveReservation(false);
+
                 return;
+            }
 
             stunTimer = hitStunDuration;
             LosingBalanceAnimationDisplay();
@@ -295,7 +301,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private void UpdateFlyToReserve()
         {
-            if (currentReserve == null || !currentReserve.HasStones)
+            if (currentReserve == null || !currentReserve.HasStoneAvailable())
             {
                 EnterState(State.SearchNewReserve);
                 return;
@@ -314,13 +320,22 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             FlyTowards(grabPos, flySpeed);
 
             if (Vector2.Distance(transform.position, grabPos) <= arriveDistance)
+            {
+                if (!TryReserveCurrentReserve())
+                {
+                    EnterState(State.SearchNewReserve);
+                    return;
+                }
+
                 EnterState(State.GrabStone);
+            }
         }
 
         private void UpdateGrabStone()
         {
             if (currentReserve == null)
             {
+                currentReserveReserved = false;
                 EnterState(State.SearchNewReserve);
                 return;
             }
@@ -331,12 +346,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (stateTimer > 0f)
                 return;
 
-            if (!currentReserve.TryTakeStone())
+            if (!currentReserve.TryTakeReservedStone())
             {
+                CancelCurrentReserveReservation(false);
                 EnterState(State.SearchNewReserve);
                 return;
             }
 
+            currentReserveReserved = false;
             SetHasStone(true);
             EnterState(State.FlyAboveWarrior);
         }
@@ -402,13 +419,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (stateTimer > 0f && Vector2.Distance(transform.position, retreatTarget) > arriveDistance)
                 return;
 
-            EnterState(currentReserve != null && currentReserve.HasStones
+            EnterState(currentReserve != null && currentReserve.HasStoneAvailable()
                 ? State.FlyToReserve
                 : State.SearchNewReserve);
         }
 
         private void UpdateSearchNewReserve()
         {
+            CancelCurrentReserveReservation(false);
             currentReserve = FindNearestAvailableReserve();
             EnterState(currentReserve != null ? State.FlyToReserve : State.NoReserveMode);
         }
@@ -461,6 +479,29 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             stone.Launch();
         }
 
+        private bool TryReserveCurrentReserve()
+        {
+            if (currentReserve == null)
+                return false;
+
+            if (currentReserveReserved)
+                return true;
+
+            currentReserveReserved = currentReserve.TryReserveStone(false);
+            return currentReserveReserved;
+        }
+
+        private void CancelCurrentReserveReservation(bool revealStoneVisual)
+        {
+            if (!currentReserveReserved)
+                return;
+
+            if (currentReserve != null)
+                currentReserve.CancelReservation(revealStoneVisual);
+
+            currentReserveReserved = false;
+        }
+
         private StoneReserve FindNearestAvailableReserve()
         {
             StoneReserve best = null;
@@ -475,7 +516,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                     continue;
                 }
 
-                if (!reserve.HasStones)
+                if (!reserve.HasStoneAvailable())
                     continue;
 
                 float distanceSqr = (reserve.GetApproachWorldPosition() - transform.position).sqrMagnitude;
@@ -615,12 +656,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         public void ForceRefreshReserves()
         {
+            CancelCurrentReserveReservation(false);
             DiscoverReserves();
             currentReserve = FindNearestAvailableReserve();
         }
 
         public void ForceSearchNewReserve()
         {
+            CancelCurrentReserveReservation(false);
             EnterState(State.SearchNewReserve);
         }
 

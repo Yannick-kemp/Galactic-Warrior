@@ -105,8 +105,8 @@ namespace Assets.Scripts.Platforms
 
             _lastLiftDelta = MovePlatformStep();
 
-            if (carryCharactersLikeLift)
-                CarryRegisteredRiders(_lastLiftDelta);
+            //if (carryCharactersLikeLift)
+            //    CarryRegisteredRiders(_lastLiftDelta);
         }
 
         private Vector2 MovePlatformStep()
@@ -146,29 +146,29 @@ namespace Assets.Scripts.Platforms
 
             //}
             base.OnCollisionEnter2D(collision);
-            var character = collision.collider.GetComponentInParent<CharacterController>();
-            if (character is not ZalaytyMonster)
+            //var character = collision.collider.GetComponentInParent<CharacterController>();
+            //if (character is not ZalaytyMonster)
 
-            {
-                return;
+            //{
+            //    return;
 
 
-            }
-            TryRegisterRiderFromCollision(collision, snapImmediately: true);
+            //}
+            //TryRegisterRiderFromCollision(collision, snapImmediately: true);
         }
 
         protected override void OnCollisionStay2D(Collision2D collision)
         {
             base.OnCollisionStay2D(collision);
-            var character = collision.collider.GetComponentInParent<CharacterController>();
-            if (character is not ZalaytyMonster)
+            //var character = collision.collider.GetComponentInParent<CharacterController>();
+            //if (character is not ZalaytyMonster)
 
-            {
-                return;
+            //{
+            //    return;
 
 
-            }
-            TryRegisterRiderFromCollision(collision, snapImmediately: false);
+            //}
+            //TryRegisterRiderFromCollision(collision, snapImmediately: false);
         }
 
         protected override void OnCollisionExit2D(Collision2D collision)
@@ -176,10 +176,10 @@ namespace Assets.Scripts.Platforms
             base.OnCollisionExit2D(collision);
 
 
-            CharacterController character = collision.collider.GetComponentInParent<CharacterController>();
-            if (character == null)
-                return;
-            StartExitValidation(character);
+            //CharacterController character = collision.collider.GetComponentInParent<CharacterController>();
+            //if (character == null)
+            //    return;
+            //StartExitValidation(character);
         }
 
         private void TryRegisterRiderFromCollision(Collision2D collision, bool snapImmediately)
