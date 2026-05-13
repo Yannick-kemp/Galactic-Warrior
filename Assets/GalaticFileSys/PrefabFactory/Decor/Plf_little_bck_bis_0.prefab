@@ -301,7 +301,7 @@ BoxCollider2D:
     drawMode: 0
     adaptiveTiling: 0
   m_AutoTiling: 0
-  m_Size: {x: 5.3, y: 0.45}
+  m_Size: {x: 5.3, y: 0.17}
   m_EdgeRadius: 0
 --- !u!114 &738311539530857679
 MonoBehaviour:
@@ -317,10 +317,20 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   platformCollider: {fileID: 7513446125598202773}
   platformTrigger: {fileID: 6101547551884915392}
+  defaultRenderer: {fileID: 0}
   mainRenderer: {fileID: 459942933028102028}
   overlayRenderer: {fileID: 9064889576855049657}
   initialTheme: {fileID: 11400000, guid: db6f11170185d07449eab3f72660399e, type: 2}
   applyInitialThemeOnStart: 1
+  hideDefaultRendererWhenThemeApplied: 1
+  autoBindDefaultRenderer: 1
+  autoBindThemeRenderers: 1
+  maxWarriorSpeed: 20
+  passThroughBuffer: 0.08
+  landingBand: 0.14
+  horizontalLandingSkin: 0.03
+  restoreAfterTriggerExitTimeout: 0.75
+  zalaytyJumpDownRestoreContactSkin: 0.01
   edgeZoneWidth: 0.35
 --- !u!1 &8219771425042971782
 GameObject:

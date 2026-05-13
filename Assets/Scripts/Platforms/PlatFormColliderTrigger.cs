@@ -450,6 +450,7 @@ public class PlatFormColliderTrigger : MonoBehaviour
         if (character == null || platformCollider == null)
             return;
 
+
         Collider2D support = GetStandingCollider(character);
 
         if (support == null)

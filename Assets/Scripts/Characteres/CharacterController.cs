@@ -1,4 +1,6 @@
 ﻿using Assets.Scripts.Characteres;
+using Assets.Scripts.Characteres.EnemyContoller;
+using Assets.Scripts.Platforms;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -283,61 +285,126 @@ public class CharacterController : Character, ICharacterController
         // If clamped position is different, we can't move there
         return Mathf.Abs(clampedX - targetX) < 0.01f;
     }
+    //public IEnumerator MoveTowardPostionAction(float x)
+    //{
+
+
+    //    if (_isMoving) yield break;
+    //    _isMoving = true;
+
+    //    bool wantsBeyondEdge = IsTargetOutsideCurrentPlatformSafeRange(x);
+
+    //    // Clamp only if needed. For warrior (override), if target is outside, allow run-off.
+    //    bool shouldClamp = ClampMoveToCurrentPlatform &&
+    //                       !(AllowEdgeExitWhenTargetOutside && wantsBeyondEdge);
+
+    //    float targetX = shouldClamp ? ClampToCurrentPlatform(x) : x;
+
+    //    FlipCharacter(targetX);
+
+    //    while (Mathf.Abs(targetX - transform.position.x) > 0.1f)
+    //    {
+    //        if (animator == null ||
+    //  (!animator.GetBool("isAttacking") &&
+    //   !animator.GetBool("isAttacking2") &&
+    //   !animator.GetBool("isAttacking3") &&
+    //   !animator.GetBool("isDying") &&
+    //   !animator.GetBool("IsLosingCtrl")))
+    //        {
+    //            FlipCharacter(targetX);
+    //        }
+
+    //        Vector2 currentPosition = transform.position;
+    //        Vector2 targetPosition = new Vector2(targetX, currentPosition.y);
+    //        Vector2 newPosition = Vector2.MoveTowards(currentPosition, targetPosition, Speed * Time.deltaTime);
+
+    //        if (shouldClamp && CurrentplatForm != null)
+    //            newPosition.x = ClampToCurrentPlatform(newPosition.x);
+
+    //        transform.position = new Vector3(newPosition.x, newPosition.y, transform.position.z);
+    //        yield return null;
+    //    }
+
+    //    if (shouldClamp)
+    //    {
+    //        float finalX = ClampToCurrentPlatform(targetX);
+    //        transform.position = new Vector3(finalX, transform.position.y, transform.position.z);
+    //    }
+    //    else
+    //    {
+    //        transform.position = new Vector3(targetX, transform.position.y, transform.position.z);
+    //    }
+
+    //    _isMoving = false;
+    //    activesMoveCoroutine = null;
+    //}
+
     public IEnumerator MoveTowardPostionAction(float x)
     {
-        
-        
         if (_isMoving) yield break;
         _isMoving = true;
 
         bool wantsBeyondEdge = IsTargetOutsideCurrentPlatformSafeRange(x);
-
-        // Clamp only if needed. For warrior (override), if target is outside, allow run-off.
         bool shouldClamp = ClampMoveToCurrentPlatform &&
                            !(AllowEdgeExitWhenTargetOutside && wantsBeyondEdge);
-
         float targetX = shouldClamp ? ClampToCurrentPlatform(x) : x;
-
         FlipCharacter(targetX);
 
         while (Mathf.Abs(targetX - transform.position.x) > 0.1f)
         {
             if (animator == null ||
-      (!animator.GetBool("isAttacking") &&
-       !animator.GetBool("isAttacking2") &&
-       !animator.GetBool("isAttacking3") &&
-       !animator.GetBool("isDying") &&
-       !animator.GetBool("IsLosingCtrl")))
+                (!animator.GetBool("isAttacking") &&
+                 !animator.GetBool("isAttacking2") &&
+                 !animator.GetBool("isAttacking3") &&
+                 !animator.GetBool("isDying") &&
+                 !animator.GetBool("IsLosingCtrl")))
             {
                 FlipCharacter(targetX);
             }
 
-            Vector2 currentPosition = transform.position;
-            Vector2 targetPosition = new Vector2(targetX, currentPosition.y);
-            Vector2 newPosition = Vector2.MoveTowards(currentPosition, targetPosition, Speed * Time.deltaTime);
-
+            // --- X: clamp to platform safe margin ---
+            float currentX = rigidbody2 != null ? rigidbody2.position.x : transform.position.x;
+            float newX = Mathf.MoveTowards(currentX, targetX, Speed * Time.deltaTime);
             if (shouldClamp && CurrentplatForm != null)
-                newPosition.x = ClampToCurrentPlatform(newPosition.x);
+                newX = ClampToCurrentPlatform(newX);
 
-            transform.position = new Vector3(newPosition.x, newPosition.y, transform.position.z);
+            // --- Y: follow platform surface (anti-tunnel + anti-takeoff) ---
+            float surfaceY = GetMovingPlateSurfaceY();
+            float newY = (surfaceY != float.MinValue)
+                ? surfaceY                                       // locked to platform top
+                : (rigidbody2 != null ? rigidbody2.position.y   // free-fall: keep current
+                                      : transform.position.y);
+
+            // Use MovePosition so the physics solver sees the move
+            if (rigidbody2 != null)
+            {
+                rigidbody2.MovePosition(new Vector2(newX, newY));
+                Physics2D.SyncTransforms();
+            }
+            else
+            {
+                transform.position = new Vector3(newX, newY, transform.position.z);
+            }
+
             yield return null;
         }
 
-        if (shouldClamp)
-        {
-            float finalX = ClampToCurrentPlatform(targetX);
-            transform.position = new Vector3(finalX, transform.position.y, transform.position.z);
-        }
-        else
-        {
-            transform.position = new Vector3(targetX, transform.position.y, transform.position.z);
-        }
+        // Final snap
+        float finalX = shouldClamp ? ClampToCurrentPlatform(targetX) : targetX;
+        float finalSurfaceY = GetMovingPlateSurfaceY();
+        float finalY = (finalSurfaceY != float.MinValue)
+            ? finalSurfaceY
+            : (rigidbody2 != null ? rigidbody2.position.y : transform.position.y);
 
+        if (rigidbody2 != null)
+            rigidbody2.MovePosition(new Vector2(finalX, finalY));
+        else
+            transform.position = new Vector3(finalX, finalY, transform.position.z);
+
+        Physics2D.SyncTransforms();
         _isMoving = false;
         activesMoveCoroutine = null;
     }
-
-
     public IEnumerator JumpTowardPositionAction(Vector2 target, float height, float duration, Collider2D enemyCollider = null)
     {
         if (_isJumping) yield break;
@@ -695,6 +762,41 @@ public class CharacterController : Character, ICharacterController
             // Die(); Todo be handled by derived classes
         }
     }
+    /// <summary>
+    /// Returns the Y position the monster should stand at on the lift,
+    /// or float.MinValue if not on a lift.
+    /// </summary>
+    private float GetMovingPlateSurfaceY()
+    {
+        if (CurrentplatForm is not MovingVerticalPlatform movingPlatform)
+            return float.MinValue;
 
+        Rigidbody2D platformRb = movingPlatform.GetComponent<Rigidbody2D>();
+        if (platformRb == null)
+            return float.MinValue;
 
+        Collider2D platformCol = movingPlatform.platformCollider;
+        if (platformCol == null)
+            return float.MinValue;
+
+        // NormalCollider exists only on Enemy subclasses (M97, Zalayty, etc.)
+        // Warrior (and any other non-Enemy CharacterController) uses collider2 directly.
+        Enemy enemy = this as Enemy;
+        Collider2D enemyNormalCol = enemy?.NormalCollider;
+
+        Collider2D myCol = (enemyNormalCol != null && enemyNormalCol.enabled)
+            ? enemyNormalCol
+            : collider2;
+
+        if (myCol == null)
+            return float.MinValue;
+
+        float platformTopY = platformCol.bounds.max.y;
+
+        // Offset: distance from transform.position to the bottom of the standing collider.
+        // Works even if the collider has an offset or the pivot is not centered.
+        float bottomOffsetFromTransform = transform.position.y - myCol.bounds.min.y;
+
+        return platformTopY + bottomOffsetFromTransform;
+    }
 }

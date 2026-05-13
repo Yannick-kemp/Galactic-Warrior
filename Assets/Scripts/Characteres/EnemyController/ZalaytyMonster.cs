@@ -157,7 +157,7 @@ public class ZalaytyMonster : Enemy
 
     public void SetJumping(bool v) => isOnEdgePlatform = v;
 
-    public override bool HardAnchorToMovingPlatforms => false;
+
 
     public bool inRangeOrAttacking;
 
@@ -215,6 +215,9 @@ public class ZalaytyMonster : Enemy
 
     [Tooltip("Horizontal tolerance used when checking whether Zalayty's body is still above the shared platform during micro-separation.")]
     [SerializeField, Min(0f)] private float samePlatformMicroSeparationHorizontalSkin = 0.04f;
+
+    public override bool HardAnchorToMovingPlatforms => false;
+    protected override bool UsesCommittedPatrolEdge => false;
 
     private bool _missedMovingPlatformLandingRecoveryActive;
     private float _forceAirborneAnimationUntil = -999f;

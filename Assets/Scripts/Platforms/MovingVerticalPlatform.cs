@@ -3,6 +3,7 @@ using Assets.Scripts.Characteres.WarriorController;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.TextCore.Text;
 
 namespace Assets.Scripts.Platforms
 {
@@ -136,13 +137,37 @@ namespace Assets.Scripts.Platforms
 
         protected override void OnCollisionEnter2D(Collision2D collision)
         {
+            //var character = collision.collider.GetComponentInParent<CharacterController>();
+            //if (character is M97Monster)
+
+            //{
+            //    int t = 0;
+
+
+            //}
             base.OnCollisionEnter2D(collision);
+            var character = collision.collider.GetComponentInParent<CharacterController>();
+            if (character is not ZalaytyMonster)
+
+            {
+                return;
+
+
+            }
             TryRegisterRiderFromCollision(collision, snapImmediately: true);
         }
 
         protected override void OnCollisionStay2D(Collision2D collision)
         {
             base.OnCollisionStay2D(collision);
+            var character = collision.collider.GetComponentInParent<CharacterController>();
+            if (character is not ZalaytyMonster)
+
+            {
+                return;
+
+
+            }
             TryRegisterRiderFromCollision(collision, snapImmediately: false);
         }
 
@@ -150,10 +175,10 @@ namespace Assets.Scripts.Platforms
         {
             base.OnCollisionExit2D(collision);
 
+
             CharacterController character = collision.collider.GetComponentInParent<CharacterController>();
             if (character == null)
                 return;
-
             StartExitValidation(character);
         }
 
@@ -171,6 +196,17 @@ namespace Assets.Scripts.Platforms
 
             if (!IsTopSurfaceContact(collision, character))
                 return;
+            // If the enemy is intentionally a child of this platform,
+            // do not also add it to the lift rider list.
+            // Otherwise it would be moved twice: once by the parent transform,
+            // and once by CarryRegisteredRiders.
+            if (IsAlreadyMovedByThisPlatformHierarchy(character))
+            {
+                character.CurrentplatForm = this;
+                StopDownwardVelocity(character);
+                return;
+            }
+
 
             AddRider(character);
             character.CurrentplatForm = this;
@@ -383,6 +419,8 @@ namespace Assets.Scripts.Platforms
 
         private void CarryRegisteredRiders(Vector2 liftDelta)
         {
+
+
             if (_riders.Count == 0)
                 return;
 
@@ -390,6 +428,8 @@ namespace Assets.Scripts.Platforms
 
             foreach (CharacterController rider in _riders)
             {
+                if (rider is not Warrior && rider is not ZalaytyMonster)
+                    return;
                 if (!CanContinueRiding(rider))
                 {
                     _ridersToRemove.Add(rider);
@@ -431,27 +471,31 @@ namespace Assets.Scripts.Platforms
             if (support == null || !support.enabled)
                 return false;
 
-            if (IsPlatformIgnoredByCharacter(rider)) {
+            if (IsPlatformIgnoredByCharacter(rider))
+            {
                 Debug.Log("[LiftDetach] platform ignored for " + rider.name);
                 return false;
             }
 
 
-            if (rider.IsJumping) {
+            if (rider.IsJumping)
+            {
                 Debug.Log("[LiftDetach] IsJumping true for " + rider.name);
                 return false;
             }
 
 
-            if (rider.rigidbody2 != null && rider.rigidbody2.linearVelocity.y > jumpOffVelocity) {
+            if (rider.rigidbody2 != null && rider.rigidbody2.linearVelocity.y > jumpOffVelocity)
+            {
                 Debug.Log("[LiftDetach] upward velocity too high: " + rider.rigidbody2.linearVelocity.y);
-                return false; 
+                return false;
             }
 
 
-            if (!IsHorizontallyOverPlatform(support)) {
+            if (!IsHorizontallyOverPlatform(support))
+            {
 
-                    Debug.Log("[LiftDetach] not horizontally over platform for " + rider.name);
+                Debug.Log("[LiftDetach] not horizontally over platform for " + rider.name);
                 return false;
             }
 
@@ -527,6 +571,8 @@ namespace Assets.Scripts.Platforms
 
         private void MoveRiderToSurface(CharacterController rider, Vector2 extraDelta)
         {
+            if ( rider is not ZalaytyMonster)
+                return;
             Vector2 delta = GetSurfaceCorrectedDelta(rider, extraDelta);
             MoveRiderByDelta(rider, delta);
         }
@@ -552,6 +598,7 @@ namespace Assets.Scripts.Platforms
             if (rider.rigidbody2 != null)
             {
                 Vector2 target = rider.rigidbody2.position + delta;
+
                 rider.rigidbody2.position = target;
             }
             else
@@ -690,7 +737,12 @@ namespace Assets.Scripts.Platforms
                 transform.position.z
             );
         }
-
+        private bool IsAlreadyMovedByThisPlatformHierarchy(CharacterController character)
+        {
+            return character != null &&
+                   character.transform != null &&
+                   character.transform.IsChildOf(transform);
+        }
         private void OnDrawGizmosSelected()
         {
             Gizmos.color = Color.green;

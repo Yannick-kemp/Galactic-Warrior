@@ -14,7 +14,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
     public class Enemy : CharacterController, IStepable, IAttacker
     {
         [Header("Attack Configuration")]
-        [SerializeField] public float Range = 3f;
+        [SerializeField] public float Range = 3f; 
         [SerializeField] protected float attackCooldown = 1.5f;
         [SerializeField] protected int attackDamage = 10;
 
@@ -282,7 +282,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             CheckWorldYDeathFallback();
 
-            CommitPatrolEdgeForMovingVerticalPlatform();
+            if (UsesCommittedPatrolEdge)
+                CommitPatrolEdgeForMovingVerticalPlatform();
 
             if (groundCheckPoint != null)
             {
@@ -302,9 +303,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                     transform.position = safePos;
 
                     if (CurrentplatForm is MovingVerticalPlatform)
-                        CommitPatrolEdgeForMovingVerticalPlatform();
-                    else
-                        xEdge = GetOppositeEdgeX();
+                        if (UsesCommittedPatrolEdge)
+                            CommitPatrolEdgeForMovingVerticalPlatform();
+                        else
+                            xEdge = GetOppositeEdgeX();
 
                     if (IsGroundedOnPlatform)
                         StickToPlatform();
@@ -1077,8 +1079,26 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
         }
 
+
+        [SerializeField] protected bool useGroundCheckPointForPatrolEdge = true;
+        [SerializeField] protected float patrolEdgeAheadProbeDistance = 0.55f;
+        [SerializeField] protected float patrolEdgeRayExtraLength = 0.20f;
+        [SerializeField] protected float patrolEdgeBoundsSkin = 0.02f;
+
+
+
+        // Simple patrol enemies use this.
+        // Path-driven enemies like Zalayty override this to false.
+        protected virtual bool UsesCommittedPatrolEdge => true;
         protected void CommitPatrolEdgeForMovingVerticalPlatform()
         {
+            if (!UsesCommittedPatrolEdge)
+            {
+                _committedPatrolPlatform = null;
+                _hasCommittedPatrolEdge = false;
+                return;
+            }
+
             if (!(CurrentplatForm is MovingVerticalPlatform))
             {
                 _committedPatrolPlatform = null;
@@ -1132,8 +1152,45 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             }
         }
 
+
+
         protected bool HasReachedCommittedPatrolEdge(Bounds pb)
         {
+            bool targetLeft = Mathf.Abs(_committedPatrolEdgeX - pb.min.x) < 0.01f;
+
+            if (useGroundCheckPointForPatrolEdge &&
+                groundCheckPoint != null &&
+                CurrentplatForm != null &&
+                CurrentplatForm.platformCollider != null)
+            {
+                float direction = targetLeft ? -1f : 1f;
+
+                float probeDistance = Mathf.Max(
+                    patrolEdgeAheadProbeDistance,
+                    PlatformSafeMargin + patrolEdgeArriveThreshold + 0.05f
+                );
+
+                Vector2 aheadOrigin =
+                    (Vector2)groundCheckPoint.position +
+                    Vector2.right * direction * probeDistance;
+
+                RaycastHit2D hitAhead = Physics2D.Raycast(
+                    aheadOrigin,
+                    Vector2.down,
+                    rayLength + patrolEdgeRayExtraLength,
+                    PlatformLayer
+                );
+
+                bool hitCurrentPlatform = IsRayHitCurrentPlatform(hitAhead);
+
+                bool probeIsPastPlatformBounds = targetLeft
+                    ? aheadOrigin.x <= pb.min.x + patrolEdgeBoundsSkin
+                    : aheadOrigin.x >= pb.max.x - patrolEdgeBoundsSkin;
+
+                if (probeIsPastPlatformBounds || !hitCurrentPlatform)
+                    return true;
+            }
+
             Collider2D support = null;
 
             if (NormalCollider != null && NormalCollider.enabled)
@@ -1145,12 +1202,28 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 return false;
 
             Bounds eb = support.bounds;
-            bool targetLeft = Mathf.Abs(_committedPatrolEdgeX - pb.min.x) < 0.01f;
 
             if (targetLeft)
                 return Mathf.Abs(eb.min.x - pb.min.x) <= patrolEdgeArriveThreshold;
 
             return Mathf.Abs(eb.max.x - pb.max.x) <= patrolEdgeArriveThreshold;
+        }
+
+        private bool IsRayHitCurrentPlatform(RaycastHit2D hit)
+        {
+            if (hit.collider == null)
+                return false;
+
+            if (CurrentplatForm == null)
+                return false;
+
+            if (hit.collider == CurrentplatForm.platformCollider)
+                return true;
+
+            PlatFormPlfColliderTrigger platform =
+                hit.collider.GetComponentInParent<PlatFormPlfColliderTrigger>();
+
+            return platform == CurrentplatForm;
         }
         public void ForceDeath()
         {

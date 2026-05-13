@@ -1514,40 +1514,45 @@ public class M97Monster : Enemy
         if (!stickToDescendingPlatformSurface || _isDeadOrDying) return;
         if (CurrentplatForm is not MovingVerticalPlatform movingPlatform) return;
 
-        // If we are already parented, the platform is already moving us.
-        // We only need to ensure we don't "float" when the platform accelerates downward.
+        // If parented, don't double-move
         if (transform.parent == movingPlatform.transform)
         {
-            // Simply ensure vertical velocity isn't positive (jumping) 
-            // while the platform is moving down.
-            if (movingPlatform.IsMovingUpNow == false && rigidbody2.linearVelocity.y > 0)
-            {
-                rigidbody2.linearVelocity = new Vector2(rigidbody2.linearVelocity.x, 0);
-            }
+            if (!movingPlatform.IsMovingUpNow && rigidbody2.linearVelocity.y > 0)
+                rigidbody2.linearVelocity = new Vector2(rigidbody2.linearVelocity.x, 0f);
             return;
         }
 
-        // Use the Rigidbody of the platform to get its exact velocity
-        Rigidbody2D platformRb = movingPlatform.GetComponent<Rigidbody2D>();
-        if (platformRb == null || rigidbody2 == null) return;
+        if (rigidbody2 == null || movingPlatform.platformCollider == null) return;
 
         Bounds pb = movingPlatform.platformCollider.bounds;
-        Bounds eb = NormalCollider != null ? NormalCollider.bounds : collider2.bounds;
+        Collider2D myCol = (NormalCollider != null && NormalCollider.enabled)
+            ? (Collider2D)NormalCollider : collider2;
+        if (myCol == null) return;
 
+        Bounds eb = myCol.bounds;
         float verticalGap = eb.min.y - pb.max.y;
 
-        // If the enemy is within the "Snap Zone"
         if (verticalGap >= platformSurfaceBottomTolerance && verticalGap <= platformSurfaceTopTolerance)
         {
-            // 1. Position Snapping (Keep them exactly on the surface)
+            // Seat the monster exactly on the surface using MovePosition (not raw position)
             float targetY = pb.max.y + eb.extents.y + platformSurfaceSeatOffset;
-            rigidbody2.position = new Vector2(rigidbody2.position.x, targetY);
 
-            // 2. Velocity Matching (CRITICAL for resolution changes/lag)
-            // If the platform is moving down, we MUST move down at the same speed
-            Vector2 v = rigidbody2.linearVelocity;
-            v.y = platformRb.linearVelocity.y;
-            rigidbody2.linearVelocity = v;
+            // Only apply if we're moving (coroutine not running) or platform is descending
+            if (activesMoveCoroutine == null || !movingPlatform.IsMovingUpNow)
+            {
+                rigidbody2.MovePosition(new Vector2(rigidbody2.position.x, targetY));
+            }
+
+            // Always cancel any upward velocity when platform descends
+            if (!movingPlatform.IsMovingUpNow)
+            {
+                Vector2 v = rigidbody2.linearVelocity;
+                if (v.y > 0f)
+                {
+                    v.y = 0f;
+                    rigidbody2.linearVelocity = v;
+                }
+            }
         }
     }
 }
