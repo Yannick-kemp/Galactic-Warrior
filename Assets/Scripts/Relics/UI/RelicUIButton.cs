@@ -71,7 +71,11 @@ namespace Assets.Scripts.Relics.UI
             if (_btn == null || _rm == null || definition == null || warrior == null) return;
 
             bool hasResource = _rm.GetCount(definition) > 0;
-            bool canUseNow = !warrior.IsDead && !warrior.CanDie;
+            bool canUseNow =
+                !warrior.IsDead &&
+                !warrior.CanDie &&
+                warrior.CanAttackWarrior &&
+                !warrior.IsFrozenByHivernox;
 
             bool blockedByIceArmed = definition is IceBallRelic && warrior != null && warrior.IsIceBallArmed;
             _btn.interactable = hasResource && canUseNow && !blockedByIceArmed;
@@ -129,10 +133,12 @@ namespace Assets.Scripts.Relics.UI
         private void OnClicked()
         {
             if (definition == null || warrior == null || _rm == null) return;
-            // NEW: hard guard while dead
-            if (warrior.IsDead || warrior.CanDie) return;
+            // Hard guard: do not arm or use relics while dead, frozen, or action-locked by Hivernox.
+            if (warrior.IsDead || warrior.CanDie || !warrior.CanAttackWarrior || warrior.IsFrozenByHivernox)
+                return;
+
             warrior.NotifyUIConsumedInput(worldInputBlockSeconds);
-       
+
             if (!HasResourceToUse())
                 return;
 
@@ -151,14 +157,22 @@ namespace Assets.Scripts.Relics.UI
             // 2) Sprint relic branch (ARM only; actual consume/use happens when movement starts)
             if (definition is SprintRelic sprintDef)
             {
+                // Consommer d'abord
+                if (ShouldConsumeOnUse() && !_rm.TryConsume(definition, 1))
+                    return; // plus de stack
+
                 bool armed = warrior.TryArmSprintRelic(
                     relicId: _id,
                     speedMultiplier: sprintDef.speedMultiplier,
                     duration: sprintDef.sprintDuration,
                     cooldown: sprintDef.sprintCooldown,
-                    consumeOnUse: ShouldConsumeOnUse());
+                    consumeOnUse: false); // Warrior ne reconsomme pas
 
-                if (!armed) return;
+                if (!armed)
+                {
+                    // Annulé (shield up, déjà armé, etc.) ? rembourser
+                    _rm.Collect(definition); // ou une méthode Refund() dédiée
+                }
                 return;
             }
 

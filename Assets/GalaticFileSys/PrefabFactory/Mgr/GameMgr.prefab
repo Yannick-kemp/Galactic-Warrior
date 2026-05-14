@@ -25,7 +25,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4315649855814584681}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -17.977049, y: -0.90480757, z: -0.04292624}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -55,7 +55,9 @@ MonoBehaviour:
   useCheckpointRespawn: 1
   useForcedRetryZoneRespawn: 1
   warriorSceneName: WarriorScene
-  level1Music: {fileID: 8300000, guid: be8a7db7e302f1c4780ebce2e95426af, type: 3}
+  level1Music: {fileID: 8300000, guid: c98c954867269c940aded1fb776d078d, type: 3}
+  level2Music: {fileID: 8300000, guid: 32669b502f2c4bf43aa29cf4ba8c5823, type: 3}
+  level2MusicResourcesPath: Music/IceOfAge
   musicVolume: 0.132
   restartMusicOnLevelRestart: 1
   enemyResetRadius: 12
@@ -78,3 +80,4 @@ MonoBehaviour:
   purchasePriceText: "\u20AC3.99"
   level2EntryCoinsReward: 50
   level2EntryUpgradeTokens: 1
+  returnToMenuAfterPurchasedLevelComplete: 1

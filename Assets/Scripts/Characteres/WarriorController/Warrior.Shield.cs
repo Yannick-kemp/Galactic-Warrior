@@ -65,12 +65,30 @@ namespace Assets.Scripts.Characteres.WarriorController
                 }
             }
 
+
+            EnsureShieldHitboxUsesShieldLaserLayer();
+
             StopShieldImmediate();
             _shieldInstance.SetActive(false);
 
             if (shieldHitbox != null)
                 shieldHitbox.enabled = false;
         }
+        private void EnsureShieldHitboxUsesShieldLaserLayer()
+        {
+            if (shieldHitbox == null)
+                return;
+
+            int shieldLaserLayer = LayerMask.NameToLayer("Shield Laser");
+            if (shieldLaserLayer < 0)
+            {
+                Debug.LogWarning("[Warrior] Unity layer 'Shield Laser' does not exist. Create it in Project Settings > Tags and Layers.", this);
+                return;
+            }
+
+            shieldHitbox.gameObject.layer = shieldLaserLayer;
+        }
+
         public void ActivateShield(float duration = -1f)
         {
             if (!shieldGameplayEnabled) return;
@@ -90,6 +108,8 @@ namespace Assets.Scripts.Characteres.WarriorController
             }
 
             _shieldInstance.SetActive(true);
+
+            EnsureShieldHitboxUsesShieldLaserLayer();
 
             if (shieldHitbox != null)
                 shieldHitbox.enabled = true;

@@ -67,6 +67,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private State currentState;
         private StoneReserve currentReserve;
+        private bool currentReserveReserved;
         private bool hasStone;
         private float stateTimer;
         private float noReserveRecheckTimer;
@@ -205,12 +206,22 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         public override void TakeDamage(float damage)
         {
             base.TakeDamage(damage);
+        }
+
+        protected override void OnDamaged(float damage, bool killed)
+        {
+            base.OnDamaged(damage, killed);
 
             if (hasStone)
                 DropStone();
 
-            if (IsDeadOrDying)
+            if (killed || IsDeadOrDying)
+            {
+                if (!hasStone)
+                    CancelCurrentReserveReservation(false);
+
                 return;
+            }
 
             stunTimer = hitStunDuration;
             LosingBalanceAnimationDisplay();
@@ -290,7 +301,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private void UpdateFlyToReserve()
         {
-            if (currentReserve == null || !currentReserve.HasStones)
+            if (currentReserve == null || !currentReserve.HasStoneAvailable())
             {
                 EnterState(State.SearchNewReserve);
                 return;
@@ -309,13 +320,22 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             FlyTowards(grabPos, flySpeed);
 
             if (Vector2.Distance(transform.position, grabPos) <= arriveDistance)
+            {
+                if (!TryReserveCurrentReserve())
+                {
+                    EnterState(State.SearchNewReserve);
+                    return;
+                }
+
                 EnterState(State.GrabStone);
+            }
         }
 
         private void UpdateGrabStone()
         {
             if (currentReserve == null)
             {
+                currentReserveReserved = false;
                 EnterState(State.SearchNewReserve);
                 return;
             }
@@ -326,32 +346,35 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (stateTimer > 0f)
                 return;
 
-            if (!currentReserve.TryTakeStone())
+            if (!currentReserve.TryTakeReservedStone())
             {
+                CancelCurrentReserveReservation(false);
                 EnterState(State.SearchNewReserve);
                 return;
             }
 
+            currentReserveReserved = false;
             SetHasStone(true);
             EnterState(State.FlyAboveWarrior);
         }
-
         private void UpdateFlyAboveWarrior()
         {
-            if (!hasStone)
+            if (!hasStone) { EnterState(State.SearchNewReserve); return; }
+            if (!HasValidWarrior()) { DropStone(); EnterState(State.Retreat); return; }
+
+            float safeMinY = warrior.transform.position.y + minimumDropHeight;
+
+            // Phase 1: if not yet at safe altitude, climb vertically first
+            if (transform.position.y < safeMinY)
             {
-                EnterState(State.SearchNewReserve);
-                return;
+                Vector3 climbTarget = new Vector3(transform.position.x, safeMinY, 0f);
+                FlyTowards(climbTarget, carryFlySpeed);
+                return; // don't move horizontally yet
             }
 
-            if (!HasValidWarrior())
-            {
-                DropStone();
-                EnterState(State.Retreat);
-                return;
-            }
-
+            // Phase 2: safe altitude reached — move toward drop position
             Vector3 targetPosition = warrior.transform.position + Vector3.up * preferredDropHeight;
+            targetPosition.y = Mathf.Max(targetPosition.y, safeMinY); // keep the clamp too
             FlyTowards(targetPosition, carryFlySpeed);
 
             float horizontalDistance = Mathf.Abs(transform.position.x - warrior.transform.position.x);
@@ -396,13 +419,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (stateTimer > 0f && Vector2.Distance(transform.position, retreatTarget) > arriveDistance)
                 return;
 
-            EnterState(currentReserve != null && currentReserve.HasStones
+            EnterState(currentReserve != null && currentReserve.HasStoneAvailable()
                 ? State.FlyToReserve
                 : State.SearchNewReserve);
         }
 
         private void UpdateSearchNewReserve()
         {
+            CancelCurrentReserveReservation(false);
             currentReserve = FindNearestAvailableReserve();
             EnterState(currentReserve != null ? State.FlyToReserve : State.NoReserveMode);
         }
@@ -455,6 +479,29 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             stone.Launch();
         }
 
+        private bool TryReserveCurrentReserve()
+        {
+            if (currentReserve == null)
+                return false;
+
+            if (currentReserveReserved)
+                return true;
+
+            currentReserveReserved = currentReserve.TryReserveStone(false);
+            return currentReserveReserved;
+        }
+
+        private void CancelCurrentReserveReservation(bool revealStoneVisual)
+        {
+            if (!currentReserveReserved)
+                return;
+
+            if (currentReserve != null)
+                currentReserve.CancelReservation(revealStoneVisual);
+
+            currentReserveReserved = false;
+        }
+
         private StoneReserve FindNearestAvailableReserve()
         {
             StoneReserve best = null;
@@ -469,7 +516,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                     continue;
                 }
 
-                if (!reserve.HasStones)
+                if (!reserve.HasStoneAvailable())
                     continue;
 
                 float distanceSqr = (reserve.GetApproachWorldPosition() - transform.position).sqrMagnitude;
@@ -492,9 +539,24 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private bool HasValidWarrior()
         {
-            return warrior != null &&
-                   Vector2.Distance(transform.position, warrior.transform.position) <= forgetRange &&
-                   !warrior.CanDie;
+            if (!HasLivingWarrior())
+                return false;
+
+            // IMPORTANT:
+            // Once Morvex already has a stone, do NOT use forgetRange anymore.
+            // The reserve can be far from Warrior, so Vector2.Distance(...) can be
+            // greater than forgetRange immediately after pickup. If we return false
+            // there, UpdateFlyAboveWarrior() calls DropStone() too early and the
+            // stone explodes near the reserve/platform.
+            if (hasStone)
+                return true;
+
+            return Vector2.Distance(transform.position, warrior.transform.position) <= forgetRange;
+        }
+
+        private bool HasLivingWarrior()
+        {
+            return warrior != null && !warrior.CanDie;
         }
 
         private void FlyTowards(Vector3 worldTarget, float speed)
@@ -594,12 +656,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         public void ForceRefreshReserves()
         {
+            CancelCurrentReserveReservation(false);
             DiscoverReserves();
             currentReserve = FindNearestAvailableReserve();
         }
 
         public void ForceSearchNewReserve()
         {
+            CancelCurrentReserveReservation(false);
             EnterState(State.SearchNewReserve);
         }
 

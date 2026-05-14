@@ -167,7 +167,21 @@ namespace Assets.Scripts.Characteres.WarriorController
             shieldMaxDurability <= 0 ? 0 : Mathf.Clamp01(_shieldDurability / shieldMaxDurability);
 
         #endregion
+        #region Hard Action Lock
 
+        private bool _platformStoneRepulseActive;
+
+        public bool IsPlatformStoneRepulseActive => _platformStoneRepulseActive;
+
+        private bool IsHardActionLocked =>
+            _platformStoneRepulseActive ||
+            _frozenByHivernox ||
+            _hivernoxHitLockRoutine != null ||
+            _deathStarted ||
+            CanDie ||
+            IsDeadOrDying;
+
+        #endregion
         #region Bounce / Collision Anti-Loop
 
         [Header("Bounce Landing Away (Anti-Double-Landing)")]
@@ -179,6 +193,13 @@ namespace Assets.Scripts.Characteres.WarriorController
         private Enemy _lastBouncedEnemy;
         private bool _postBounceActive;
         private float _postBounceStartTime;
+
+        // ── Morvex-top stuck guard ────────────────────────────────────────────────
+        // Tracks how many consecutive physics frames the warrior sits on Morvex's
+        // NormalCollider top. A bounce is forced after 2 frames.
+        private int _morvexTopContactFrames;
+        private Enemy _morvexTopContactEnemy;
+        // ─────────────────────────────────────────────────────────────────────────
 
         #endregion
 
@@ -396,14 +417,18 @@ namespace Assets.Scripts.Characteres.WarriorController
             HandleFallingAndDeath();
 
             CheckWorldYDeathFallback();
-           // CheckOutOfViewportDeath();
+            // CheckOutOfViewportDeath();
             CheckEnemiesLeavingRange();
             UpdateEcho();
             UpdateLowHealthBlink();   // optional safety
 
             _activeSlashEffects.RemoveAll(slash => slash == null);
             // CRITICAL: Continuous tracking while the Warrior is in the casting state
-            if (_attack3Casting && _iceBallShotPending && InputMgr.Instance != null && InputMgr.Instance.IsScreenTouched())
+            if (!IsHardActionLocked &&
+     _attack3Casting &&
+     _iceBallShotPending &&
+     InputMgr.Instance != null &&
+     InputMgr.Instance.IsScreenTouched())
             {
                 _pendingIceBallAimWorld = InputMgr.Instance.TouchedVector;
                 ApplyAttack3OrbitAim(_pendingIceBallAimWorld);
@@ -412,6 +437,16 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void FixedUpdate()
         {
+            ApplyDestinationPlatformAntiTunnelDuringPhysicsFall();
+
+            // ── Moving-platform stick while idle ──────────────────────────────────
+            // MoveTowardPostionAction already pins Y via GetMovingPlateSurfaceY().
+            // When the Warrior is standing still on a descending MovingVerticalPlatform,
+            // gravity alone is too slow to follow the platform's teleport-based descent,
+            // causing one-frame float gaps each FixedUpdate. We apply the same Y snap here.
+            ApplyMovingPlatformIdleStick();
+            // ─────────────────────────────────────────────────────────────────────
+
             if (!_postBounceActive) return;
 
             if (Time.time - _postBounceStartTime > ignoreEnemyCollisionTime)
@@ -446,22 +481,101 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         void LateUpdate()
         {
-            if (_deathStarted) return;
+            if (_deathStarted)
+                return;
 
-            if (CurrentplatForm != null && collider2 != null)
+            if (CurrentplatForm == null || collider2 == null)
+                return;
+
+            if (!CanRecordCurrentPlatformAsSafeRespawn())
+                return;
+
+            LastSafePlatform = CurrentplatForm;
+
+            if (CurrentplatForm is Assets.Scripts.Platforms.MovingVerticalPlatform movingVerticalPlatform)
             {
-                Bounds pb = CurrentplatForm.platformCollider.bounds;
+                _lastSafePosition = movingVerticalPlatform.GetSafeRespawnPositionFor(
+                    this,
+                    transform.position.x
+                );
 
-                float safeY = pb.max.y + collider2.bounds.extents.y + 0.02f;
-
-                //float safeMargin = 0.15f;
-                float minX = pb.min.x + platformSafeMargin;
-                float maxX = pb.max.x - platformSafeMargin;
-
-                float clampedX = Mathf.Clamp(transform.position.x, minX, maxX);
-
-                _lastSafePosition = new Vector3(clampedX, safeY, transform.position.z);
+                return;
             }
+
+            if (CurrentplatForm is Assets.Scripts.Platforms.MovingHorizontalPlatform movingHorizontalPlatform)
+            {
+                _lastSafePosition = movingHorizontalPlatform.GetSafeRespawnPositionFor(
+                    this,
+                    transform.position.x
+                );
+
+                return;
+            }
+
+            if (CurrentplatForm is global::RotatingPlatform rotatingPlatform)
+            {
+                _lastSafePosition = rotatingPlatform.GetSafeRespawnPositionFor(
+                    this,
+                    transform.position.x
+                );
+
+                return;
+            }
+
+            if (CurrentplatForm.platformCollider == null)
+                return;
+
+            Bounds pb = CurrentplatForm.platformCollider.bounds;
+
+            float safeY = pb.max.y + collider2.bounds.extents.y + 0.02f;
+
+            float minX = pb.min.x + platformSafeMargin;
+            float maxX = pb.max.x - platformSafeMargin;
+
+            float clampedX = minX <= maxX
+                ? Mathf.Clamp(transform.position.x, minX, maxX)
+                : pb.center.x;
+
+            _lastSafePosition = new Vector3(clampedX, safeY, transform.position.z);
+        }
+
+        private bool CanRecordCurrentPlatformAsSafeRespawn()
+        {
+            if (CurrentplatForm == null || CurrentplatForm.platformCollider == null || collider2 == null)
+                return false;
+
+            if (activesJumpCoroutine != null)
+                return false;
+
+            if (IsFallingEdge || IsFallingPlfExit || IsFallingGrazesEdge || IsFallingHitEnemy)
+                return false;
+
+            if (CountGroundPoints() <= 0)
+                return false;
+
+            Bounds warriorBounds = collider2.bounds;
+            Bounds platformBounds = CurrentplatForm.platformCollider.bounds;
+
+            float warriorBottom = warriorBounds.min.y;
+            float platformTop = platformBounds.max.y;
+
+            // Must be standing near the top surface, not passing beside or below the platform.
+            if (warriorBottom < platformTop - 0.08f)
+                return false;
+
+            if (warriorBottom > platformTop + 0.35f)
+                return false;
+
+            float overlapX =
+                Mathf.Min(warriorBounds.max.x, platformBounds.max.x) -
+                Mathf.Max(warriorBounds.min.x, platformBounds.min.x);
+
+            float requiredOverlap = Mathf.Min(warriorBounds.size.x * 0.25f, 0.18f);
+
+            if (overlapX < requiredOverlap)
+                return false;
+
+            return true;
         }
         #endregion
 
@@ -471,6 +585,23 @@ namespace Assets.Scripts.Characteres.WarriorController
 
 
         #region Hit Reaction
+
+        [Header("Zalayty Different-Platform Impact Absorption")]
+        [SerializeField] private bool enableZalaytyDifferentPlatformImpactAbsorption = true;
+
+        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMinSpeed = 3.0f;
+        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMaxSpeed = 13.0f;
+
+        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMinKnockbackX = 0.45f;
+        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMaxKnockbackX = 2.0f;
+
+        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMinStun = 0.06f;
+        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMaxStun = 0.18f;
+
+        [SerializeField, Range(0f, 1f)] private float zalaytyDifferentPlatformImpactVerticalDamping = 0.20f;
+        [SerializeField, Min(0.01f)] private float zalaytyDifferentPlatformImpactAbsorbCooldown = 0.16f;
+
+        private float _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime = -999f;
 
         public void ApplyHitReaction(HitKind kind, Vector2 fromWorldPos, float stunSeconds, float knockbackVel)
         {
@@ -536,6 +667,76 @@ namespace Assets.Scripts.Characteres.WarriorController
             _hitReactRoutine = null;
         }
 
+        public bool TryAbsorbZalaytyDifferentPlatformImpact(
+            ZalaytyMonster zalayty,
+            Vector2 impactFromWorldPos,
+            Vector2 incomingVelocity,
+            float incomingSpeed)
+        {
+            if (!enableZalaytyDifferentPlatformImpactAbsorption)
+                return false;
+
+            if (zalayty == null)
+                return false;
+
+            if (IsDeadOrDying || _deathStarted || CanDie)
+                return false;
+
+            if (_sprintActive || _reviveInvulnerable)
+                return false;
+
+            if (Time.time < _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime)
+                return false;
+
+            incomingSpeed = Mathf.Abs(incomingSpeed);
+            if (incomingSpeed < zalaytyDifferentPlatformImpactMinSpeed)
+                return false;
+
+            _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime =
+                Time.time + Mathf.Max(0.01f, zalaytyDifferentPlatformImpactAbsorbCooldown);
+
+            float t = Mathf.InverseLerp(
+                zalaytyDifferentPlatformImpactMinSpeed,
+                zalaytyDifferentPlatformImpactMaxSpeed,
+                incomingSpeed);
+
+            float knockbackX = Mathf.Lerp(
+                zalaytyDifferentPlatformImpactMinKnockbackX,
+                zalaytyDifferentPlatformImpactMaxKnockbackX,
+                t);
+
+            float stunSeconds = Mathf.Lerp(
+                zalaytyDifferentPlatformImpactMinStun,
+                zalaytyDifferentPlatformImpactMaxStun,
+                t);
+
+            float dir = Mathf.Sign(incomingVelocity.x);
+
+            if (Mathf.Abs(dir) < 0.01f)
+                dir = Mathf.Sign(transform.position.x - impactFromWorldPos.x);
+
+            if (Mathf.Abs(dir) < 0.01f)
+                dir = leftFacing ? -1f : 1f;
+
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+            IsFallingGrazesEdge = false;
+            WaitAnimationDisplay();
+
+            if (rigidbody2 != null)
+            {
+                Vector2 v = rigidbody2.linearVelocity;
+
+                // Absorb vertical shock so Warrior does not pop upward brutally.
+                v.y *= zalaytyDifferentPlatformImpactVerticalDamping;
+
+                rigidbody2.linearVelocity = v;
+            }
+
+            StartHitStun(stunSeconds, knockbackX * dir);
+            return true;
+        }
+
         #endregion
         private void CacheWarriorCollidersForSprint()
         {
@@ -567,7 +768,7 @@ namespace Assets.Scripts.Characteres.WarriorController
         public override void TakeDamage(float damage)
         {
 
-            if (IsDeadOrDying)return;
+            if (IsDeadOrDying) return;
             if (_sprintActive) return;
             if (_reviveInvulnerable) return; // prevents instant re-death
             if (_deathStarted) return;
@@ -678,7 +879,40 @@ namespace Assets.Scripts.Characteres.WarriorController
         [SerializeField] private float stunRecoveryImmunity = 0.25f;
         private float _stunImmuneUntil = -999f;
 
-      
+        private void ApplyMovingPlatformIdleStick()
+        {
+            // Only when idle: MoveTowardPostionAction handles the moving case itself.
+            if (_isMoving || _isJumping) return;
+            if (activesJumpCoroutine != null || activesMoveCoroutine != null) return;
+
+            // Only on a descending MovingVerticalPlatform.
+            if (CurrentplatForm is not Assets.Scripts.Platforms.MovingVerticalPlatform mvp) return;
+            if (!mvp.IsMovingDownNow) return;
+
+            // GetMovingPlateSurfaceY() is defined in CharacterController and is already
+            // used by MoveTowardPostionAction — reuse it here.
+            float surfaceY = GetMovingPlateSurfaceY();
+            if (surfaceY == float.MinValue) return;
+
+            if (rigidbody2 == null) return;
+
+            Vector2 pos = rigidbody2.position;
+
+            // Only snap downward: never push the Warrior up (that would fight a real jump).
+            if (pos.y <= surfaceY + 0.001f) return;
+
+            pos.y = surfaceY;
+            rigidbody2.position = pos;
+
+            // Cancel downward velocity that may have accumulated —
+            // the snap already placed him on the surface.
+            Vector2 v = rigidbody2.linearVelocity;
+            if (v.y < 0f) v.y = 0f;
+            rigidbody2.linearVelocity = v;
+
+            Physics2D.SyncTransforms();
+        }
 
     }
+
 }

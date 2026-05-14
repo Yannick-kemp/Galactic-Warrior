@@ -1,4 +1,5 @@
 ﻿using Assets.Scripts.Characteres.EnemyContoller;
+
 using Assets.Scripts.Relics.Events;
 using System.Collections;
 using System.Collections.Generic;
@@ -22,7 +23,9 @@ namespace Assets.Scripts.Characteres.WarriorController
         private Coroutine _hitReactRoutine;
 
         #endregion
-
+        private bool _canMoveBeforeStoneRepulse;
+        private bool _canAttackWarriorBeforeStoneRepulse;
+        private bool _canAttackBeforeStoneRepulse;
         #region Attack / FX / Damage
 
         public void AE_Attack1_HitExplosion_Fist() => DoAttack1HitExplosion(HitFxPoint.FistSocket);
@@ -334,7 +337,19 @@ namespace Assets.Scripts.Characteres.WarriorController
         public bool HasEnemyInAttackRange()
         {
             Collider2D[] hits = Physics2D.OverlapCircleAll(GetAttackCenter(), attackRadius, enemyLayer);
-            return hits.Length > 0;
+
+            for (int i = 0; i < hits.Length; i++)
+            {
+                if (hits[i] == null)
+                    continue;
+
+                Enemy enemy = hits[i].GetComponent<Enemy>() ?? hits[i].GetComponentInParent<Enemy>();
+
+                if (enemy != null && !enemy.IsDeadOrDying)
+                    return true;
+            }
+
+            return false;
         }
 
         private Vector2 GetAttackCenter()
@@ -352,10 +367,16 @@ namespace Assets.Scripts.Characteres.WarriorController
             Collider2D[] hits = Physics2D.OverlapCircleAll(GetAttackCenter(), attackRadius, enemyLayer);
 
             var enemies = new List<Enemy>(hits.Length);
+
             foreach (Collider2D hit in hits)
             {
-                Enemy enemy = hit.GetComponent<Enemy>();
-                if (enemy != null) enemies.Add(enemy);
+                if (hit == null)
+                    continue;
+
+                Enemy enemy = hit.GetComponent<Enemy>() ?? hit.GetComponentInParent<Enemy>();
+
+                if (enemy != null && !enemy.IsDeadOrDying && !enemies.Contains(enemy))
+                    enemies.Add(enemy);
             }
 
             return enemies.ToArray();
@@ -485,6 +506,9 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         public void RequestPrimaryAttackFromUIButton()
         {
+            if (IsHardActionLocked)
+                return;
+
             NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.15f));
 
             if (_attack3Casting)
@@ -579,6 +603,8 @@ namespace Assets.Scripts.Characteres.WarriorController
         /// </summary>
         public bool TryUseRelicAttack2(float duration, float cooldownOverride = -1f, bool triggerNow = false)
         {
+            if (IsHardActionLocked)
+                return false;
             if (CanDie) return false;
             if (!CanMove || !CanAttackWarrior) return false;
             if (activesJumpCoroutine != null || IsFalling || IsFallingGrazesEdge) return false;
@@ -644,6 +670,20 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         #region spectacular action scoring
 
+        [Header("Losing Balance -> Physics Fall")]
+        [SerializeField] private bool losingBalanceStartsPhysicsFall = true;
+
+        [Tooltip("Delay after ShowLosingBalance before the Warrior is allowed to fall through the source platform by pure Rigidbody2D gravity.")]
+        [SerializeField, Min(0f)] private float losingBalanceFallDelay = 0.75f;
+
+        [Tooltip("Gravity used once the losing-balance delay has finished and the Warrior is still on the edge.")]
+        [SerializeField, Min(0f)] private float losingBalanceFallGravityScale = 2.5f;
+
+        [Tooltip("Small downward velocity injected only to start the physical fall. No vertical seating/snap is done.")]
+        [SerializeField, Min(0f)] private float losingBalanceFallMinDownVelocity = 0.05f;
+
+        private Coroutine _losingBalanceFallRoutine;
+
         // In Warrior
         public void ShowLosingBalance()
         {
@@ -651,6 +691,110 @@ namespace Assets.Scripts.Characteres.WarriorController
                 ?.NotifyLosingBalanceDisplayed();
 
             LosingBalanceAnimationDisplay();
+            BeginLosingBalancePhysicsFallCountdown();
+        }
+
+        private void BeginLosingBalancePhysicsFallCountdown()
+        {
+            if (!losingBalanceStartsPhysicsFall)
+                return;
+
+            if (_deathStarted || CanDie || IsDeadOrDying || _frozenByHivernox)
+                return;
+
+            if (activesJumpCoroutine != null)
+                return;
+
+            if (CountGroundPoints() > 1)
+                return;
+
+            if (_losingBalanceFallRoutine != null)
+                return;
+
+            PlatFormColliderTrigger sourcePlatform = CurrentplatForm;
+            _losingBalanceFallRoutine = StartCoroutine(LosingBalancePhysicsFallRoutine(sourcePlatform));
+        }
+
+        private IEnumerator LosingBalancePhysicsFallRoutine(PlatFormColliderTrigger sourcePlatform)
+        {
+            float timer = 0f;
+
+            while (timer < losingBalanceFallDelay)
+            {
+                if (_deathStarted || CanDie || IsDeadOrDying || _frozenByHivernox)
+                {
+                    _losingBalanceFallRoutine = null;
+                    yield break;
+                }
+
+                if (activesJumpCoroutine != null)
+                {
+                    _losingBalanceFallRoutine = null;
+                    yield break;
+                }
+
+                // If Warrior recovered stable support during the losing-balance window,
+                // do not force a fall. This preserves the existing safe landing behavior.
+                if (CountGroundPoints() > 1)
+                {
+                    _losingBalanceFallRoutine = null;
+                    yield break;
+                }
+
+                timer += Time.deltaTime;
+                yield return null;
+            }
+
+            _losingBalanceFallRoutine = null;
+
+            if (_deathStarted || CanDie || IsDeadOrDying || _frozenByHivernox)
+                yield break;
+
+            if (activesJumpCoroutine != null || CountGroundPoints() > 1)
+                yield break;
+
+            ForceSimplePhysicsFallAfterLosingBalance(sourcePlatform);
+        }
+
+        private void ForceSimplePhysicsFallAfterLosingBalance(PlatFormColliderTrigger sourcePlatform)
+        {
+            // Refresh the source at the last moment. The platform that matters here is
+            // the platform currently supporting the edge, not a future destination.
+            if (CurrentplatForm != null)
+                sourcePlatform = CurrentplatForm;
+
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+
+            IsFallingEdge = true;
+            IsFallingGrazesEdge = true;
+            IsFallingPlfExit = false;
+            IsFallingHitEnemy = false;
+            CanMove = false;
+            _blockAction = false;
+
+            // Do not snap or seat the Warrior. We only make the SOURCE platform
+            // pass-through so Rigidbody2D gravity can naturally pull him down.
+            if (sourcePlatform != null)
+                sourcePlatform.ForceCharacterToFallThroughSourcePlatform(this);
+
+            if (rigidbody2 != null)
+            {
+                rigidbody2.gravityScale = Mathf.Max(rigidbody2.gravityScale, losingBalanceFallGravityScale);
+
+                RigidbodyConstraints2D constraints = rigidbody2.constraints;
+                constraints &= ~RigidbodyConstraints2D.FreezePositionY;
+                rigidbody2.constraints = constraints;
+
+                Vector2 velocity = rigidbody2.linearVelocity;
+                if (velocity.y > -losingBalanceFallMinDownVelocity)
+                    velocity.y = -losingBalanceFallMinDownVelocity;
+
+                rigidbody2.linearVelocity = velocity;
+                rigidbody2.WakeUp();
+            }
+
+            JumpAnimationDisplay();
         }
 
         public float LastJumpStartTime { get; private set; } = -999f;
@@ -663,6 +807,592 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             PlayJumpSfx(); // <-- NEW
         }
+        #endregion
+
+        #region Falling Stone Platform Repulse
+
+        private Coroutine _platformStoneRepulseRoutine;
+
+        [Header("Falling Stone Platform Repulse - Enemy Stop")]
+        [Tooltip("ON = when the falling-stone platform repulse moves the Warrior into any Enemy, the repulse stops immediately.")]
+        [SerializeField] private bool stopPlatformStoneRepulseOnEnemyContact = true;
+
+        [Tooltip("Small overlap margin used while the repulse moves the Warrior by transform.position.")]
+        [SerializeField, Min(0f)] private float platformStoneEnemyContactSkin = 0.03f;
+
+        [Header("Enemy External Push / Edge Exit")]
+        [Tooltip("ON = enemy push/repulse is allowed to send the Warrior past the platform edge instead of clamping him at the edge.")]
+        [SerializeField] private bool enemyExternalPushCanForcePlatformExit = true;
+
+        [Tooltip("Small X tolerance used when deciding that the Warrior has crossed a platform edge because of enemy push/repulse.")]
+        [SerializeField, Min(0f)] private float enemyExternalPushEdgeTolerance = 0.02f;
+
+        [Tooltip("Minimum horizontal velocity kept when enemy push/repulse becomes a natural fall past the edge.")]
+        [SerializeField, Min(0f)] private float enemyExternalPushFallMinXVelocity = 2.5f;
+
+        [Tooltip("Gravity used after enemy push/repulse sends the Warrior off the platform.")]
+        [SerializeField, Min(0f)] private float enemyExternalPushFallGravityScale = 3f;
+
+        [Tooltip("Safety timeout before restoring old platform collision if the Warrior never fully leaves the platform trigger.")]
+        [SerializeField, Min(0f)] private float enemyExternalPushRestorePlatformCollisionTimeout = 2f;
+
+        private bool _platformStoneRepulseStoppedByEnemyContact;
+        private Enemy _platformStoneRepulseBlockingEnemy;
+
+        public void TryRepulseFromPlatformStoneImpact(
+            PlatFormColliderTrigger impactPlatform,
+            Vector2 impactWorldPosition,
+            float distance,
+            float duration,
+            float controlLockSeconds)
+        {
+            if (impactPlatform == null)
+                return;
+
+            if (_deathStarted || CanDie || IsDeadOrDying)
+                return;
+
+            if (CurrentplatForm != impactPlatform)
+                return;
+
+            // Warrior must be grounded. If airborne, jumping, or falling, no repulse.
+            if (CountGroundPoints() <= 0)
+                return;
+
+            if (activesJumpCoroutine != null || IsJumping)
+                return;
+
+            if (IsFallingEdge || IsFallingPlfExit || IsFallingHitEnemy || IsFallingGrazesEdge)
+                return;
+
+            if (collider2 == null)
+                return;
+
+            _platformStoneRepulseStoppedByEnemyContact = false;
+            _platformStoneRepulseBlockingEnemy = null;
+
+            float repulseDirection = GetRepulseDirectionFromImpact(impactWorldPosition.x);
+
+            if (_platformStoneRepulseRoutine != null)
+            {
+                StopCoroutine(_platformStoneRepulseRoutine);
+                _platformStoneRepulseRoutine = null;
+
+                // Important: prevents the old stopped coroutine from leaving the Warrior locked.
+                EndPlatformStoneRepulseLock(false);
+            }
+
+            _platformStoneRepulseRoutine = StartCoroutine(
+                PlatformStoneRepulseRoutine(
+                    impactPlatform,
+                    repulseDirection,
+                    distance,
+                    duration,
+                    controlLockSeconds
+                )
+            );
+        }
+
+        private IEnumerator PlatformStoneRepulseRoutine(
+            PlatFormColliderTrigger platform,
+            float direction,
+            float distance,
+            float duration,
+            float controlLockSeconds)
+        {
+            BeginPlatformStoneRepulseLock();
+
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+            ForceCancelCurrentAttack();
+
+            // Cancel Attack3 / Ice Ball if armed or casting.
+            CancelPendingIceBallCast();
+
+            IsFallingEdge = false;
+            IsFallingPlfExit = false;
+            IsFallingHitEnemy = false;
+            IsFallingGrazesEdge = false;
+
+            LosingBalanceAnimationDisplay();
+
+            if (rigidbody2 != null)
+            {
+                rigidbody2.linearVelocity = Vector2.zero;
+                rigidbody2.angularVelocity = 0f;
+            }
+
+            Vector3 start = transform.position;
+
+            // IMPORTANT:
+            // Do NOT clamp this target X to the platform bounds.
+            // Enemy/external repulse must be allowed to push the Warrior past the edge.
+            float targetX = start.x + direction * Mathf.Abs(distance);
+            Vector3 end = new Vector3(targetX, start.y, start.z);
+
+            float elapsed = 0f;
+            duration = Mathf.Max(0.01f, duration);
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+
+                float t = Mathf.Clamp01(elapsed / duration);
+                t = Mathf.SmoothStep(0f, 1f, t);
+
+                transform.position = Vector3.Lerp(start, end, t);
+                Physics2D.SyncTransforms();
+
+                // Highest priority: if the external force sends the Warrior beyond the edge,
+                // stop controlling the X position and let gravity/velocity continue the fall.
+                if (TryBeginEnemyExternalPushFallIfNeeded(
+                        platform,
+                        direction,
+                        _canAttackWarriorBeforeStoneRepulse,
+                        _canAttackBeforeStoneRepulse))
+                {
+                    _platformStoneRepulseRoutine = null;
+                    yield break;
+                }
+
+                // Still keep your requested behavior: if the repulse pushes Warrior into an enemy,
+                // stop the repulse immediately.
+                Enemy touchedEnemy = GetEnemyTouchedDuringPlatformStoneRepulse();
+                if (touchedEnemy != null)
+                {
+                    StopPlatformStoneRepulseBecauseEnemyContact(touchedEnemy, false);
+                    _platformStoneRepulseRoutine = null;
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            transform.position = end;
+            Physics2D.SyncTransforms();
+
+            if (TryBeginEnemyExternalPushFallIfNeeded(
+                    platform,
+                    direction,
+                    _canAttackWarriorBeforeStoneRepulse,
+                    _canAttackBeforeStoneRepulse))
+            {
+                _platformStoneRepulseRoutine = null;
+                yield break;
+            }
+
+            Enemy finalTouchedEnemy = GetEnemyTouchedDuringPlatformStoneRepulse();
+            if (finalTouchedEnemy != null)
+            {
+                StopPlatformStoneRepulseBecauseEnemyContact(finalTouchedEnemy, false);
+                _platformStoneRepulseRoutine = null;
+                yield break;
+            }
+
+            float remainingLock = Mathf.Max(0f, controlLockSeconds - duration);
+            if (remainingLock > 0f)
+                yield return new WaitForSeconds(remainingLock);
+
+            EndPlatformStoneRepulseLock(true);
+
+            _platformStoneRepulseRoutine = null;
+        }
+
+        private void BeginPlatformStoneRepulseLock()
+        {
+            _canMoveBeforeStoneRepulse = CanMove;
+            _canAttackWarriorBeforeStoneRepulse = CanAttackWarrior;
+            _canAttackBeforeStoneRepulse = CanAttack;
+
+            _platformStoneRepulseActive = true;
+            _platformStoneRepulseStoppedByEnemyContact = false;
+            _platformStoneRepulseBlockingEnemy = null;
+
+            CanMove = false;
+            CanAttackWarrior = false;
+            CanAttack = false;
+
+            _blockAction = true;
+
+            _blockedByEnemyContact = false;
+            _blockingEnemy = null;
+        }
+
+        public bool TryStopPlatformStoneRepulseOnEnemyContact(Enemy enemy)
+        {
+            if (!_platformStoneRepulseActive)
+                return false;
+
+            if (!stopPlatformStoneRepulseOnEnemyContact)
+                return false;
+
+            if (enemy == null)
+                return false;
+
+            StopPlatformStoneRepulseBecauseEnemyContact(enemy, true);
+            return true;
+        }
+
+        private void StopPlatformStoneRepulseBecauseEnemyContact(Enemy enemy, bool stopRunningCoroutine)
+        {
+            if (!_platformStoneRepulseActive)
+                return;
+
+            _platformStoneRepulseStoppedByEnemyContact = true;
+            _platformStoneRepulseBlockingEnemy = enemy;
+
+            if (stopRunningCoroutine && _platformStoneRepulseRoutine != null)
+            {
+                StopCoroutine(_platformStoneRepulseRoutine);
+                _platformStoneRepulseRoutine = null;
+            }
+
+            _platformStoneRepulseActive = false;
+            _blockAction = false;
+
+            _blockedByEnemyContact = true;
+            _blockingEnemy = enemy;
+
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+
+            if (rigidbody2 != null)
+            {
+                Vector2 v = rigidbody2.linearVelocity;
+                v.x = 0f;
+                rigidbody2.linearVelocity = v;
+                rigidbody2.angularVelocity = 0f;
+            }
+
+            if (_deathStarted || CanDie || IsDeadOrDying)
+                return;
+
+            CanMove = true;
+            CanAttackWarrior = _canAttackWarriorBeforeStoneRepulse;
+            CanAttack = _canAttackBeforeStoneRepulse;
+
+            if (animator != null)
+            {
+                if (animator.GetBool("IsLosingCtrl"))
+                    animator.SetBool("IsLosingCtrl", false);
+
+                if (CountGroundPoints() <= 1)
+                    ShowLosingBalance();
+                else
+                    WaitAnimationDisplay();
+            }
+
+            Debug.Log($"[StoneRepulse STOPPED BY ENEMY] enemy={enemy.name}, CanMove={CanMove}, CanAttackWarrior={CanAttackWarrior}, CanAttack={CanAttack}");
+        }
+
+        private Enemy GetEnemyTouchedDuringPlatformStoneRepulse()
+        {
+            if (!stopPlatformStoneRepulseOnEnemyContact)
+                return null;
+
+            if (!_platformStoneRepulseActive)
+                return null;
+
+            if (collider2 == null)
+                return null;
+
+            Bounds b = collider2.bounds;
+            b.Expand(platformStoneEnemyContactSkin);
+
+            Collider2D[] hits = Physics2D.OverlapBoxAll(b.center, b.size, 0f);
+
+            for (int i = 0; i < hits.Length; i++)
+            {
+                Collider2D hit = hits[i];
+                if (hit == null)
+                    continue;
+
+                if (hit == collider2)
+                    continue;
+
+                // Use solid enemy colliders only. This avoids stopping on detection/attack trigger zones.
+                if (hit.isTrigger)
+                    continue;
+
+                Enemy enemy = hit.GetComponentInParent<Enemy>();
+                if (enemy == null)
+                    continue;
+
+                if (enemy.IsDeadOrDying)
+                    continue;
+
+                return enemy;
+            }
+
+            return null;
+        }
+
+        private void EndPlatformStoneRepulseLock(bool playIdleAnimation)
+        {
+            _platformStoneRepulseActive = false;
+            _platformStoneRepulseStoppedByEnemyContact = false;
+            _platformStoneRepulseBlockingEnemy = null;
+            _blockAction = false;
+
+            _blockedByEnemyContact = false;
+            _blockingEnemy = null;
+
+            if (_deathStarted || CanDie || IsDeadOrDying)
+                return;
+
+            StopMoveTowardCoroutine();
+
+            if (rigidbody2 != null)
+            {
+                Vector2 v = rigidbody2.linearVelocity;
+                v.x = 0f;
+                rigidbody2.linearVelocity = v;
+            }
+
+            // Restore movement.
+            CanMove = true;
+
+            // Restore attack permission to what it was before repulse.
+            // Important: do NOT force CanAttack = true.
+            CanAttackWarrior = _canAttackWarriorBeforeStoneRepulse;
+            CanAttack = _canAttackBeforeStoneRepulse;
+
+            if (playIdleAnimation && animator != null)
+            {
+                if (animator.GetBool("IsLosingCtrl"))
+                    animator.SetBool("IsLosingCtrl", false);
+
+                WaitAnimationDisplay();
+            }
+
+            Debug.Log(
+                $"[StoneRepulse END] CanMove={CanMove}, CanAttackWarrior={CanAttackWarrior}, CanAttack={CanAttack}, HardLock={IsHardActionLocked}"
+            );
+        }
+
+        private bool TryBeginEnemyExternalPushFallIfNeeded(
+            PlatFormColliderTrigger platform,
+            float direction,
+            bool restoreCanAttackWarrior,
+            bool restoreCanAttack)
+        {
+            if (!enemyExternalPushCanForcePlatformExit)
+                return false;
+
+            if (platform == null || platform.platformCollider == null || collider2 == null)
+                return false;
+
+            direction = Mathf.Sign(direction);
+
+            if (Mathf.Approximately(direction, 0f))
+                direction = GetOppositeFacingDirectionX();
+
+            Bounds platformBounds = platform.platformCollider.bounds;
+            Bounds warriorBounds = collider2.bounds;
+
+            float warriorCenterX = warriorBounds.center.x;
+
+            bool passedRightEdge =
+                direction > 0f &&
+                warriorCenterX >= platformBounds.max.x - enemyExternalPushEdgeTolerance;
+
+            bool passedLeftEdge =
+                direction < 0f &&
+                warriorCenterX <= platformBounds.min.x + enemyExternalPushEdgeTolerance;
+
+            bool noGroundLeft = CountGroundPoints() <= 0;
+
+            if (!passedRightEdge && !passedLeftEdge && !noGroundLeft)
+                return false;
+
+            BeginEnemyExternalPushFall(
+                platform,
+                direction,
+                restoreCanAttackWarrior,
+                restoreCanAttack
+            );
+
+            return true;
+        }
+
+        private void BeginEnemyExternalPushFall(
+            PlatFormColliderTrigger platform,
+            float direction,
+            bool restoreCanAttackWarrior,
+            bool restoreCanAttack)
+        {
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+
+            _platformStoneRepulseActive = false;
+            _platformStoneRepulseStoppedByEnemyContact = false;
+            _platformStoneRepulseBlockingEnemy = null;
+
+            _blockedByEnemyContact = false;
+            _blockingEnemy = null;
+            _blockAction = false;
+
+            // Movement remains locked while falling. Your landing/platform code can restore it.
+            CanMove = false;
+
+            // Restore attack permissions so the Warrior does not stay permanently attack-locked
+            // after the external push has turned into a fall.
+            CanAttackWarrior = restoreCanAttackWarrior;
+            CanAttack = restoreCanAttack;
+
+            IsFallingEdge = true;
+            IsFallingPlfExit = true;
+            IsFallingHitEnemy = false;
+            IsFallingGrazesEdge = false;
+
+            if (platform != null)
+                LastSafePlatform = platform;
+
+            if (platform != null && platform.platformCollider != null && collider2 != null)
+            {
+                Bounds pb = platform.platformCollider.bounds;
+                float yOffset = collider2.bounds.extents.y;
+
+                LastSafePosition = new Vector3(
+                    Mathf.Clamp(transform.position.x, pb.min.x, pb.max.x),
+                    pb.max.y + yOffset + 0.05f,
+                    transform.position.z
+                );
+
+                // Prevent the old platform from catching the Warrior immediately at the edge.
+                IgnoreOldPlatformDuringExternalPushFall(platform);
+            }
+
+            if (rigidbody2 != null)
+            {
+                rigidbody2.gravityScale = enemyExternalPushFallGravityScale;
+                rigidbody2.angularVelocity = 0f;
+
+                Vector2 v = rigidbody2.linearVelocity;
+                float wantedX = direction * enemyExternalPushFallMinXVelocity;
+
+                if (Mathf.Abs(v.x) < Mathf.Abs(wantedX))
+                    v.x = wantedX;
+
+                if (v.y > -0.1f)
+                    v.y = -0.1f;
+
+                rigidbody2.linearVelocity = v;
+            }
+
+            JumpAnimationDisplay();
+
+            Debug.Log("[EnemyExternalPush] Warrior was pushed past platform edge and is now falling naturally.");
+        }
+
+        private void IgnoreOldPlatformDuringExternalPushFall(PlatFormColliderTrigger platform)
+        {
+            if (platform == null || platform.platformCollider == null)
+                return;
+
+            Collider2D[] warriorColliders = GetComponentsInChildren<Collider2D>(true);
+
+            for (int i = 0; i < warriorColliders.Length; i++)
+            {
+                Collider2D col = warriorColliders[i];
+
+                if (col == null)
+                    continue;
+
+                Physics2D.IgnoreCollision(platform.platformCollider, col, true);
+            }
+
+            StartCoroutine(RestoreOldPlatformCollisionWhenExternalPushIsClear(platform, warriorColliders));
+        }
+
+        private IEnumerator RestoreOldPlatformCollisionWhenExternalPushIsClear(
+            PlatFormColliderTrigger platform,
+            Collider2D[] warriorColliders)
+        {
+            float timeoutAt = Time.time + enemyExternalPushRestorePlatformCollisionTimeout;
+
+            while (platform != null && platform.platformCollider != null)
+            {
+                bool stillInsidePlatformTrigger = false;
+
+                if (platform.platformTrigger != null && warriorColliders != null)
+                {
+                    for (int i = 0; i < warriorColliders.Length; i++)
+                    {
+                        Collider2D col = warriorColliders[i];
+
+                        if (col == null)
+                            continue;
+
+                        if (platform.platformTrigger.IsTouching(col))
+                        {
+                            stillInsidePlatformTrigger = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!stillInsidePlatformTrigger)
+                    break;
+
+                if (Time.time >= timeoutAt)
+                    break;
+
+                yield return new WaitForFixedUpdate();
+            }
+
+            if (platform == null || platform.platformCollider == null || warriorColliders == null)
+                yield break;
+
+            for (int i = 0; i < warriorColliders.Length; i++)
+            {
+                Collider2D col = warriorColliders[i];
+
+                if (col == null)
+                    continue;
+
+                Physics2D.IgnoreCollision(platform.platformCollider, col, false);
+            }
+        }
+
+        private float GetRepulseDirectionFromImpact(float impactX)
+        {
+            float warriorX = collider2 != null
+                ? collider2.bounds.center.x
+                : transform.position.x;
+
+            float diff = warriorX - impactX;
+
+            // Stone hit left side of Warrior/platform area -> push Warrior right.
+            if (diff > 0.05f)
+                return 1f;
+
+            // Stone hit right side -> push Warrior left.
+            if (diff < -0.05f)
+                return -1f;
+
+            // If the stone hit almost exactly under the Warrior,
+            // fallback to opposite facing direction.
+            return GetOppositeFacingDirectionX();
+        }
+
+        private float GetOppositeFacingDirectionX()
+        {
+            if (Front != null && Back != null)
+            {
+                bool facingRight = Front.position.x > Back.position.x;
+                bool facingLeft = Front.position.x < Back.position.x;
+
+                if (facingRight)
+                    return -1f;
+
+                if (facingLeft)
+                    return 1f;
+            }
+
+            return transform.localScale.x >= 0f ? -1f : 1f;
+        }
+
         #endregion
     }
 }

@@ -357,6 +357,11 @@ MonoBehaviour:
   DescendentPhase: 0
   _isJumping: 0
   _isMoving: 0
+  enableDestinationPlatformAntiTunnel: 1
+  antiTunnelLandingSkin: 0.015
+  antiTunnelCastExtraDistance: 0.08
+  antiTunnelHorizontalSkin: 0.03
+  antiTunnelTopStartTolerance: 0.04
   Range: 3
   attackCooldown: 1.5
   attackDamage: 10
@@ -387,16 +392,25 @@ MonoBehaviour:
   deathSfxMaxDistance: 20
   canBeStunned: 1
   meleeHitDistance: 0.65
+  useWorldYDeathFallback: 1
+  worldDeathY: -30
   targetAnimationName: AttackAnimation
+  enemyType: 0
+  isBoss: 0
+  bossDisplayName: 
   totalFramesInAnimation: 16
   frameIndex: 0
   disableAttackWhenHitSeconds: 0.4
   hitReaction: {fileID: 11400000, guid: c91b8181546a7d74ab4764a943e51abc, type: 2}
-  dieWhenOutOfViewport: 1
-  requireSeenOnceBeforeAutoDeath: 1
-  viewportMargin: 0.1
-  autoDeathCheckInterval: 0.15
+  patrolEdgeArriveThreshold: 0.12
   repathInterval: 0.25
+  keepMotionDuringTemporaryPlatformLoss: 1
+  temporaryPlatformLossGraceTime: 0.45
+  temporaryPlatformLossRetryDelay: 0.04
+  recoverPlatformFromGroundPointsWhenMissing: 1
+  delayPathRecomputeAfterWarriorLeavesSamePlatform: 1
+  warriorSamePlatformLeaveGraceTime: 0.5
+  warriorSamePlatformLeaveRetryDelay: 0.04
   landingYOffset: 0.2
   takeoffEdgeMargin: 0.25
   dropSideOutEpsilon: 0.35
@@ -404,6 +418,18 @@ MonoBehaviour:
   zalaytyHorizontalGap: 18
   zalaytyBodyWidthCheck: 0.5
   stopAndAttackWhenInRange: 1
+  neverStopOnSamePlatformWithWarrior: 1
+  requireMainBoxContactToStopAndAttackOnSamePlatform: 1
+  requireSideContactForMainBoxAttack: 1
+  sideAttackMinVerticalOverlap: 0.12
+  sideAttackMinVerticalOverlapRatio: 0.18
+  samePlatformMainBoxContactSkin: 0.11
+  zalaytyImpactHitSkin: 0.1
+  samePlatformMainBoxContactReleaseSkin: 0.12
+  stopOnWarriorMainBoxContactEvenDuringPlatformMismatch: 1
+  useContactReleaseHysteresis: 1
+  samePlatformContactRecheckDelay: 0.04
+  repeatAttackWhileMainBoxesStillTouchingOnSamePlatform: 1
   closeToWarriorDistance: 0.9
   warriorEdgeMargin: 1.8
   touchingExtraRadius: 0.05
@@ -421,7 +447,36 @@ MonoBehaviour:
   requireSqueezeThreatMarker: 1
   sideEpsilon: 0.05
   allowSqueezeExtraJump: 1
+  onlyTakeOffToChangePlatformsOrRebound: 1
+  cancelUnauthorizedUpwardLift: 1
+  unauthorizedLiftSnapBand: 0.25
+  unauthorizedLiftPlatformXInset: 0.02
   inRangeOrAttacking: 0
+  useIndependentMovement: 1
+  independentMoveArriveDistance: 0.08
+  independentLandingBand: 0.16
+  enableIndependentJumpAntiTunneling: 1
+  predictedLandingTopSkin: 0.08
+  predictedLandingMaxDropPastTop: 0.45
+  predictedLandingHorizontalSkin: 0.03
+  stopHorizontalVelocityOnIndependentStop: 1
+  avoidWarriorTopLandingDuringPlatformJumps: 1
+  platformJumpWarriorSideGap: 0.18
+  platformJumpLandingPlatformInset: 0.3
+  onlyAvoidWarriorTopLandingOnWarriorPlatform: 1
+  keepOriginalLandingWhenAlreadyBesideWarrior: 1
+  enableWarriorTopRebound: 1
+  warriorTopReboundNormalY: 0.711
+  warriorTopReboundBoundsBand: 0.1
+  warriorTopReboundSideGap: 0.45
+  warriorTopReboundMinSideClearance: 0.4
+  warriorTopReboundExtraLift: 0.22
+  ignoreWarriorCollisionDuringTopRebound: 1
+  warriorTopReboundIgnoreRestoreTimeout: 0.8
+  warriorTopReboundPlatformInset: 0.3
+  warriorTopReboundDuration: 0.59
+  warriorTopReboundHeight: 0.9
+  warriorTopReboundCooldown: 0.33
   maxFallSpeed: 25
   platformMask:
     serializedVersion: 2

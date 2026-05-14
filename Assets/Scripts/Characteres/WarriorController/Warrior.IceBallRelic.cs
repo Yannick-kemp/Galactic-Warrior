@@ -55,6 +55,11 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void ShowDefaultWarriorVisuals()
         {
+            // While Hivernox freeze is active, WarriorRootIceOverlay is the only
+            // sprite allowed. Do not re-enable the normal Warrior sprite here.
+            if (_frozenByHivernox)
+                return;
+
             if (defaultWarriorSpriteRenderer != null)
                 defaultWarriorSpriteRenderer.enabled = true;
         }
@@ -67,6 +72,11 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void ShowAttack3Body()
         {
+            // BodyFixedRoot is an Attack3 replacement body. It must never be visible
+            // while WarriorSprite_IceOverlay is the active frozen visual.
+            if (_frozenByHivernox)
+                return;
+
             if (bodyFixedRoot != null && !bodyFixedRoot.activeSelf)
                 bodyFixedRoot.SetActive(true);
         }
@@ -79,6 +89,9 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void ShowAttack3Visuals()
         {
+            if (_frozenByHivernox)
+                return;
+
             if (attack3VisualsRoot != null && !attack3VisualsRoot.activeSelf)
                 attack3VisualsRoot.SetActive(true);
         }
@@ -109,12 +122,18 @@ namespace Assets.Scripts.Characteres.WarriorController
         {
             _attack3Casting = false;
 
-            if (!CanDie)
+            // Do not restore movement while another external lock owns the Warrior,
+            // especially Hivernox freeze / hit-lock.
+            if (!CanDie && !_platformStoneRepulseActive && !_frozenByHivernox && _hivernoxHitLockRoutine == null)
                 CanMove = true;
         }
 
         public bool TryArmIceBallRelic(IceBallRelic def, bool consumeOnCast)
         {
+            // Do not allow the UI button to arm Attack3 while Warrior is frozen or hit-locked.
+            if (IsHardActionLocked || _frozenByHivernox || !CanAttackWarrior)
+                return false;
+
             if (def == null) return false;
             if (def.projectilePrefab == null) return false;
             if (IsDead || CanDie) return false;
@@ -133,6 +152,15 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private bool TryHandleArmedIceBallTouch()
         {
+            // Do not allow a stored/armed IceBall touch to turn into Attack3 while frozen or hit-locked.
+            if (IsHardActionLocked || _frozenByHivernox || !CanAttackWarrior)
+            {
+                if (HasAnyIceBallCastState())
+                    CancelIceBallCastForExternalLock();
+
+                return true;
+            }
+
             if (_attack3Casting || _iceBallShotPending)
                 return true;
 
@@ -142,12 +170,40 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (InputMgr.Instance == null)
                 return false;
 
-            BeginArmedIceBallCast(InputMgr.Instance.TouchedVector);
+            Vector2 touchWorld = InputMgr.Instance.TouchedVector;
+
+            // IMPORTANT:
+            // If the player touches inside the Warrior's BoxCollider2D,
+            // do NOT launch the IceBulletProjectile.
+            // Return true so this touch does not trigger normal movement/jump either.
+            if (!IsIceTouchOutsideWarriorCollider(touchWorld))
+                return true;
+
+            BeginArmedIceBallCast(touchWorld);
             return true;
+        }
+
+        private bool IsIceTouchOutsideWarriorCollider(Vector2 touchWorld)
+        {
+            // collider2 is the Warrior main BoxCollider2D cached in CharacterController.Awake().
+            // If it is missing, allow the shot instead of blocking the relic forever.
+            if (collider2 == null || !collider2.enabled)
+                return true;
+
+            // True means the touched point is inside the Warrior collider.
+            bool touchedInsideWarriorCollider = collider2.OverlapPoint(touchWorld);
+
+            // We only allow the projectile when the touch is OUTSIDE.
+            return !touchedInsideWarriorCollider;
         }
 
         private void BeginArmedIceBallCast(Vector2 touchWorld)
         {
+            if (IsHardActionLocked || _frozenByHivernox || !CanAttackWarrior)
+            {
+                CancelIceBallCastForExternalLock();
+                return;
+            }
             if (_armedIceBallDef == null)
             {
                 ClearArmedIceBall();
@@ -238,6 +294,11 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void FirePendingIceBall()
         {
+            if (IsHardActionLocked || _frozenByHivernox || !CanAttackWarrior)
+            {
+                CancelIceBallCastForExternalLock();
+                return;
+            }
             if (!_iceBallShotPending) return;
 
             if (_armedIceBallDef == null || _armedIceBallDef.projectilePrefab == null)
@@ -324,6 +385,9 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void ShowIceChargeVfx()
         {
+            if (_frozenByHivernox)
+                return;
+
             if (orbSocket == null || iceChargeVfxPrefab == null)
                 return;
 
@@ -349,16 +413,50 @@ namespace Assets.Scripts.Characteres.WarriorController
             }
         }
 
+        private bool HasAnyIceBallCastState()
+        {
+            return _attack3Casting
+                   || _iceBallShotPending
+                   || _iceBallArmed
+                   || _iceChargeVfxInstance != null
+                   || (bodyFixedRoot != null && bodyFixedRoot.activeSelf)
+                   || (attack3VisualsRoot != null && attack3VisualsRoot.activeSelf);
+        }
+
         private void CancelPendingIceBallCast()
         {
+            CancelIceBallCastVisualState(restoreMovementAfterCancel: true);
+        }
+
+        private void CancelIceBallCastForExternalLock()
+        {
+            // Used by Hivernox freeze / hit lock.
+            // It cleans Attack3 visuals/state, but does NOT unlock movement.
+            // HivernoxFreezeRoutine / HivernoxHitLockRoutine owns CanMove.
+            CancelIceBallCastVisualState(restoreMovementAfterCancel: false);
+        }
+
+        private void CancelIceBallCastVisualState(bool restoreMovementAfterCancel)
+        {
             _iceBallShotPending = false;
+
             HideIceChargeVfx();
             HideAttack3Visuals();
             HideAttack3Body();
             ShowDefaultWarriorVisuals();
+
             ClearArmedIceBall();
             ResetAttack3OrbitAim();
-            EndAttack3Lock();
+
+            if (animator != null && HasBoolParam("isAttacking3"))
+                animator.SetBool("isAttacking3", false);
+
+            SetAttackMode(AttackAnimMode.Attack1);
+
+            if (restoreMovementAfterCancel)
+                EndAttack3Lock();
+            else
+                _attack3Casting = false;
         }
 
         private void ClearArmedIceBall()
