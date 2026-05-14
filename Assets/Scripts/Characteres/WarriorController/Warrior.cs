@@ -487,6 +487,9 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (CurrentplatForm == null || collider2 == null)
                 return;
 
+            if (!CanRecordCurrentPlatformAsSafeRespawn())
+                return;
+
             LastSafePlatform = CurrentplatForm;
 
             if (CurrentplatForm is Assets.Scripts.Platforms.MovingVerticalPlatform movingVerticalPlatform)
@@ -534,6 +537,45 @@ namespace Assets.Scripts.Characteres.WarriorController
                 : pb.center.x;
 
             _lastSafePosition = new Vector3(clampedX, safeY, transform.position.z);
+        }
+
+        private bool CanRecordCurrentPlatformAsSafeRespawn()
+        {
+            if (CurrentplatForm == null || CurrentplatForm.platformCollider == null || collider2 == null)
+                return false;
+
+            if (activesJumpCoroutine != null)
+                return false;
+
+            if (IsFallingEdge || IsFallingPlfExit || IsFallingGrazesEdge || IsFallingHitEnemy)
+                return false;
+
+            if (CountGroundPoints() <= 0)
+                return false;
+
+            Bounds warriorBounds = collider2.bounds;
+            Bounds platformBounds = CurrentplatForm.platformCollider.bounds;
+
+            float warriorBottom = warriorBounds.min.y;
+            float platformTop = platformBounds.max.y;
+
+            // Must be standing near the top surface, not passing beside or below the platform.
+            if (warriorBottom < platformTop - 0.08f)
+                return false;
+
+            if (warriorBottom > platformTop + 0.35f)
+                return false;
+
+            float overlapX =
+                Mathf.Min(warriorBounds.max.x, platformBounds.max.x) -
+                Mathf.Max(warriorBounds.min.x, platformBounds.min.x);
+
+            float requiredOverlap = Mathf.Min(warriorBounds.size.x * 0.25f, 0.18f);
+
+            if (overlapX < requiredOverlap)
+                return false;
+
+            return true;
         }
         #endregion
 
