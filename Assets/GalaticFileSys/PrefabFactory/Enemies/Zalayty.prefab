@@ -364,7 +364,7 @@ MonoBehaviour:
   antiTunnelTopStartTolerance: 0.04
   Range: 3
   attackCooldown: 1.5
-  attackDamage: 10
+  attackDamage: 2
   target: {fileID: 0}
   groundCheckPoint: {fileID: 8372457248505060182}
   TriggerColliderLeft: {fileID: 2526977648032420447}
@@ -403,6 +403,10 @@ MonoBehaviour:
   disableAttackWhenHitSeconds: 0.4
   hitReaction: {fileID: 11400000, guid: c91b8181546a7d74ab4764a943e51abc, type: 2}
   patrolEdgeArriveThreshold: 0.12
+  useGroundCheckPointForPatrolEdge: 1
+  patrolEdgeAheadProbeDistance: 0.55
+  patrolEdgeRayExtraLength: 0.2
+  patrolEdgeBoundsSkin: 0.02
   repathInterval: 0.25
   keepMotionDuringTemporaryPlatformLoss: 1
   temporaryPlatformLossGraceTime: 0.45
@@ -428,11 +432,8 @@ MonoBehaviour:
   samePlatformMainBoxContactReleaseSkin: 0.12
   stopOnWarriorMainBoxContactEvenDuringPlatformMismatch: 1
   useContactReleaseHysteresis: 1
-  samePlatformContactRecheckDelay: 0.04
   repeatAttackWhileMainBoxesStillTouchingOnSamePlatform: 1
-  closeToWarriorDistance: 0.9
   warriorEdgeMargin: 1.8
-  touchingExtraRadius: 0.05
   sparkPrefab: {fileID: 8169396821578944445, guid: f8b9a6b02e3ac79408304329fda320f7, type: 3}
   sparkScale: 1
   sparkDestroyAfter: 0.2
@@ -441,7 +442,6 @@ MonoBehaviour:
   requireTouchingToHit: 1
   requireSamePlatformToHit: 1
   requireTargetInFront: 0
-  enableSqueezeExtraJump: 1
   squeezeCheckInterval: 0.12
   squeezeExtraJumpCooldown: 1.25
   requireSqueezeThreatMarker: 1
@@ -455,11 +455,32 @@ MonoBehaviour:
   useIndependentMovement: 1
   independentMoveArriveDistance: 0.08
   independentLandingBand: 0.16
+  validateZalaytyLandingBeforeGrounded: 1
+  trackMovingLandingPlatformDuringJump: 1
+  movingLandingHorizontalSkin: 0.04
+  movingLandingSnapMaxVerticalDistance: 0.42
+  movingLandingSnapMaxHorizontalDistance: 0.28
+  missedLandingAirborneAnimationLockTime: 0.18
+  missedLandingGravityScale: 2.5
+  useGroundedStickGraceDuringChase: 1
+  groundedStickGraceTime: 0.08
+  groundedStickMaxVerticalSeparation: 0.12
+  preserveSamePlatformChaseDuringMicroSeparation: 1
+  samePlatformMicroSeparationGraceTime: 0.18
+  samePlatformMicroSeparationMaxVerticalGap: 0.18
+  samePlatformMicroSeparationHorizontalSkin: 0.04
   enableIndependentJumpAntiTunneling: 1
   predictedLandingTopSkin: 0.08
   predictedLandingMaxDropPastTop: 0.45
   predictedLandingHorizontalSkin: 0.03
   stopHorizontalVelocityOnIndependentStop: 1
+  enableDifferentPlatformWarriorImpactAbsorption: 1
+  differentPlatformImpactMinSpeed: 3
+  differentPlatformImpactMinIntoWarriorDot: 0.15
+  differentPlatformImpactCooldown: 0.16
+  differentPlatformImpactZalaytyLockSeconds: 0.1
+  interruptZalaytyJumpOnDifferentPlatformImpact: 1
+  requireKnownDifferentPlatformsForImpactAbsorption: 1
   avoidWarriorTopLandingDuringPlatformJumps: 1
   platformJumpWarriorSideGap: 0.18
   platformJumpLandingPlatformInset: 0.3
@@ -477,11 +498,6 @@ MonoBehaviour:
   warriorTopReboundDuration: 0.59
   warriorTopReboundHeight: 0.9
   warriorTopReboundCooldown: 0.33
-  maxFallSpeed: 25
-  platformMask:
-    serializedVersion: 2
-    m_Bits: 0
-  skin: 0.02
 --- !u!114 &337278386865177105
 MonoBehaviour:
   m_ObjectHideFlags: 0

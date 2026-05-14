@@ -416,7 +416,8 @@ public class CharacterController : Character, ICharacterController
                 : (rigidbody2 != null ? rigidbody2.position.y   // free-fall: keep current
                                       : transform.position.y);
 
-            // Use MovePosition so the physics solver sees the move
+            // Use the core move wrapper so moving platforms can merge their carry
+            // without overwriting this character's requested X movement.
             RequestCoreMovePosition(new Vector2(newX, newY));
             Physics2D.SyncTransforms();
 
@@ -431,7 +432,6 @@ public class CharacterController : Character, ICharacterController
             : (rigidbody2 != null ? rigidbody2.position.y : transform.position.y);
 
         RequestCoreMovePosition(new Vector2(finalX, finalY));
-
         Physics2D.SyncTransforms();
         _isMoving = false;
         activesMoveCoroutine = null;

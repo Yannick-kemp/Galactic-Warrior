@@ -38,6 +38,21 @@ namespace Assets.Scripts.Platforms
         [Tooltip("If the character is going upward faster than this, the lift releases him instead of gluing him to the top.")]
         [SerializeField, Min(0f)] private float jumpOffVelocity = 0.12f;
 
+        [Header("Zalayty Lift Anti-Tunneling")]
+        [Tooltip("When true, Zalayty receives a verified top-support heartbeat from this lift instead of relying only on GroundPoints.")]
+        [SerializeField] private bool useZalaytyLiftTopSupport = true;
+
+        [Tooltip("Small grace after the lift reaches min/max and reverses. This prevents Zalayty from tunneling through at Y max/Y min due to one stale jump/pass-through frame.")]
+        [SerializeField, Min(0f)] private float zalaytyLimitTurnSupportGrace = 0.16f;
+
+        [Tooltip("Extra allowed gap above the lift top for Zalayty only during the limit-turn grace.")]
+        [SerializeField, Min(0f)] private float zalaytyExtraRideGapAtLimitTurn = 0.30f;
+
+        [Tooltip("Extra allowed sink below the lift top for Zalayty only during the limit-turn grace.")]
+        [SerializeField, Min(0f)] private float zalaytyExtraSinkAtLimitTurn = 0.30f;
+
+        private float _zalaytyLimitTurnSupportUntil = -999f;
+
         [Tooltip("Vertical contact normal threshold used to recognize top-surface contacts.")]
         [SerializeField, Range(0f, 1f)] private float topContactNormalThreshold = 0.45f;
 
@@ -65,9 +80,22 @@ namespace Assets.Scripts.Platforms
         private readonly Dictionary<int, Coroutine> _exitValidationCoroutines = new Dictionary<int, Coroutine>();
         private readonly Dictionary<int, Coroutine> _respawnSeatCoroutines = new Dictionary<int, Coroutine>();
 
+        private const float LiftDirectionEpsilon = 0.00001f;
+
         public string RespawnId => respawnId;
-        public bool IsMovingUpNow => _isMovingUp;
-        public bool IsMovingDownNow => !_isMovingUp;
+
+        // Direction of the movement that happened in the current FixedUpdate.
+        // At Y max/Y min, _isMovingUp flips after the movement; using only _isMovingUp
+        // would report the next direction too early and can make pass-through logic
+        // treat Zalayty as unsupported during the turn frame.
+        public bool IsMovingUpNow =>
+            _lastLiftDelta.y > LiftDirectionEpsilon ||
+            (Mathf.Abs(_lastLiftDelta.y) <= LiftDirectionEpsilon && _isMovingUp);
+
+        public bool IsMovingDownNow =>
+            _lastLiftDelta.y < -LiftDirectionEpsilon ||
+            (Mathf.Abs(_lastLiftDelta.y) <= LiftDirectionEpsilon && !_isMovingUp);
+
         public Vector2 LastLiftDelta => _lastLiftDelta;
 
         protected override void Start()
@@ -122,7 +150,12 @@ namespace Assets.Scripts.Platforms
                 MovePlatformTo(next);
 
             if (Mathf.Abs(newY - targetY) < 0.001f)
+            {
                 _isMovingUp = !_isMovingUp;
+
+                if (useZalaytyLiftTopSupport && zalaytyLimitTurnSupportGrace > 0f)
+                    _zalaytyLimitTurnSupportUntil = Time.time + zalaytyLimitTurnSupportGrace;
+            }
 
             return delta;
         }
@@ -436,7 +469,10 @@ namespace Assets.Scripts.Platforms
             // isOnEdgePlatform in the current file. It does not clear the internal
             // _isJumping flag or the active jump coroutine. NotifyMovingPlatformTopSupport()
             // is the Zalayty-specific landing confirmation that clears those states.
-            zalayty.NotifyMovingPlatformTopSupport(this);
+            if (useZalaytyLiftTopSupport)
+                zalayty.NotifyMovingPlatformTopSupport(this);
+            else
+                zalayty.SetJumping(false);
         }
 
         private void CarryRegisteredRiders(Vector2 liftDelta)
@@ -492,6 +528,42 @@ namespace Assets.Scripts.Platforms
                 RemoveRider(_ridersToRemove[i], clearPlatformIfDetached: true);
         }
 
+        private bool IsInZalaytyLimitTurnSupportGrace()
+        {
+            return useZalaytyLiftTopSupport && Time.time <= _zalaytyLimitTurnSupportUntil;
+        }
+
+        private bool CanKeepZalaytyOnLiftSurfaceDuringTurn(ZalaytyMonster zalayty)
+        {
+            if (!useZalaytyLiftTopSupport || zalayty == null || platformCollider == null)
+                return false;
+
+            Collider2D support = GetStandingCollider(zalayty);
+            if (support == null || !support.enabled)
+                return false;
+
+            if (!IsHorizontallyOverPlatform(support))
+                return false;
+
+            if (zalayty.rigidbody2 != null && zalayty.rigidbody2.linearVelocity.y > jumpOffVelocity)
+                return false;
+
+            float desiredBottom = platformCollider.bounds.max.y + riderSurfaceOffset;
+            float bottomDelta = support.bounds.min.y - desiredBottom;
+
+            float dynamicStepTolerance = Mathf.Abs(_lastLiftDelta.y) + moveSpeed * Time.fixedDeltaTime;
+            float allowedGap = maxRideGap + dynamicStepTolerance;
+            float allowedSink = maxSinkIntoTop + dynamicStepTolerance;
+
+            if (IsInZalaytyLimitTurnSupportGrace())
+            {
+                allowedGap += zalaytyExtraRideGapAtLimitTurn;
+                allowedSink += zalaytyExtraSinkAtLimitTurn;
+            }
+
+            return bottomDelta >= -allowedSink && bottomDelta <= allowedGap;
+        }
+
         private bool CanContinueRiding(CharacterController rider)
         {
             if (rider == null || !rider.gameObject.activeInHierarchy)
@@ -503,6 +575,16 @@ namespace Assets.Scripts.Platforms
             Collider2D support = GetStandingCollider(rider);
             if (support == null || !support.enabled)
                 return false;
+
+            // Zalayty-specific anti-tunnel: during the lift limit turn, accept verified
+            // top geometry before the normal ignore/jump-state checks. This clears stale
+            // _isJumping and restores solid collision so he does not pass through at Y max.
+            if (rider is ZalaytyMonster turnZalayty && CanKeepZalaytyOnLiftSurfaceDuringTurn(turnZalayty))
+            {
+                SetPlatformCollisionForCharacter(turnZalayty, ignore: false);
+                ConfirmZalaytyTopSupport(turnZalayty);
+                return true;
+            }
 
             if (IsPlatformIgnoredByCharacter(rider))
             {
@@ -601,7 +683,9 @@ namespace Assets.Scripts.Platforms
             float desiredBottom = platformCollider.bounds.max.y + riderSurfaceOffset;
             float bottomDelta = support.bounds.min.y - desiredBottom;
 
-            return bottomDelta >= -maxSinkIntoTop && bottomDelta <= maxRideGap;
+            float dynamicStepTolerance = Mathf.Abs(_lastLiftDelta.y) + moveSpeed * Time.fixedDeltaTime;
+            return bottomDelta >= -(maxSinkIntoTop + dynamicStepTolerance) &&
+                   bottomDelta <= maxRideGap + dynamicStepTolerance;
         }
 
         private Vector2 GetSurfaceCorrectedDelta(CharacterController rider, Vector2 liftDelta)

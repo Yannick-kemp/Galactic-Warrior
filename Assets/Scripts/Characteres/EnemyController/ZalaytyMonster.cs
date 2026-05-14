@@ -340,17 +340,6 @@ public class ZalaytyMonster : Enemy
         return true;
     }
 
-    /// <summary>
-    /// MovingVerticalPlatform uses this to avoid double-applying the elevator
-    /// movement while Zalayty is actively moving with independent MovePosition.
-    /// The platform exposes its Y delta, and MoveZalaytyBody() adds that delta
-    /// to Zalayty's own requested X movement.
-    /// </summary>
-    public bool ShouldApplyVerticalMovingPlatformCarryInsideOwnMove()
-    {
-        return ShouldApplyHorizontalMovingPlatformCarryInsideOwnMove();
-    }
-
     private bool TryGetHorizontalMovingPlatformCarryDeltaForOwnMove(out Vector2 carryDelta)
     {
         carryDelta = Vector2.zero;
@@ -389,6 +378,17 @@ public class ZalaytyMonster : Enemy
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// MovingVerticalPlatform uses this to avoid double-applying elevator movement
+    /// while Zalayty is actively moving with independent MovePosition. The platform
+    /// exposes its Y delta, and MoveZalaytyBody() adds that delta to Zalayty's own
+    /// requested X movement.
+    /// </summary>
+    public bool ShouldApplyVerticalMovingPlatformCarryInsideOwnMove()
+    {
+        return ShouldApplyHorizontalMovingPlatformCarryInsideOwnMove();
     }
 
     private bool TryGetVerticalMovingPlatformCarryDeltaForOwnMove(out Vector2 carryDelta)
@@ -2251,10 +2251,10 @@ public class ZalaytyMonster : Enemy
     {
         Vector2 finalPosition = position;
 
-        // Moving platforms can behave like elevators/carriers. Zalayty's independent
-        // chase coroutine can run after the platform FixedUpdate, so the platform must
-        // not be the only object applying the carry delta. When Zalayty is actively
-        // chasing, add the current platform delta here:
+        // MovingHorizontalPlatform behaves like an elevator/carrier. Zalayty's
+        // independent chase coroutine can run after the platform FixedUpdate, so the
+        // platform must not be the only object applying the carry delta. When Zalayty
+        // is actively chasing, add the current platform delta here:
         // finalPosition = ownMovePosition + platformDelta.
         if (TryGetHorizontalMovingPlatformCarryDeltaForOwnMove(out Vector2 carryDelta))
             finalPosition += carryDelta;
