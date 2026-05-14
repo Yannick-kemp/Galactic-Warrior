@@ -87,6 +87,21 @@ namespace Assets.Scripts.Platforms
 
         [SerializeField] private float edgeZoneWidth = 0.35f;
 
+        [Header("Warrior Anti Ledge Snag")]
+        [SerializeField] private bool enableWarriorAntiLedgeSnag = true;
+
+        [Tooltip("Warrior must be moving upward faster than this to treat a side/corner hit as ledge snag.")]
+        [SerializeField, Min(0f)] private float warriorAntiSnagMinUpVelocity = 0.05f;
+
+        [Tooltip("If the Warrior bottom is still below the platform top by this amount, the hit is considered a side/lip hit, not a landing.")]
+        [SerializeField, Min(0f)] private float warriorAntiSnagBelowTopSkin = 0.04f;
+
+        [Tooltip("Contact normal Y required to count as a real top landing. Smaller values are treated as side/corner hits.")]
+        [SerializeField, Range(0f, 1f)] private float warriorAntiSnagTopNormalY = 0.55f;
+
+        [Tooltip("Horizontal contact normal required to identify side/corner collision.")]
+        [SerializeField, Range(0f, 1f)] private float warriorAntiSnagSideNormalX = 0.35f;
+
         // ─── Lifecycle ────────────────────────────────────────────────────────
 
         private void Awake()
@@ -140,10 +155,10 @@ namespace Assets.Scripts.Platforms
             if (!IsValidPlatformCharacter(character))
                 return;
             //if (character is M97Monster) 
-            
+
             //{
             //    int t = 0;
-            
+
             //}
             AddTriggerContact(character, other);
 
@@ -198,7 +213,7 @@ namespace Assets.Scripts.Platforms
 
             if (!IsValidPlatformCharacter(character))
                 return;
-   
+
 
             if (IsZalaytyJumpDownRestoredInsideTrigger(character))
             {
@@ -353,7 +368,7 @@ namespace Assets.Scripts.Platforms
             if (IsValidPlatformCharacter(character))
             {
 
-                
+
                 if (IsZalaytyJumpDownLocked(character))
                 {
                     Debug.Log("Zalayty jump-down source platform still locked on collision enter for " + character.name);
@@ -369,7 +384,14 @@ namespace Assets.Scripts.Platforms
                     StartRestoreSourceFallThroughWhenFullyClear(character);
                     return;
                 }
-              
+
+                if (ShouldTreatAsWarriorLedgeSnag(character, collision))
+                {
+                    ForceFirstContact(character, FirstPlatformContact.TriggerFirst);
+                    SetIgnoreForCharacter(character, true);
+                    return;
+                }
+
                 RememberFirstContact(character, FirstPlatformContact.BodyFirst);
 
                 // If platformCollider was the first contact, or this platform was
@@ -402,6 +424,13 @@ namespace Assets.Scripts.Platforms
                     Debug.Log("Source fall-through still locked on collision stay for " + character.name);
                     SetIgnoreForCharacter(character, true);
                     StartRestoreSourceFallThroughWhenFullyClear(character);
+                    return;
+                }
+
+                if (ShouldTreatAsWarriorLedgeSnag(character, collision))
+                {
+                    ForceFirstContact(character, FirstPlatformContact.TriggerFirst);
+                    SetIgnoreForCharacter(character, true);
                     return;
                 }
 
@@ -911,6 +940,17 @@ namespace Assets.Scripts.Platforms
             _firstContactFrameByCharacter[id] = Time.frameCount;
         }
 
+        private void ForceFirstContact(CharacterController character, FirstPlatformContact contact)
+        {
+            int id = GetCharacterKey(character);
+
+            if (id == 0 || contact == FirstPlatformContact.None)
+                return;
+
+            _firstContactByCharacter[id] = contact;
+            _firstContactFrameByCharacter[id] = Time.frameCount;
+        }
+
         private void RememberTriggerContactWithPriority(CharacterController character)
         {
             int id = GetCharacterKey(character);
@@ -1152,6 +1192,64 @@ namespace Assets.Scripts.Platforms
             float charX = cb.center.x;
 
             return charX < leftEdge || charX > rightEdge;
+        }
+
+        private bool ShouldTreatAsWarriorLedgeSnag(CharacterController character, Collision2D collision)
+        {
+            if (!enableWarriorAntiLedgeSnag)
+                return false;
+
+            Warrior warrior = character as Warrior;
+
+            if (warrior == null)
+                return false;
+
+            if (collision == null || warrior.rigidbody2 == null || platformCollider == null)
+                return false;
+
+            // Only protect upward jump / upward movement.
+            if (!warrior.IsJumping && warrior.rigidbody2.linearVelocity.y <= warriorAntiSnagMinUpVelocity)
+                return false;
+
+            Collider2D support = GetStandingCollider(warrior);
+
+            if (support == null)
+                return false;
+
+            Bounds pb = platformCollider.bounds;
+            Bounds wb = support.bounds;
+
+            // If Warrior is already in a valid landing position, do not make the platform pass-through.
+            if (IsCharacterLandingOnTopNow(warrior))
+                return false;
+
+            // If the Warrior bottom is clearly below the platform top, this is a lip/side/corner hit.
+            bool bottomStillBelowPlatformTop =
+                wb.min.y < pb.max.y - warriorAntiSnagBelowTopSkin;
+
+            if (!bottomStillBelowPlatformTop)
+                return false;
+
+            bool hasSideOrCornerContact = false;
+            bool hasRealTopContact = false;
+
+            int contactCount = collision.contactCount;
+
+            for (int i = 0; i < contactCount; i++)
+            {
+                ContactPoint2D contact = collision.GetContact(i);
+                Vector2 n = contact.normal;
+
+                // On the platform side/corner, the normal usually has strong X and weak Y.
+                if (Mathf.Abs(n.x) >= warriorAntiSnagSideNormalX && n.y < warriorAntiSnagTopNormalY)
+                    hasSideOrCornerContact = true;
+
+                // A real top landing has a strong upward normal.
+                if (n.y >= warriorAntiSnagTopNormalY)
+                    hasRealTopContact = true;
+            }
+
+            return hasSideOrCornerContact && !hasRealTopContact;
         }
 
         private bool IsCharacterLandingOnTopNow(CharacterController character)

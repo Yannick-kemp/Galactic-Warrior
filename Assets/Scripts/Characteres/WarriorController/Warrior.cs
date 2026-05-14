@@ -439,6 +439,14 @@ namespace Assets.Scripts.Characteres.WarriorController
         {
             ApplyDestinationPlatformAntiTunnelDuringPhysicsFall();
 
+            // ── Moving-platform stick while idle ──────────────────────────────────
+            // MoveTowardPostionAction already pins Y via GetMovingPlateSurfaceY().
+            // When the Warrior is standing still on a descending MovingVerticalPlatform,
+            // gravity alone is too slow to follow the platform's teleport-based descent,
+            // causing one-frame float gaps each FixedUpdate. We apply the same Y snap here.
+            ApplyMovingPlatformIdleStick();
+            // ─────────────────────────────────────────────────────────────────────
+
             if (!_postBounceActive) return;
 
             if (Time.time - _postBounceStartTime > ignoreEnemyCollisionTime)
@@ -829,7 +837,40 @@ namespace Assets.Scripts.Characteres.WarriorController
         [SerializeField] private float stunRecoveryImmunity = 0.25f;
         private float _stunImmuneUntil = -999f;
 
+        private void ApplyMovingPlatformIdleStick()
+        {
+            // Only when idle: MoveTowardPostionAction handles the moving case itself.
+            if (_isMoving || _isJumping) return;
+            if (activesJumpCoroutine != null || activesMoveCoroutine != null) return;
 
+            // Only on a descending MovingVerticalPlatform.
+            if (CurrentplatForm is not Assets.Scripts.Platforms.MovingVerticalPlatform mvp) return;
+            if (!mvp.IsMovingDownNow) return;
+
+            // GetMovingPlateSurfaceY() is defined in CharacterController and is already
+            // used by MoveTowardPostionAction — reuse it here.
+            float surfaceY = GetMovingPlateSurfaceY();
+            if (surfaceY == float.MinValue) return;
+
+            if (rigidbody2 == null) return;
+
+            Vector2 pos = rigidbody2.position;
+
+            // Only snap downward: never push the Warrior up (that would fight a real jump).
+            if (pos.y <= surfaceY + 0.001f) return;
+
+            pos.y = surfaceY;
+            rigidbody2.position = pos;
+
+            // Cancel downward velocity that may have accumulated —
+            // the snap already placed him on the surface.
+            Vector2 v = rigidbody2.linearVelocity;
+            if (v.y < 0f) v.y = 0f;
+            rigidbody2.linearVelocity = v;
+
+            Physics2D.SyncTransforms();
+        }
 
     }
+
 }

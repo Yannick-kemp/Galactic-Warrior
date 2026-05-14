@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using Assets.Scripts.Tools;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -37,6 +38,22 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         [Tooltip("Optional small delay between each stone explosion. Use 0 for all stones exploding at exactly the same time. Example: 0.03 gives a very slight chain feel.")]
         [SerializeField] private float perStoneExplosionDelay = 0f;
+
+        [Header("Reserve Explosion Sound")]
+        [Tooltip("Sound played once for every stone explosion. Assign impact.mp3 here.")]
+        [SerializeField] private AudioClip reserveExplosionImpactSfx;
+
+        [Tooltip("Volume used for each individual reserve stone explosion sound.")]
+        [SerializeField, Range(0f, 1f)] private float reserveExplosionImpactVolume = 0.65f;
+
+        [Tooltip("Small random pitch range so many stones do not sound like one repeated identical sound.")]
+        [SerializeField] private Vector2 reserveExplosionImpactPitchRange = new Vector2(0.96f, 1.04f);
+
+        [Tooltip("0 = 2D sound. Keep 0 for a side-scroller/platformer unless you intentionally want 3D positional audio.")]
+        [SerializeField, Range(0f, 1f)] private float reserveExplosionImpactSpatialBlend = 0f;
+
+        [Tooltip("Only matters when Spatial Blend is greater than 0.")]
+        [SerializeField, Min(0f)] private float reserveExplosionImpactMaxDistance = 20f;
 
         [Header("Hidden Relic Rewards")]
         [Tooltip("When true, relic pickups hidden behind this stone pile are revealed only when this reserve becomes empty.")]
@@ -130,6 +147,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             stoneCount = Mathf.Max(0, stoneCount);
             defaultApproachHeight = Mathf.Max(0f, defaultApproachHeight);
             perStoneExplosionDelay = Mathf.Max(0f, perStoneExplosionDelay);
+            reserveExplosionImpactMaxDistance = Mathf.Max(0f, reserveExplosionImpactMaxDistance);
+            if (reserveExplosionImpactPitchRange.y < reserveExplosionImpactPitchRange.x)
+                reserveExplosionImpactPitchRange.y = reserveExplosionImpactPitchRange.x;
+
             RemoveNullEntries(physicalStones);
             RemoveNullEntries(hiddenRelics);
             hiddenRelicRevealVfxLifetime = Mathf.Max(0f, hiddenRelicRevealVfxLifetime);
@@ -407,7 +428,11 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 FallingStone stone = stonesToExplode[i];
                 if (stone != null && stone.gameObject.activeInHierarchy)
                 {
-                    SpawnReserveExplosionVfx(stone.transform.position);
+                    Vector3 explosionPosition = stone.transform.position;
+
+                    SpawnReserveExplosionVfx(explosionPosition);
+                    PlayReserveExplosionImpactSound(explosionPosition);
+
                     stone.gameObject.SetActive(false);
                 }
 
@@ -434,6 +459,21 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             if (reserveExplosionVfxLifetime > 0f)
                 Destroy(fx, reserveExplosionVfxLifetime);
+        }
+
+        private void PlayReserveExplosionImpactSound(Vector3 position)
+        {
+            if (reserveExplosionImpactSfx == null)
+                return;
+
+            OneShotAudio.Play(
+                reserveExplosionImpactSfx,
+                position,
+                reserveExplosionImpactVolume,
+                reserveExplosionImpactPitchRange,
+                reserveExplosionImpactSpatialBlend,
+                reserveExplosionImpactMaxDistance
+            );
         }
 
         private void RefreshHiddenRelicCache()

@@ -42,6 +42,47 @@ public class CharacterController : Character, ICharacterController
     public bool _isMoving;
     public bool IsJumping => _isJumping;
 
+    // Moving platform merge support.
+    // When this controller requests a MovePosition and a lift also moves in the
+    // same physics step, the lift must merge into this requested position instead
+    // of writing Rigidbody2D.position from an old X value. Otherwise the character
+    // plays Run but stays in the same place.
+    private Vector2 _lastCoreMoveRequestPosition;
+    private int _lastCoreMoveRequestFrame = -100000;
+    private float _lastCoreMoveRequestTime = -100000f;
+
+    public bool TryGetCoreMoveRequestForRecentStep(out Vector2 requestedPosition)
+    {
+        requestedPosition = _lastCoreMoveRequestPosition;
+
+        if (_lastCoreMoveRequestFrame == Time.frameCount)
+            return true;
+
+        float maxAge = Mathf.Max(Time.fixedDeltaTime * 1.5f, 0.02f);
+        return Time.time - _lastCoreMoveRequestTime <= maxAge;
+    }
+
+    public void ApplyMovingPlatformMergedCoreMove(Vector2 mergedPosition)
+    {
+        RequestCoreMovePosition(mergedPosition);
+    }
+
+    protected void RequestCoreMovePosition(Vector2 position)
+    {
+        _lastCoreMoveRequestPosition = position;
+        _lastCoreMoveRequestFrame = Time.frameCount;
+        _lastCoreMoveRequestTime = Time.time;
+
+        if (rigidbody2 != null)
+        {
+            rigidbody2.MovePosition(position);
+        }
+        else
+        {
+            transform.position = new Vector3(position.x, position.y, transform.position.z);
+        }
+    }
+
     // Add near your other virtual properties
     protected virtual bool AllowEdgeExitWhenTargetOutside => false; // default for enemies
     protected virtual float PlatformSafeMargin => 0.40f;
@@ -376,15 +417,8 @@ public class CharacterController : Character, ICharacterController
                                       : transform.position.y);
 
             // Use MovePosition so the physics solver sees the move
-            if (rigidbody2 != null)
-            {
-                rigidbody2.MovePosition(new Vector2(newX, newY));
-                Physics2D.SyncTransforms();
-            }
-            else
-            {
-                transform.position = new Vector3(newX, newY, transform.position.z);
-            }
+            RequestCoreMovePosition(new Vector2(newX, newY));
+            Physics2D.SyncTransforms();
 
             yield return null;
         }
@@ -396,10 +430,7 @@ public class CharacterController : Character, ICharacterController
             ? finalSurfaceY
             : (rigidbody2 != null ? rigidbody2.position.y : transform.position.y);
 
-        if (rigidbody2 != null)
-            rigidbody2.MovePosition(new Vector2(finalX, finalY));
-        else
-            transform.position = new Vector3(finalX, finalY, transform.position.z);
+        RequestCoreMovePosition(new Vector2(finalX, finalY));
 
         Physics2D.SyncTransforms();
         _isMoving = false;
@@ -643,10 +674,7 @@ public class CharacterController : Character, ICharacterController
 
     protected void MoveCharacterTo(Vector2 position)
     {
-        if (rigidbody2 != null)
-            rigidbody2.MovePosition(position);
-        else
-            transform.position = new Vector3(position.x, position.y, transform.position.z);
+        RequestCoreMovePosition(position);
     }
 
     protected void CompletePredictedTopLanding(PlatFormColliderTrigger destinationPlatform)
@@ -766,7 +794,7 @@ public class CharacterController : Character, ICharacterController
     /// Returns the Y position the monster should stand at on the lift,
     /// or float.MinValue if not on a lift.
     /// </summary>
-    private float GetMovingPlateSurfaceY()
+    public float GetMovingPlateSurfaceY()
     {
         if (CurrentplatForm is not MovingVerticalPlatform movingPlatform)
             return float.MinValue;

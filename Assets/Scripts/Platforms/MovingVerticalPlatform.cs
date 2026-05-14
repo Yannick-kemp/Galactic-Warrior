@@ -105,8 +105,8 @@ namespace Assets.Scripts.Platforms
 
             _lastLiftDelta = MovePlatformStep();
 
-            //if (carryCharactersLikeLift)
-            //    CarryRegisteredRiders(_lastLiftDelta);
+            if (carryCharactersLikeLift)
+                CarryRegisteredRiders(_lastLiftDelta);
         }
 
         private Vector2 MovePlatformStep()
@@ -154,7 +154,7 @@ namespace Assets.Scripts.Platforms
 
 
             //}
-            //TryRegisterRiderFromCollision(collision, snapImmediately: true);
+            TryRegisterRiderFromCollision(collision, snapImmediately: true);
         }
 
         protected override void OnCollisionStay2D(Collision2D collision)
@@ -168,7 +168,7 @@ namespace Assets.Scripts.Platforms
 
 
             //}
-            //TryRegisterRiderFromCollision(collision, snapImmediately: false);
+            TryRegisterRiderFromCollision(collision, snapImmediately: false);
         }
 
         protected override void OnCollisionExit2D(Collision2D collision)
@@ -428,8 +428,6 @@ namespace Assets.Scripts.Platforms
 
             foreach (CharacterController rider in _riders)
             {
-                if (rider is not Warrior && rider is not ZalaytyMonster)
-                    return;
                 if (!CanContinueRiding(rider))
                 {
                     _ridersToRemove.Add(rider);
@@ -571,39 +569,53 @@ namespace Assets.Scripts.Platforms
 
         private void MoveRiderToSurface(CharacterController rider, Vector2 extraDelta)
         {
-            if ( rider is not ZalaytyMonster)
-                return;
             Vector2 delta = GetSurfaceCorrectedDelta(rider, extraDelta);
             MoveRiderByDelta(rider, delta);
         }
 
         private void MoveRiderByDelta(CharacterController rider, Vector2 delta)
         {
-            if (rider == null || delta.sqrMagnitude <= 0.0000001f)
+            if (rider == null || Mathf.Abs(delta.y) <= 0.000001f)
                 return;
 
-            // Zalayty has his own horizontal AI movement. When the lift executes after
-            // Zalayty's MovePosition in the same fixed step, Rigidbody2D.position still
-            // contains the old X. Using old position + lift delta would cancel his X move.
-            // Merge the lift delta into Zalayty's pending movement target instead.
+            // This is a vertical lift. Never apply/write rider X here.
+            // Writing Rigidbody2D.position from the lift can cancel Warrior input
+            // because Rigidbody2D.position may still contain the old X while
+            // CharacterController already requested a new MovePosition X.
+            Vector2 liftOnlyDelta = new Vector2(0f, delta.y);
+
+            // Zalayty may have a special independent move request. Keep it first.
             if (rider is ZalaytyMonster zalayty &&
-                zalayty.TryGetIndependentMoveRequestForCurrentFixedStep(out Vector2 requestedPosition))
+                zalayty.TryGetIndependentMoveRequestForCurrentFixedStep(out Vector2 zalaytyRequestedPosition))
             {
-                Vector2 mergedPosition = requestedPosition + delta;
+                Vector2 mergedPosition = zalaytyRequestedPosition + liftOnlyDelta;
                 zalayty.ApplyMovingPlatformMergedIndependentMove(mergedPosition);
                 Physics2D.SyncTransforms();
                 return;
             }
 
+            // Generic CharacterController merge: Warrior, M97, and other enemies.
+            // Preserve the character's requested X and add only the lift Y.
+            if (rider.TryGetCoreMoveRequestForRecentStep(out Vector2 requestedPosition))
+            {
+                Vector2 mergedPosition = requestedPosition + liftOnlyDelta;
+                rider.ApplyMovingPlatformMergedCoreMove(mergedPosition);
+                Physics2D.SyncTransforms();
+                return;
+            }
+
+            // No controller movement requested this step: lift the rider vertically only.
             if (rider.rigidbody2 != null)
             {
-                Vector2 target = rider.rigidbody2.position + delta;
-
+                Vector2 target = rider.rigidbody2.position;
+                target.y += liftOnlyDelta.y;
                 rider.rigidbody2.position = target;
             }
             else
             {
-                rider.transform.position += (Vector3)delta;
+                Vector3 position = rider.transform.position;
+                position.y += liftOnlyDelta.y;
+                rider.transform.position = position;
             }
 
             Physics2D.SyncTransforms();

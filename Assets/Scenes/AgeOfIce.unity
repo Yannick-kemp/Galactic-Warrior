@@ -1451,6 +1451,10 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5746977026237257807, guid: cd4fe0425c85aea4e8c3dba23e16eef1, type: 3}
+      propertyPath: reserveExplosionImpactSfx
+      value: 
+      objectReference: {fileID: 8300000, guid: 15fc1a545b5813847ac4b36f25ecf04e, type: 3}
+    - target: {fileID: 5746977026237257807, guid: cd4fe0425c85aea4e8c3dba23e16eef1, type: 3}
       propertyPath: reserveExplosionVfxPrefab
       value: 
       objectReference: {fileID: 5162910912013668194, guid: cf82839c411151342a7b2337bda9fb34, type: 3}
@@ -1458,6 +1462,10 @@ PrefabInstance:
       propertyPath: hiddenRelicRevealVfxPrefab
       value: 
       objectReference: {fileID: 1404681256839616, guid: 3640199bf9dc32f4da57c37d57581f57, type: 3}
+    - target: {fileID: 5746977026237257807, guid: cd4fe0425c85aea4e8c3dba23e16eef1, type: 3}
+      propertyPath: reserveExplosionImpactVolume
+      value: 0.58
+      objectReference: {fileID: 0}
     - target: {fileID: 5746977026237257807, guid: cd4fe0425c85aea4e8c3dba23e16eef1, type: 3}
       propertyPath: autoDiscoverChildFallingStones
       value: 1
@@ -2130,15 +2138,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2639930814905409205, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
       propertyPath: m_LocalRotation.z
-      value: 0.046361662
+      value: 0.04636238
       objectReference: {fileID: 0}
     - target: {fileID: 4918953235271323384, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -70.37
+      value: 6.99
       objectReference: {fileID: 0}
     - target: {fileID: 4918953235271323384, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 1.12
+      value: 9.82
       objectReference: {fileID: 0}
     - target: {fileID: 4918953235271323384, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
       propertyPath: m_LocalPosition.z
@@ -2178,15 +2186,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7322909651873355449, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
       propertyPath: m_LocalRotation.z
-      value: -0.03570846
+      value: -0.03570825
       objectReference: {fileID: 0}
     - target: {fileID: 8386229237362371064, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
       propertyPath: m_LocalRotation.w
-      value: 0.9999432
+      value: 0.99994314
       objectReference: {fileID: 0}
     - target: {fileID: 8386229237362371064, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
       propertyPath: m_LocalRotation.z
-      value: 0.010662031
+      value: 0.010662962
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
