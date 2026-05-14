@@ -7,6 +7,7 @@ using UnityEngine.TextCore.Text;
 
 namespace Assets.Scripts.Platforms
 {
+    [DefaultExecutionOrder(50)]
     public class MovingVerticalPlatform : PlatFormPlfColliderTrigger
     {
         [Header("Relative Limits (Offset from Start)")]
@@ -210,6 +211,7 @@ namespace Assets.Scripts.Platforms
 
             AddRider(character);
             character.CurrentplatForm = this;
+            ConfirmRiderTopSupport(character);
 
             if (character is Warrior warrior)
             {
@@ -225,7 +227,7 @@ namespace Assets.Scripts.Platforms
             }
             else if (character is ZalaytyMonster zalayty)
             {
-                zalayty.SetJumping(false);
+                ConfirmZalaytyTopSupport(zalayty);
             }
 
             StopDownwardVelocity(character);
@@ -298,7 +300,7 @@ namespace Assets.Scripts.Platforms
             {
                 zalayty.StopMoveTowardCoroutine();
                 zalayty.StopJumpTowardCoroutine();
-                zalayty.SetJumping(false);
+                ConfirmZalaytyTopSupport(zalayty);
             }
 
             if (character.rigidbody2 != null)
@@ -320,6 +322,7 @@ namespace Assets.Scripts.Platforms
 
             AddRider(character);
             character.CurrentplatForm = this;
+            ConfirmRiderTopSupport(character);
 
             StopDownwardVelocity(character);
 
@@ -355,6 +358,7 @@ namespace Assets.Scripts.Platforms
 
                 AddRider(character);
                 character.CurrentplatForm = this;
+                ConfirmRiderTopSupport(character);
 
                 StopDownwardVelocity(character);
 
@@ -375,7 +379,7 @@ namespace Assets.Scripts.Platforms
                 }
                 else if (character is ZalaytyMonster zalayty)
                 {
-                    zalayty.SetJumping(false);
+                    ConfirmZalaytyTopSupport(zalayty);
                 }
 
                 yield return wait;
@@ -417,6 +421,24 @@ namespace Assets.Scripts.Platforms
             _exitValidationCoroutines.Remove(id);
         }
 
+        private void ConfirmRiderTopSupport(CharacterController character)
+        {
+            if (character is ZalaytyMonster zalayty)
+                ConfirmZalaytyTopSupport(zalayty);
+        }
+
+        private void ConfirmZalaytyTopSupport(ZalaytyMonster zalayty)
+        {
+            if (zalayty == null)
+                return;
+
+            // This is important: ZalaytyMonster.SetJumping(false) only changes
+            // isOnEdgePlatform in the current file. It does not clear the internal
+            // _isJumping flag or the active jump coroutine. NotifyMovingPlatformTopSupport()
+            // is the Zalayty-specific landing confirmation that clears those states.
+            zalayty.NotifyMovingPlatformTopSupport(this);
+        }
+
         private void CarryRegisteredRiders(Vector2 liftDelta)
         {
 
@@ -434,13 +456,26 @@ namespace Assets.Scripts.Platforms
                     continue;
                 }
 
+                rider.CurrentplatForm = this;
+                ConfirmRiderTopSupport(rider);
+
+                // Zalayty's same-platform chase uses independent MovePosition inside a
+                // WaitForFixedUpdate coroutine. For active Zalayty movement, do not move
+                // him from the platform FixedUpdate; expose this lift delta and let
+                // MoveZalaytyBody() add it to his own requested X movement. This avoids
+                // both run-in-place and double vertical carry.
+                if (rider is ZalaytyMonster movingZalayty &&
+                    movingZalayty.ShouldApplyVerticalMovingPlatformCarryInsideOwnMove())
+                {
+                    continue;
+                }
+
                 Vector2 finalDelta = liftDelta;
 
                 if (keepRidersSeatedOnSurface)
                     finalDelta = GetSurfaceCorrectedDelta(rider, liftDelta);
 
                 MoveRiderByDelta(rider, finalDelta);
-                rider.CurrentplatForm = this;
 
                 if (rider is Warrior warrior)
                 {
@@ -449,7 +484,7 @@ namespace Assets.Scripts.Platforms
                 }
                 else if (rider is ZalaytyMonster zalayty)
                 {
-                    zalayty.SetJumping(false);
+                    ConfirmZalaytyTopSupport(zalayty);
                 }
             }
 
@@ -476,30 +511,45 @@ namespace Assets.Scripts.Platforms
             }
 
 
-            if (rider.IsJumping)
-            {
-                Debug.Log("[LiftDetach] IsJumping true for " + rider.name);
-                return false;
-            }
-
-
             if (rider.rigidbody2 != null && rider.rigidbody2.linearVelocity.y > jumpOffVelocity)
             {
                 Debug.Log("[LiftDetach] upward velocity too high: " + rider.rigidbody2.linearVelocity.y);
                 return false;
             }
 
-
             if (!IsHorizontallyOverPlatform(support))
             {
-
                 Debug.Log("[LiftDetach] not horizontally over platform for " + rider.name);
                 return false;
             }
 
-            if (!IsBottomCloseToPlatformTop(support))
+            bool bottomCloseToTop = IsBottomCloseToPlatformTop(support);
+            if (!bottomCloseToTop)
+            {
                 Debug.Log("[LiftDetach] bottom not close to platform top");
-            return IsBottomCloseToPlatformTop(support);
+                return false;
+            }
+
+            // Do not glue/cancel an active controlled jump that starts from the lift.
+            // Landing confirmation is done by OnCollisionEnter2D / OnCollisionStay2D.
+            if (rider is ZalaytyMonster && rider.activesJumpCoroutine != null)
+            {
+                Debug.Log("[LiftDetach] Zalayty active jump coroutine for " + rider.name);
+                return false;
+            }
+
+            // If Zalayty is physically seated on the lift, confirm the landing before
+            // checking IsJumping. Otherwise a stale _isJumping value makes him detach
+            // immediately and he cannot chase/move on the elevator.
+            ConfirmRiderTopSupport(rider);
+
+            if (rider.IsJumping)
+            {
+                Debug.Log("[LiftDetach] IsJumping true for " + rider.name);
+                return false;
+            }
+
+            return true;
         }
 
         private bool IsTopSurfaceContact(Collision2D collision, CharacterController character)
@@ -565,6 +615,28 @@ namespace Assets.Scripts.Platforms
             float correctionY = desiredBottom - bottomAfterLift;
 
             return new Vector2(liftDelta.x, liftDelta.y + correctionY);
+        }
+
+        public bool TryGetVerticalCarryDeltaForCurrentFixedStep(CharacterController rider, out Vector2 carryDelta)
+        {
+            carryDelta = Vector2.zero;
+
+            if (!carryCharactersLikeLift || rider == null || platformCollider == null)
+                return false;
+
+            if (!_riders.Contains(rider))
+                return false;
+
+            if (!CanContinueRiding(rider))
+                return false;
+
+            Vector2 finalDelta = keepRidersSeatedOnSurface
+                ? GetSurfaceCorrectedDelta(rider, _lastLiftDelta)
+                : _lastLiftDelta;
+
+            // This is a vertical lift. Never expose horizontal movement as rider carry.
+            carryDelta = new Vector2(0f, finalDelta.y);
+            return Mathf.Abs(carryDelta.y) > 0.000001f;
         }
 
         private void MoveRiderToSurface(CharacterController rider, Vector2 extraDelta)

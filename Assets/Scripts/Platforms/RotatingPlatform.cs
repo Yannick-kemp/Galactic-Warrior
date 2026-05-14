@@ -21,7 +21,7 @@ public class RotatingPlatform : PlatFormPlfColliderTrigger
     [SerializeField] private Transform centerOverride;
 
     [Header("Lift / Passenger Carry")]
-    [SerializeField] private bool carryWarriorAndZalayty = true;
+    [SerializeField] private bool carryWarriorAndZalayty = true; // Kept name to preserve Inspector values. Now supports every CharacterController rider.
 
     [Tooltip("How far below the platform top the passenger body may be and still count as seated.")]
     [SerializeField, Min(0f)] private float topPenetrationTolerance = 0.08f;
@@ -363,7 +363,12 @@ public class RotatingPlatform : PlatFormPlfColliderTrigger
         if (character.collider2 == null)
             return false;
 
-        return character is Warrior || character is ZalaytyMonster;
+        if (!character.gameObject.activeInHierarchy)
+            return false;
+
+        // Do not limit this to Warrior/Zalayty. M97 and other enemies that inherit
+        // CharacterController must be allowed to ride the rotating platform too.
+        return true;
     }
 
     private bool IsTopSurfacePassenger(CharacterController character)
@@ -371,9 +376,19 @@ public class RotatingPlatform : PlatFormPlfColliderTrigger
         if (!IsValidLiftPassenger(character))
             return false;
 
-        // If the character intentionally jumps, do not keep carrying him.
+        // If a normal character intentionally jumps, do not keep carrying him.
+        // Zalayty is special: he can keep a stale _isJumping / activesJumpCoroutine
+        // after already landing on the moving top surface. In that case we continue
+        // with the geometric top-surface test and NotifyMovingPlatformTopSupport()
+        // will clear the stale jump state.
         if (character.IsJumping || character.activesJumpCoroutine != null)
-            return false;
+        {
+            if (character is not ZalaytyMonster)
+                return false;
+
+            if (character.rigidbody2 != null && character.rigidbody2.linearVelocity.y > 0.05f)
+                return false;
+        }
 
         if (character is Warrior warrior)
         {
@@ -436,25 +451,54 @@ public class RotatingPlatform : PlatFormPlfColliderTrigger
 
     private void ApplyCarryDelta(CharacterController character, Vector2 delta)
     {
-        if (character == null)
+        if (character == null || delta.sqrMagnitude <= TinyDeltaSqr)
             return;
+
+        // Zalayty has his own independent chase MovePosition. If he requested a
+        // move this physics step, merge the rotating-platform orbit delta into that
+        // request instead of writing an old Rigidbody2D.position over his X movement.
+        if (character is ZalaytyMonster zalayty &&
+            zalayty.TryGetIndependentMoveRequestForCurrentFixedStep(out Vector2 zalaytyRequestedPosition))
+        {
+            zalayty.ApplyMovingPlatformMergedIndependentMove(zalaytyRequestedPosition + delta);
+            StopDownwardVelocityIfNeeded(character, delta);
+            Physics2D.SyncTransforms();
+            return;
+        }
+
+        // Generic CharacterController merge: Warrior, M97, and other enemies.
+        // This preserves their own movement and only adds the platform orbit delta.
+        if (character.TryGetCoreMoveRequestForRecentStep(out Vector2 requestedPosition))
+        {
+            character.ApplyMovingPlatformMergedCoreMove(requestedPosition + delta);
+            StopDownwardVelocityIfNeeded(character, delta);
+            Physics2D.SyncTransforms();
+            return;
+        }
 
         if (character.rigidbody2 != null)
         {
             Vector2 target = character.rigidbody2.position + delta;
             character.rigidbody2.MovePosition(target);
-
-            // Prevent the passenger from sinking into an upward-moving platform.
-            if (delta.y >= 0f && character.rigidbody2.linearVelocity.y < 0f)
-            {
-                Vector2 velocity = character.rigidbody2.linearVelocity;
-                velocity.y = 0f;
-                character.rigidbody2.linearVelocity = velocity;
-            }
+            StopDownwardVelocityIfNeeded(character, delta);
         }
         else
         {
             character.transform.position += (Vector3)delta;
+        }
+    }
+
+    private void StopDownwardVelocityIfNeeded(CharacterController character, Vector2 delta)
+    {
+        if (character == null || character.rigidbody2 == null)
+            return;
+
+        // Prevent the passenger from sinking into an upward-moving platform.
+        if (delta.y >= 0f && character.rigidbody2.linearVelocity.y < 0f)
+        {
+            Vector2 velocity = character.rigidbody2.linearVelocity;
+            velocity.y = 0f;
+            character.rigidbody2.linearVelocity = velocity;
         }
     }
 
