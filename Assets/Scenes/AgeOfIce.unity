@@ -569,7 +569,23 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 462648239515211956, guid: 164b61be6e275284c9e408dc2bbd5a23, type: 3}
     - target: {fileID: 7995812613362946023, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
+      propertyPath: overrides.attackDamage
+      value: 5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7995812613362946023, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
       propertyPath: overrides.overrideSpeed
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7995812613362946023, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
+      propertyPath: overrides.overrideAttackDamage
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7995812613362946023, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
+      propertyPath: overrides.zalayty.squeezeCheckInterval
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 7995812613362946023, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
+      propertyPath: overrides.zalayty.overrideSqueezeCheckInterval
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 8181523265631124123, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
