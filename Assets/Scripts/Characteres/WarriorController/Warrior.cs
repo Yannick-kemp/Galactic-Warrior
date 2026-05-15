@@ -625,75 +625,75 @@ namespace Assets.Scripts.Characteres.WarriorController
             _hitReactRoutine = null;
         }
 
-        public bool TryAbsorbZalaytyDifferentPlatformImpact(
-            ZalaytyMonster zalayty,
-            Vector2 impactFromWorldPos,
-            Vector2 incomingVelocity,
-            float incomingSpeed)
-        {
-            if (!enableZalaytyDifferentPlatformImpactAbsorption)
-                return false;
+        //public bool TryAbsorbZalaytyDifferentPlatformImpact(
+        //    ZalaytyMonster zalayty,
+        //    Vector2 impactFromWorldPos,
+        //    Vector2 incomingVelocity,
+        //    float incomingSpeed)
+        //{
+        //    if (!enableZalaytyDifferentPlatformImpactAbsorption)
+        //        return false;
 
-            if (zalayty == null)
-                return false;
+        //    if (zalayty == null)
+        //        return false;
 
-            if (IsDeadOrDying || _deathStarted || CanDie)
-                return false;
+        //    if (IsDeadOrDying || _deathStarted || CanDie)
+        //        return false;
 
-            if (_sprintActive || _reviveInvulnerable)
-                return false;
+        //    if (_sprintActive || _reviveInvulnerable)
+        //        return false;
 
-            if (Time.time < _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime)
-                return false;
+        //    if (Time.time < _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime)
+        //        return false;
 
-            incomingSpeed = Mathf.Abs(incomingSpeed);
-            if (incomingSpeed < zalaytyDifferentPlatformImpactMinSpeed)
-                return false;
+        //    incomingSpeed = Mathf.Abs(incomingSpeed);
+        //    if (incomingSpeed < zalaytyDifferentPlatformImpactMinSpeed)
+        //        return false;
 
-            _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime =
-                Time.time + Mathf.Max(0.01f, zalaytyDifferentPlatformImpactAbsorbCooldown);
+        //    _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime =
+        //        Time.time + Mathf.Max(0.01f, zalaytyDifferentPlatformImpactAbsorbCooldown);
 
-            float t = Mathf.InverseLerp(
-                zalaytyDifferentPlatformImpactMinSpeed,
-                zalaytyDifferentPlatformImpactMaxSpeed,
-                incomingSpeed);
+        //    float t = Mathf.InverseLerp(
+        //        zalaytyDifferentPlatformImpactMinSpeed,
+        //        zalaytyDifferentPlatformImpactMaxSpeed,
+        //        incomingSpeed);
 
-            float knockbackX = Mathf.Lerp(
-                zalaytyDifferentPlatformImpactMinKnockbackX,
-                zalaytyDifferentPlatformImpactMaxKnockbackX,
-                t);
+        //    float knockbackX = Mathf.Lerp(
+        //        zalaytyDifferentPlatformImpactMinKnockbackX,
+        //        zalaytyDifferentPlatformImpactMaxKnockbackX,
+        //        t);
 
-            float stunSeconds = Mathf.Lerp(
-                zalaytyDifferentPlatformImpactMinStun,
-                zalaytyDifferentPlatformImpactMaxStun,
-                t);
+        //    float stunSeconds = Mathf.Lerp(
+        //        zalaytyDifferentPlatformImpactMinStun,
+        //        zalaytyDifferentPlatformImpactMaxStun,
+        //        t);
 
-            float dir = Mathf.Sign(incomingVelocity.x);
+        //    float dir = Mathf.Sign(incomingVelocity.x);
 
-            if (Mathf.Abs(dir) < 0.01f)
-                dir = Mathf.Sign(transform.position.x - impactFromWorldPos.x);
+        //    if (Mathf.Abs(dir) < 0.01f)
+        //        dir = Mathf.Sign(transform.position.x - impactFromWorldPos.x);
 
-            if (Mathf.Abs(dir) < 0.01f)
-                dir = leftFacing ? -1f : 1f;
+        //    if (Mathf.Abs(dir) < 0.01f)
+        //        dir = leftFacing ? -1f : 1f;
 
-            StopMoveTowardCoroutine();
-            StopJumpTowardCoroutine();
-            IsFallingGrazesEdge = false;
-            WaitAnimationDisplay();
+        //    StopMoveTowardCoroutine();
+        //    StopJumpTowardCoroutine();
+        //    IsFallingGrazesEdge = false;
+        //    WaitAnimationDisplay();
 
-            if (rigidbody2 != null)
-            {
-                Vector2 v = rigidbody2.linearVelocity;
+        //    if (rigidbody2 != null)
+        //    {
+        //        Vector2 v = rigidbody2.linearVelocity;
 
-                // Absorb vertical shock so Warrior does not pop upward brutally.
-                v.y *= zalaytyDifferentPlatformImpactVerticalDamping;
+        //        // Absorb vertical shock so Warrior does not pop upward brutally.
+        //        v.y *= zalaytyDifferentPlatformImpactVerticalDamping;
 
-                rigidbody2.linearVelocity = v;
-            }
+        //        rigidbody2.linearVelocity = v;
+        //    }
 
-            StartHitStun(stunSeconds, knockbackX * dir);
-            return true;
-        }
+        //    StartHitStun(stunSeconds, knockbackX * dir);
+        //    return true;
+        //}
 
         #endregion
         private void CacheWarriorCollidersForSprint()

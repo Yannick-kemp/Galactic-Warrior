@@ -2945,9 +2945,19 @@ public class ZalaytyMonster : Enemy
     {
         if (t == null) return;
 
-        float dx = t.position.x - transform.position.x;
-        if (dx > 0f && leftFacing) Flip();
-        else if (dx < 0f && rightFacing) Flip();
+        // Use the precise Enemy helper instead of raw transform.position.x.
+        // This uses the enabled collider center when available, so Zalayty does
+        // not flip incorrectly when the Warrior pivot is offset from his body.
+        if (IsWarriorInFront(t))
+            return;
+
+        // Only flip when the target is clearly behind. The epsilon inside
+        // IsWarriorBehind prevents left/right jitter when both centers overlap.
+        if (IsWarriorBehind(t))
+        {
+            Flip();
+            RefreshFacingFlags();
+        }
     }
 
     private void SpawnSparkAtContact(Warrior warrior)
@@ -3101,14 +3111,14 @@ public class ZalaytyMonster : Enemy
                 return false;
         }
 
-        bool absorbed = warrior.TryAbsorbZalaytyDifferentPlatformImpact(
-            this,
-            zalaytyBody.bounds.center,
-            incomingVelocity,
-            incomingSpeed);
+        //bool absorbed = warrior.TryAbsorbZalaytyDifferentPlatformImpact(
+        //    this,
+        //    zalaytyBody.bounds.center,
+        //    incomingVelocity,
+        //    incomingSpeed);
 
-        if (!absorbed)
-            return false;
+        //if (!absorbed)
+        //    return false;
 
         _nextAllowedDifferentPlatformImpactTime =
             Time.time + Mathf.Max(0.01f, differentPlatformImpactCooldown);

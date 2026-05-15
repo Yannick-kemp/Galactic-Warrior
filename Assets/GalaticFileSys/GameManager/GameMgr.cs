@@ -112,6 +112,10 @@ public class GameMgr : MonoBehaviour, IGame
     private RotatingPlatform _deathRotatingPlatform;
     private string _deathRotatingPlatformId;
 
+    // Static (non-moving) platform captured at death time
+    private bool _deathWasOnStaticPlatform;
+    private PlatFormColliderTrigger _deathStaticPlatform;
+
     private bool _hasPendingReviveMovingPlatformRespawn;
     private string _pendingReviveMovingPlatformId;
 
@@ -437,33 +441,46 @@ public class GameMgr : MonoBehaviour, IGame
         ResetMeteorHazards(true);
 
         Vector3 respawnPosition;
-        PlatFormColliderTrigger respawnMovingPlatform = null;
+        PlatFormColliderTrigger respawnPlatform = null;
         MovingVerticalPlatform respawnMovingVerticalPlatform = null;
         MovingHorizontalPlatform respawnMovingHorizontalPlatform = null;
         RotatingPlatform respawnRotatingPlatform = null;
-        bool usedMovingPlatformRespawn = false;
 
         bool useForcedMeteorRespawn = ShouldUseForcedRetryZoneRespawn();
 
         if (useForcedMeteorRespawn)
         {
+            // Forced zone respawn (meteor hazard trigger): use stored position as-is.
             respawnPosition = _forcedRetryRespawnPosition;
             ExitForcedRetryZone();
         }
         else if (TryGetDeathMovingPlatformRespawn(warrior, out respawnPosition, out respawnMovingVerticalPlatform))
         {
-            respawnMovingPlatform = respawnMovingVerticalPlatform;
-            usedMovingPlatformRespawn = true;
+            // Died on a vertical moving platform — respawn back on it.
+            respawnPlatform = respawnMovingVerticalPlatform;
+
         }
         else if (TryGetDeathMovingHorizontalPlatformRespawn(warrior, out respawnPosition, out respawnMovingHorizontalPlatform))
         {
-            respawnMovingPlatform = respawnMovingHorizontalPlatform;
-            usedMovingPlatformRespawn = true;
+            // Died on a horizontal moving platform — respawn back on it.
+            respawnPlatform = respawnMovingHorizontalPlatform;
+
         }
         else if (TryGetDeathRotatingPlatformRespawn(warrior, out respawnPosition, out respawnRotatingPlatform))
         {
-            respawnMovingPlatform = respawnRotatingPlatform;
-            usedMovingPlatformRespawn = true;
+            // Died on a rotating platform — respawn back on it.
+            respawnPlatform = respawnRotatingPlatform;
+
+        }
+        else if (_deathWasOnStaticPlatform &&
+                 _deathStaticPlatform != null &&
+                 _deathStaticPlatform.platformCollider != null)
+        {
+            // Died on a static platform — compute surface position and restore collision.
+            Physics2D.SyncTransforms();
+            respawnPosition = BuildSurfaceRespawnOnStaticPlatform(_deathStaticPlatform, warrior);
+            respawnPlatform = _deathStaticPlatform;
+            Debug.Log($"[GameMgr] Retry: static platform respawn on {_deathStaticPlatform.name}");
         }
         else if (currentCheckpoint != null && useCheckpointRespawn)
         {
@@ -472,48 +489,51 @@ public class GameMgr : MonoBehaviour, IGame
         else if (warrior.LastSafePlatform is MovingVerticalPlatform lastSafeMovingPlatform &&
                  lastSafeMovingPlatform.platformCollider != null)
         {
-            respawnMovingPlatform = lastSafeMovingPlatform;
+            respawnPlatform = lastSafeMovingPlatform;
             respawnPosition = BuildSurfaceRespawnOnMovingPlatform(lastSafeMovingPlatform, warrior);
-            usedMovingPlatformRespawn = true;
+
         }
         else if (warrior.LastSafePlatform is MovingHorizontalPlatform lastSafeHorizontalPlatform &&
                  lastSafeHorizontalPlatform.platformCollider != null)
         {
-            respawnMovingPlatform = lastSafeHorizontalPlatform;
+            respawnPlatform = lastSafeHorizontalPlatform;
             respawnPosition = BuildSurfaceRespawnOnMovingHorizontalPlatform(lastSafeHorizontalPlatform, warrior);
-            usedMovingPlatformRespawn = true;
+
         }
         else if (warrior.LastSafePlatform is RotatingPlatform lastSafeRotatingPlatform &&
                  lastSafeRotatingPlatform.platformCollider != null)
         {
-            respawnMovingPlatform = lastSafeRotatingPlatform;
+            respawnPlatform = lastSafeRotatingPlatform;
             respawnPosition = BuildSurfaceRespawnOnRotatingPlatform(lastSafeRotatingPlatform, warrior);
-            usedMovingPlatformRespawn = true;
+
         }
         else if (warrior.LastSafePosition != Vector3.zero)
         {
+            // LastSafePosition is set by every platform type on landing.
             respawnPosition = warrior.LastSafePosition;
+
+            // Pass the platform along so collision can be properly restored.
+            if (warrior.LastSafePlatform != null &&
+                warrior.LastSafePlatform.platformCollider != null)
+                respawnPlatform = warrior.LastSafePlatform;
         }
         else if (warrior.LastSafePlatform != null && warrior.LastSafePlatform.platformCollider != null)
         {
-            Bounds pb = warrior.LastSafePlatform.platformCollider.bounds;
-            float halfHeight = warrior.collider2 != null ? warrior.collider2.bounds.extents.y : 0.8f;
-
-            respawnPosition = new Vector3(
-                pb.center.x,
-                pb.max.y + halfHeight + 0.05f,
-                warrior.transform.position.z
-            );
+            // Fallback: compute a fresh surface position from the last known platform.
+            Physics2D.SyncTransforms();
+            respawnPosition = BuildSurfaceRespawnOnStaticPlatform(warrior.LastSafePlatform, warrior);
+            respawnPlatform = warrior.LastSafePlatform;
         }
         else
         {
+            // Absolute last resort.
             respawnPosition = lastDeathPosition;
         }
 
         // IMPORTANT:
         // TryRevive() calls PrepareForSafeRespawn(), which re-enables the Warrior Rigidbody2D
-        // and colliders. Respawning onto a moving platform must happen AFTER this,
-        // otherwise the lift may try to seat/register a disabled collider.
+        // and colliders. Respawning onto any platform must happen AFTER this so the platform
+        // sees an active collider when seating the rider.
         warrior.ResetMeteorHitState(0.2f);
 
         bool revived = warrior.TryRevive(0.6f);
@@ -524,11 +544,7 @@ public class GameMgr : MonoBehaviour, IGame
             return false;
         }
 
-        ApplyRespawnToWarrior(
-            warrior,
-            respawnPosition,
-            usedMovingPlatformRespawn ? respawnMovingPlatform : null
-        );
+        ApplyRespawnToWarrior(warrior, respawnPosition, respawnPlatform);
 
         if (useSpawnBubbleOnRetry)
             ApplySpawnBubble(warrior, warrior.transform.position);
@@ -947,6 +963,8 @@ public class GameMgr : MonoBehaviour, IGame
         _deathRotatingPlatform = null;
         _deathRotatingPlatformId = null;
         _hasPendingReviveMovingPlatformRespawn = false;
+        _deathWasOnStaticPlatform = false;
+        _deathStaticPlatform = null;
 
         ScoreManager.Instance?.StartNewRun();
 
@@ -1022,6 +1040,8 @@ public class GameMgr : MonoBehaviour, IGame
         _deathRotatingPlatformId = null;
         _hasPendingReviveMovingPlatformRespawn = false;
         _pendingReviveMovingPlatformId = null;
+        _deathWasOnStaticPlatform = false;
+        _deathStaticPlatform = null;
         _level2EntryFlowShownThisLoad = false;
         _shouldShowLevel2EntryFlowOnNextLoad = false;
 
@@ -1088,6 +1108,9 @@ public class GameMgr : MonoBehaviour, IGame
         _deathRotatingPlatform = null;
         _deathRotatingPlatformId = null;
 
+        _deathWasOnStaticPlatform = false;
+        _deathStaticPlatform = null;
+
         Warrior warrior = WarriorInstance;
         if (warrior == null) return;
 
@@ -1125,6 +1148,15 @@ public class GameMgr : MonoBehaviour, IGame
             _deathRotatingPlatformId = rotatingPlatform.RespawnId;
 
             Debug.Log($"[GameMgr] Death rotating platform locked: {rotatingPlatform.RespawnId}");
+            return;
+        }
+
+        // Static platform (plain PlatFormColliderTrigger / PlatFormPlfColliderTrigger)
+        if (candidate != null && candidate.platformCollider != null)
+        {
+            _deathWasOnStaticPlatform = true;
+            _deathStaticPlatform = candidate;
+            Debug.Log($"[GameMgr] Death static platform locked: {candidate.name}");
         }
     }
 
@@ -1228,6 +1260,48 @@ public class GameMgr : MonoBehaviour, IGame
             : warrior.transform.position.x;
 
         return platform.GetSafeRespawnPositionFor(warrior, preferredX);
+    }
+
+    /// <summary>
+    /// Computes a safe spawn position on any static (non-moving) PlatFormColliderTrigger.
+    /// Uses the warrior's actual collider half-height so the position is accurate for every
+    /// platform type that does not expose its own GetSafeRespawnPositionFor() method.
+    /// </summary>
+    private Vector3 BuildSurfaceRespawnOnStaticPlatform(PlatFormColliderTrigger platform, Warrior warrior)
+    {
+        if (platform == null || warrior == null)
+            return lastDeathPosition;
+
+        if (platform.platformCollider == null)
+            return platform.transform.position;
+
+        Bounds pb = platform.platformCollider.bounds;
+
+        // Use the real collider half-height; fall back only if the collider is not yet enabled.
+        float halfHeight = (warrior.collider2 != null && warrior.collider2.enabled)
+            ? warrior.collider2.bounds.extents.y
+            : 0.8f;
+
+        float halfWidth = (warrior.collider2 != null && warrior.collider2.enabled)
+            ? warrior.collider2.bounds.extents.x
+            : 0.4f;
+
+        // Clamp X inside the platform surface with a small horizontal skin.
+        const float horizontalSkin = 0.08f;
+        float minX = pb.min.x + halfWidth + horizontalSkin;
+        float maxX = pb.max.x - halfWidth - horizontalSkin;
+
+        float preferredX = warrior.LastSafePosition != Vector3.zero
+            ? warrior.LastSafePosition.x
+            : warrior.transform.position.x;
+
+        float safeX = (minX <= maxX)
+            ? Mathf.Clamp(preferredX, minX, maxX)
+            : pb.center.x;
+
+        float safeY = pb.max.y + halfHeight + movingPlatformRespawnSeatOffset;
+
+        return new Vector3(safeX, safeY, warrior.transform.position.z);
     }
 
     private bool TryGetDeathMovingPlatformRespawn(
@@ -1378,6 +1452,10 @@ public class GameMgr : MonoBehaviour, IGame
         warrior.CanMove = true;
         warrior.CanAttackWarrior = true;
         warrior._blockAction = false;
+
+        warrior.StopJumpTowardCoroutine();
+        warrior.StopMoveTowardCoroutine();
+        warrior.WaitAnimationDisplay();
 
         Physics2D.SyncTransforms();
     }

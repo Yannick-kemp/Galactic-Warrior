@@ -14,7 +14,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
     public class Enemy : CharacterController, IStepable, IAttacker
     {
         [Header("Attack Configuration")]
-        [SerializeField] public float Range = 3f; 
+        [SerializeField] public float Range = 3f;
         [SerializeField] protected float attackCooldown = 1.5f;
         [SerializeField] protected int attackDamage = 10;
 
@@ -1090,6 +1090,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         // Simple patrol enemies use this.
         // Path-driven enemies like Zalayty override this to false.
         protected virtual bool UsesCommittedPatrolEdge => true;
+
         protected void CommitPatrolEdgeForMovingVerticalPlatform()
         {
             if (!UsesCommittedPatrolEdge)
@@ -1099,15 +1100,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 return;
             }
 
-            if (!(CurrentplatForm is MovingVerticalPlatform))
+            if (CurrentplatForm == null || CurrentplatForm.platformCollider == null)
             {
                 _committedPatrolPlatform = null;
                 _hasCommittedPatrolEdge = false;
                 return;
             }
-
-            if (CurrentplatForm == null || CurrentplatForm.platformCollider == null)
-                return;
 
             Collider2D platformCol = CurrentplatForm.platformCollider;
             Bounds pb = platformCol.bounds;
@@ -1138,13 +1136,13 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             xEdge = _committedPatrolEdgeX;
 
+            // Important: do this for every platform type, not only MovingVerticalPlatform.
+            // This is what flips the patrol target when the enemy reaches an edge.
             if (HasReachedCommittedPatrolEdge(pb))
             {
-                _committedPatrolEdgeX =
-                    Mathf.Abs(_committedPatrolEdgeX - leftEdge) < 0.01f
-                    ? rightEdge
-                    : leftEdge;
+                bool committedLeft = Mathf.Abs(_committedPatrolEdgeX - leftEdge) < 0.01f;
 
+                _committedPatrolEdgeX = committedLeft ? rightEdge : leftEdge;
                 xEdge = _committedPatrolEdgeX;
 
                 if (activesMoveCoroutine != null)
