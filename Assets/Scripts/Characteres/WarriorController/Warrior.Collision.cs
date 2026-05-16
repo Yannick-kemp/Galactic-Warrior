@@ -52,12 +52,14 @@ namespace Assets.Scripts.Characteres.WarriorController
                 if (DescendentPhase && CountGroundPoints() == 0)
                 {
                     if (ShieldIsUp) DoShieldStomp(enemy);
+                    Debug.Log("Warrior hit enemy while descending from edge with no ground points. ShieldIsUp=" + ShieldIsUp);
+                    StopJumpTowardCoroutine();
                     BounceAndLandAway(enemy);
                     return;
                 }
 
                 if ((IsFallingEdge || IsFallingPlfExit) && WarriorOverlay(enemy))
-                {
+                { Debug.Log("Warrior hit enemy while falling from edge or platform exit and is overlapping the enemy. IsFallingEdge=" + IsFallingEdge + ", IsFallingPlfExit=" + IsFallingPlfExit);
                     BounceAndLandAway(enemy, plfExitMode: true);
                     IsFallingEdge = false;
                     IsFallingPlfExit = false;
@@ -121,6 +123,7 @@ namespace Assets.Scripts.Characteres.WarriorController
                 {
                     _morvexTopContactFrames = 0;
                     _morvexTopContactEnemy = null;
+
                     BounceAndLandAway(enemy);
                     return;
                 }

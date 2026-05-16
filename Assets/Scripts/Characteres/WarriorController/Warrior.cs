@@ -437,6 +437,8 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void FixedUpdate()
         {
+            RememberZalaytyImpactPrePhysicsPosition();
+
             ApplyDestinationPlatformAntiTunnelDuringPhysicsFall();
 
             // ── Moving-platform stick while idle ──────────────────────────────────
@@ -445,6 +447,10 @@ namespace Assets.Scripts.Characteres.WarriorController
             // gravity alone is too slow to follow the platform's teleport-based descent,
             // causing one-frame float gaps each FixedUpdate. We apply the same Y snap here.
             ApplyMovingPlatformIdleStick();
+
+            // Keep this AFTER normal platform/fall maintenance: it only removes the
+            // unwanted X impulse caused by Zalayty's violent body collision.
+            ApplyActiveZalaytyBodyImpactAbsorber();
             // ─────────────────────────────────────────────────────────────────────
 
             if (!_postBounceActive) return;
@@ -545,21 +551,43 @@ namespace Assets.Scripts.Characteres.WarriorController
         #region Hit Reaction
 
         [Header("Zalayty Different-Platform Impact Absorption")]
+        [Tooltip("Converts fast different-platform / airborne Zalayty body hits into a local impact absorption instead of allowing raw Rigidbody2D shove transfer.")]
         [SerializeField] private bool enableZalaytyDifferentPlatformImpactAbsorption = true;
 
+        [Tooltip("Below this incoming speed, the collision is treated as normal body contact and is not absorbed.")]
         [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMinSpeed = 3.0f;
+
+        [Tooltip("Only used for normalization/debug tuning. The absorber does not convert speed into Warrior knockback.")]
         [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMaxSpeed = 13.0f;
 
-        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMinKnockbackX = 0.45f;
-        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMaxKnockbackX = 2.0f;
+        [Tooltip("How long Warrior's X is protected after a violent Zalayty body hit. Keep short so normal input resumes immediately.")]
+        [SerializeField, Min(0.01f)] private float zalaytyDifferentPlatformImpactXLockSeconds = 0.12f;
 
-        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMinStun = 0.06f;
-        [SerializeField, Min(0f)] private float zalaytyDifferentPlatformImpactMaxStun = 0.18f;
+        [Tooltip("Maximum X snap-back allowed for grounded Warrior when Unity's solver already shoved him before the callback.")]
+        [SerializeField, Min(0f)] private float zalaytyGroundedImpactMaxSnapBackX = 0.80f;
 
-        [SerializeField, Range(0f, 1f)] private float zalaytyDifferentPlatformImpactVerticalDamping = 0.20f;
+        [Tooltip("Maximum X snap-back allowed for airborne Warrior. Higher because the expected rule is: keep X stable and let gravity continue.")]
+        [SerializeField, Min(0f)] private float zalaytyAirborneImpactMaxSnapBackX = 4.00f;
+
+        [Tooltip("Repeated OnCollisionStay2D callbacks during the same impact are swallowed for this duration.")]
         [SerializeField, Min(0.01f)] private float zalaytyDifferentPlatformImpactAbsorbCooldown = 0.16f;
 
+        [Tooltip("If true, a controlled Warrior jump arc is cancelled during airborne Zalayty body impact so Warrior falls by gravity with stable X.")]
+        [SerializeField] private bool cancelWarriorControlledJumpOnAirborneZalaytyImpact = true;
+
+        [Tooltip("If true, an upward vertical velocity is cancelled during airborne impact. Downward falling velocity is preserved.")]
+        [SerializeField] private bool cancelUpwardVelocityOnAirborneZalaytyImpact = true;
+
         private float _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime = -999f;
+
+        private Vector2 _zalaytyImpactPrePhysicsPosition;
+        private float _zalaytyImpactPrePhysicsPositionTime = -999f;
+        private bool _hasZalaytyImpactPrePhysicsPosition;
+
+        private bool _zalaytyBodyImpactAbsorbActive;
+        private float _zalaytyBodyImpactAnchorX;
+        private float _zalaytyBodyImpactAbsorbUntil = -999f;
+        private bool _zalaytyBodyImpactAirborne;
 
         public void ApplyHitReaction(HitKind kind, Vector2 fromWorldPos, float stunSeconds, float knockbackVel)
         {
@@ -625,75 +653,176 @@ namespace Assets.Scripts.Characteres.WarriorController
             _hitReactRoutine = null;
         }
 
-        //public bool TryAbsorbZalaytyDifferentPlatformImpact(
-        //    ZalaytyMonster zalayty,
-        //    Vector2 impactFromWorldPos,
-        //    Vector2 incomingVelocity,
-        //    float incomingSpeed)
-        //{
-        //    if (!enableZalaytyDifferentPlatformImpactAbsorption)
-        //        return false;
+        /// <summary>
+        /// Records the position before the next physics simulation. Collision callbacks
+        /// happen after the physics step, so this gives the absorber a safe X to restore
+        /// if Unity's solver already pushed Warrior sideways during a violent impact.
+        /// </summary>
+        private void RememberZalaytyImpactPrePhysicsPosition()
+        {
+            if (_zalaytyBodyImpactAbsorbActive)
+                return;
 
-        //    if (zalayty == null)
-        //        return false;
+            Vector2 p = rigidbody2 != null
+                ? rigidbody2.position
+                : (Vector2)transform.position;
 
-        //    if (IsDeadOrDying || _deathStarted || CanDie)
-        //        return false;
+            _zalaytyImpactPrePhysicsPosition = p;
+            _zalaytyImpactPrePhysicsPositionTime = Time.time;
+            _hasZalaytyImpactPrePhysicsPosition = true;
+        }
 
-        //    if (_sprintActive || _reviveInvulnerable)
-        //        return false;
+        public bool IsAirborneForZalaytyBodyImpactAbsorption()
+        {
+            if (collider2 == null)
+                return false;
 
-        //    if (Time.time < _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime)
-        //        return false;
+            bool noGroundPoints = CountGroundPoints() == 0;
+            bool controlledJump = activesJumpCoroutine != null || IsJumping;
+            bool fallingState = IsFalling;
+            bool verticalMotionWithoutPlatform =
+                CurrentplatForm == null &&
+                rigidbody2 != null &&
+                Mathf.Abs(rigidbody2.linearVelocity.y) > 0.05f;
 
-        //    incomingSpeed = Mathf.Abs(incomingSpeed);
-        //    if (incomingSpeed < zalaytyDifferentPlatformImpactMinSpeed)
-        //        return false;
+            return noGroundPoints || controlledJump || fallingState || verticalMotionWithoutPlatform;
+        }
 
-        //    _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime =
-        //        Time.time + Mathf.Max(0.01f, zalaytyDifferentPlatformImpactAbsorbCooldown);
+        public bool TryAbsorbZalaytyDifferentPlatformImpact(
+            global::ZalaytyMonster zalayty,
+            Vector2 impactFromWorldPos,
+            Vector2 incomingVelocity,
+            float incomingSpeed)
+        {
+            if (!enableZalaytyDifferentPlatformImpactAbsorption)
+                return false;
 
-        //    float t = Mathf.InverseLerp(
-        //        zalaytyDifferentPlatformImpactMinSpeed,
-        //        zalaytyDifferentPlatformImpactMaxSpeed,
-        //        incomingSpeed);
+            if (zalayty == null)
+                return false;
 
-        //    float knockbackX = Mathf.Lerp(
-        //        zalaytyDifferentPlatformImpactMinKnockbackX,
-        //        zalaytyDifferentPlatformImpactMaxKnockbackX,
-        //        t);
+            if (IsDeadOrDying || _deathStarted || CanDie)
+                return false;
 
-        //    float stunSeconds = Mathf.Lerp(
-        //        zalaytyDifferentPlatformImpactMinStun,
-        //        zalaytyDifferentPlatformImpactMaxStun,
-        //        t);
+            // Sprint / revive already have their own collision rules. Do not override them here.
+            if (_sprintActive || _reviveInvulnerable)
+                return false;
 
-        //    float dir = Mathf.Sign(incomingVelocity.x);
+            incomingSpeed = Mathf.Abs(incomingSpeed);
+            if (incomingSpeed < zalaytyDifferentPlatformImpactMinSpeed)
+                return false;
 
-        //    if (Mathf.Abs(dir) < 0.01f)
-        //        dir = Mathf.Sign(transform.position.x - impactFromWorldPos.x);
+            bool airborne = IsAirborneForZalaytyBodyImpactAbsorption();
 
-        //    if (Mathf.Abs(dir) < 0.01f)
-        //        dir = leftFacing ? -1f : 1f;
+            // During cooldown, still report "handled" so Zalayty does not fall through
+            // to same-platform contact combat while this is the same violent impact.
+            if (Time.time < _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime)
+            {
+                if (_zalaytyBodyImpactAbsorbActive)
+                    ApplyZalaytyBodyImpactAbsorberCorrection();
 
-        //    StopMoveTowardCoroutine();
-        //    StopJumpTowardCoroutine();
-        //    IsFallingGrazesEdge = false;
-        //    WaitAnimationDisplay();
+                return true;
+            }
 
-        //    if (rigidbody2 != null)
-        //    {
-        //        Vector2 v = rigidbody2.linearVelocity;
+            float anchorX = SelectZalaytyBodyImpactAnchorX(airborne);
 
-        //        // Absorb vertical shock so Warrior does not pop upward brutally.
-        //        v.y *= zalaytyDifferentPlatformImpactVerticalDamping;
+            _nextAllowedZalaytyDifferentPlatformImpactAbsorbTime =
+                Time.time + Mathf.Max(0.01f, zalaytyDifferentPlatformImpactAbsorbCooldown);
 
-        //        rigidbody2.linearVelocity = v;
-        //    }
+            _zalaytyBodyImpactAbsorbActive = true;
+            _zalaytyBodyImpactAnchorX = anchorX;
+            _zalaytyBodyImpactAirborne = airborne;
+            _zalaytyBodyImpactAbsorbUntil =
+                Time.time + Mathf.Max(0.01f, zalaytyDifferentPlatformImpactXLockSeconds);
 
-        //    StartHitStun(stunSeconds, knockbackX * dir);
-        //    return true;
-        //}
+            // Stop only the movement that can keep injecting X after the collision.
+            // Do not set CanMove/CanAttackWarrior false. Input, attack, shield, death,
+            // retry, and platform logic remain controlled by their normal systems.
+            StopMoveTowardCoroutine();
+
+            if (airborne && cancelWarriorControlledJumpOnAirborneZalaytyImpact)
+            {
+                StopJumpTowardCoroutine();
+                DescendentPhase = true;
+
+                // This is an airborne/falling presentation, not a stun.
+                JumpAnimationDisplay();
+            }
+
+            ApplyZalaytyBodyImpactAbsorberCorrection();
+            return true;
+        }
+
+        private float SelectZalaytyBodyImpactAnchorX(bool airborne)
+        {
+            float currentX = rigidbody2 != null
+                ? rigidbody2.position.x
+                : transform.position.x;
+
+            if (!_hasZalaytyImpactPrePhysicsPosition)
+                return currentX;
+
+            float age = Time.time - _zalaytyImpactPrePhysicsPositionTime;
+            if (age > 0.25f)
+                return currentX;
+
+            float previousX = _zalaytyImpactPrePhysicsPosition.x;
+            float delta = currentX - previousX;
+            float maxSnap = airborne
+                ? zalaytyAirborneImpactMaxSnapBackX
+                : zalaytyGroundedImpactMaxSnapBackX;
+
+            if (maxSnap <= 0f || Mathf.Abs(delta) <= maxSnap)
+                return previousX;
+
+            return currentX - Mathf.Sign(delta) * maxSnap;
+        }
+
+        private void ApplyActiveZalaytyBodyImpactAbsorber()
+        {
+            if (!_zalaytyBodyImpactAbsorbActive)
+                return;
+
+            if (Time.time > _zalaytyBodyImpactAbsorbUntil)
+            {
+                _zalaytyBodyImpactAbsorbActive = false;
+                return;
+            }
+
+            ApplyZalaytyBodyImpactAbsorberCorrection();
+        }
+
+        private void ApplyZalaytyBodyImpactAbsorberCorrection()
+        {
+            if (rigidbody2 == null)
+            {
+                Vector3 p = transform.position;
+                p.x = _zalaytyBodyImpactAnchorX;
+                transform.position = p;
+                Physics2D.SyncTransforms();
+                return;
+            }
+
+            Vector2 p2 = rigidbody2.position;
+            p2.x = _zalaytyBodyImpactAnchorX;
+            rigidbody2.position = p2;
+
+            Vector2 v = rigidbody2.linearVelocity;
+            v.x = 0f;
+
+            // Airborne rule: remove only horizontal transfer. Preserve downward falling.
+            // If impact or solver produced an upward pop, cancel that upward pop.
+            if (_zalaytyBodyImpactAirborne &&
+                cancelUpwardVelocityOnAirborneZalaytyImpact &&
+                v.y > 0f)
+            {
+                v.y = 0f;
+            }
+
+            rigidbody2.linearVelocity = v;
+            rigidbody2.angularVelocity = 0f;
+
+            Physics2D.SyncTransforms();
+        }
 
         #endregion
         private void CacheWarriorCollidersForSprint()

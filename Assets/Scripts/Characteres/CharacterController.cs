@@ -1,9 +1,11 @@
 ﻿using Assets.Scripts.Characteres;
 using Assets.Scripts.Characteres.EnemyContoller;
+using Assets.Scripts.Characteres.WarriorController;
 using Assets.Scripts.Platforms;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using Unity.Profiling;
 
 public class CharacterController : Character, ICharacterController
 {
@@ -40,8 +42,10 @@ public class CharacterController : Character, ICharacterController
     public bool DescendentPhase;
     public bool _isJumping;
     public bool _isMoving;
-    public bool IsJumping => _isJumping;
+    public bool IsJumping => _isJumping; 
 
+    private static readonly ProfilerMarker WarriorJumpTowardPositionMarker =
+        new ProfilerMarker("Warrior.JumpTowardPositionAction");
     // Moving platform merge support.
     // When this controller requests a MovePosition and a lift also moves in the
     // same physics step, the lift must merge into this requested position instead
@@ -438,8 +442,30 @@ public class CharacterController : Character, ICharacterController
     }
     public IEnumerator JumpTowardPositionAction(Vector2 target, float height, float duration, Collider2D enemyCollider = null)
     {
+
+        bool isWarrior = this is Warrior;
+
+        if (isWarrior)
+        {
+            WarriorJumpTowardPositionMarker.Begin();
+
+            Debug.Log(
+                $"[Warrior JumpTowardPositionAction START] " +
+                $"frame={Time.frameCount}, " +
+                $"time={Time.time:F3}, " +
+                $"target={target}, " +
+                $"height={height}, " +
+                $"duration={duration}, " +
+                $"enemyCollider={(enemyCollider != null ? enemyCollider.name : "NULL")}, " +
+                $"currentPlatform={(CurrentplatForm != null ? CurrentplatForm.name : "NULL")}"
+            );
+        }
+
         if (_isJumping) yield break;
         _isJumping = true;
+
+
+       
 
         Vector2 startPosition = transform.position;
         float elapsedTime = 0f;
@@ -480,13 +506,26 @@ public class CharacterController : Character, ICharacterController
             // We do NOT use CurrentplatForm here. The platform that matters is the
             // destination platform hit by the sweep between previousPosition and desiredPosition.
             if (movingDown &&
-                TryResolveDestinationPlatformTopLanding(previousPosition, desiredPosition, out Vector2 predictedLandingPosition, out PlatFormColliderTrigger destinationPlatform))
+       TryResolveDestinationPlatformTopLanding(previousPosition, desiredPosition, out Vector2 predictedLandingPosition, out PlatFormColliderTrigger destinationPlatform))
             {
                 MoveCharacterTo(predictedLandingPosition);
                 CompletePredictedTopLanding(destinationPlatform);
+
+                if (isWarrior)
+                {
+                    Debug.Log(
+                        $"[Warrior JumpTowardPositionAction PREDICTED LANDING] " +
+                        $"frame={Time.frameCount}, " +
+                        $"time={Time.time:F3}, " +
+                        $"landing={predictedLandingPosition}, " +
+                        $"destinationPlatform={(destinationPlatform != null ? destinationPlatform.name : "NULL")}"
+                    );
+
+                    WarriorJumpTowardPositionMarker.End();
+                }
+
                 yield break;
             }
-
             MoveCharacterTo(desiredPosition);
 
             if (stepTime > 0f)
@@ -501,6 +540,19 @@ public class CharacterController : Character, ICharacterController
 
         _isJumping = false;
         activesJumpCoroutine = null;
+
+        if (isWarrior)
+        {
+            Debug.Log(
+                $"[Warrior JumpTowardPositionAction END] " +
+                $"frame={Time.frameCount}, " +
+                $"time={Time.time:F3}, " +
+                $"position={transform.position}, " +
+                $"currentPlatform={(CurrentplatForm != null ? CurrentplatForm.name : "NULL")}"
+            );
+
+            WarriorJumpTowardPositionMarker.End();
+        }
     }
 
     protected bool TryResolveDestinationPlatformTopLanding(

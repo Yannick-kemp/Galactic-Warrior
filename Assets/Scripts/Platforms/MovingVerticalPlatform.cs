@@ -595,7 +595,6 @@ namespace Assets.Scripts.Platforms
 
             if (rider.rigidbody2 != null && rider.rigidbody2.linearVelocity.y > jumpOffVelocity)
             {
-                Debug.Log("[LiftDetach] upward velocity too high: " + rider.rigidbody2.linearVelocity.y);
                 return false;
             }
 
@@ -627,7 +626,6 @@ namespace Assets.Scripts.Platforms
 
             if (rider.IsJumping)
             {
-                Debug.Log("[LiftDetach] IsJumping true for " + rider.name);
                 return false;
             }
 

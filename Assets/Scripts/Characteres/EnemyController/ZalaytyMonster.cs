@@ -481,6 +481,8 @@ public class ZalaytyMonster : Enemy
 
         _missedMovingPlatformLandingRecoveryActive = false;
         _forceAirborneAnimationUntil = -999f;
+
+        TryRestoreWarriorPlatformJumpCollisionAfterLanding(platform);
     }
 
     private bool HasRecentMovingPlatformTopSupportForGroundMovement(PlatFormColliderTrigger platform)
@@ -1789,6 +1791,8 @@ public class ZalaytyMonster : Enemy
         _missedMovingPlatformLandingRecoveryActive = false;
         _forceAirborneAnimationUntil = -999f;
         RememberReallyGroundedOnPlatform(platform);
+
+        TryRestoreWarriorPlatformJumpCollisionAfterLanding(platform);
     }
 
     private Vector2 ResolveLiveLandingTargetForPlatform(
@@ -1970,7 +1974,7 @@ public class ZalaytyMonster : Enemy
                bottomAboveTop <= maxAllowedAboveTop;
     }
 
-    private int CountGroundPointsOnSpecificPlatform(PlatFormColliderTrigger platform)
+    public int CountGroundPointsOnSpecificPlatform(PlatFormColliderTrigger platform)
     {
         if (platform == null || platform.platformCollider == null || GroundPoints == null)
             return 0;
@@ -2392,6 +2396,30 @@ public class ZalaytyMonster : Enemy
     private Coroutine _restoreWarriorTopReboundCollisionCoroutine;
     private readonly List<Collider2D> _ignoredWarriorTopReboundColliders = new List<Collider2D>();
 
+    [Header("Platform Jump Warrior Collision Gate - Zalayty Only")]
+    [Tooltip("When Zalayty jumps to the platform where Warrior is standing, temporarily ignore Warrior collision until Zalayty safely lands on that platform.")]
+    [SerializeField] private bool ignoreWarriorCollisionWhileJumpingToWarriorPlatform = true;
+
+    [Tooltip("Safety timeout. Collision is restored even if the landing check never succeeds.")]
+    [SerializeField, Min(0.05f)] private float platformJumpWarriorCollisionRestoreTimeout = 2.25f;
+
+    private Coroutine _restoreWarriorPlatformJumpCollisionCoroutine;
+
+    private struct IgnoredCollisionPair
+    {
+        public Collider2D zalaytyCollider;
+        public Collider2D warriorCollider;
+
+        public IgnoredCollisionPair(Collider2D z, Collider2D w)
+        {
+            zalaytyCollider = z;
+            warriorCollider = w;
+        }
+    }
+
+    private readonly List<IgnoredCollisionPair> _ignoredWarriorPlatformJumpCollisionPairs =
+        new List<IgnoredCollisionPair>();
+
     private IEnumerator MoveAndJumpToPlatform(PlatFormColliderTrigger nextPlatform, Transform warrior)
     {
         PlatFormColliderTrigger sourcePlatform = CurrentplatForm;
@@ -2481,6 +2509,9 @@ public class ZalaytyMonster : Enemy
             nextPlatform,
             warriorInstance);
 
+        bool ignoreWarriorCollisionForThisJump =
+            ShouldIgnoreWarriorCollisionForPlatformJump(warriorInstance, sourcePlatform, nextPlatform);
+
         // 3) Zalayty-only jump-down pass-through.
         // Do NOT move Warrior logic and do NOT globally disable the platform.
         // Only the source platform ignores Zalayty's colliders, then restores itself
@@ -2523,14 +2554,29 @@ public class ZalaytyMonster : Enemy
         float duration = Mathf.Clamp((dx / Mathf.Max(0.01f, Speed)) * 0.65f, 0.25f, 0.8f);
         // ExitWaitAnimation();
         bool platformJumpStarted = StartZalaytyJumpTo(landing, jumpHeight, duration, nextPlatform);
+
         if (!platformJumpStarted)
+        {
+            RestoreIgnoredWarriorPlatformJumpCollisions();
             yield break;
+        }
+
+        if (ignoreWarriorCollisionForThisJump)
+        {
+            TemporarilyIgnoreWarriorForPlatformJump(
+                warriorInstance,
+                nextPlatform,
+                platformJumpWarriorCollisionRestoreTimeout);
+        }
 
         float landTimeout = 2.0f;
         while (landTimeout > 0f)
         {
-            if (CurrentplatForm == nextPlatform)
+            if (HasSafelyLandedOnPlatform(nextPlatform))
+            {
+                RestoreIgnoredWarriorPlatformJumpCollisions();
                 break;
+            }
 
             // If the moving target was missed, JumpArcIndependent has already
             // switched Zalayty to natural airborne recovery. Do not wait the full
@@ -2551,6 +2597,9 @@ public class ZalaytyMonster : Enemy
 
         if (activesJumpCoroutine != null)
             StopJumpTowardCoroutine();
+
+        if (HasSafelyLandedOnPlatform(nextPlatform))
+            RestoreIgnoredWarriorPlatformJumpCollisions();
     }
 
     private Side ChooseBestSideForTransition(Bounds curB, Bounds nextB, float desiredX)
@@ -3058,9 +3107,6 @@ public class ZalaytyMonster : Enemy
         if (collision == null || collision.collider == null)
             return false;
 
-        if (Time.time < _nextAllowedDifferentPlatformImpactTime)
-            return false;
-
         Warrior warrior = collision.collider.GetComponentInParent<Warrior>();
         if (warrior == null || warrior.collider2 == null || warrior.IsDead)
             return false;
@@ -3111,14 +3157,17 @@ public class ZalaytyMonster : Enemy
                 return false;
         }
 
-        //bool absorbed = warrior.TryAbsorbZalaytyDifferentPlatformImpact(
-        //    this,
-        //    zalaytyBody.bounds.center,
-        //    incomingVelocity,
-        //    incomingSpeed);
+        if (Time.time < _nextAllowedDifferentPlatformImpactTime)
+            return true;
 
-        //if (!absorbed)
-        //    return false;
+        bool absorbed = warrior.TryAbsorbZalaytyDifferentPlatformImpact(
+            this,
+            zalaytyBody.bounds.center,
+            incomingVelocity,
+            incomingSpeed);
+
+        if (!absorbed)
+            return false;
 
         _nextAllowedDifferentPlatformImpactTime =
             Time.time + Mathf.Max(0.01f, differentPlatformImpactCooldown);
@@ -3135,11 +3184,11 @@ public class ZalaytyMonster : Enemy
         if (CurrentplatForm != null && warrior.CurrentplatForm != null)
             return CurrentplatForm != warrior.CurrentplatForm;
 
-        // Strict mode avoids changing same-platform combat behavior during one-frame
-        // CurrentplatForm refresh gaps. Turn this off only if you also want null-platform
-        // airborne impacts to be absorbed.
+        // Strict mode still avoids normal one-frame platform refresh gaps, but it must
+        // not reject the exact case this absorber is for: Warrior is already airborne
+        // and Zalayty hits from a platform-change / jump body impact.
         if (requireKnownDifferentPlatformsForImpactAbsorption)
-            return false;
+            return warrior.IsAirborneForZalaytyBodyImpactAbsorption();
 
         return CurrentplatForm != warrior.CurrentplatForm;
     }
@@ -3262,20 +3311,24 @@ public class ZalaytyMonster : Enemy
         if (!enableWarriorTopRebound)
             return false;
 
-        if (_warriorTopReboundActive && Time.time < _warriorTopReboundBusyUntil)
-            return false;
-
-        if (_warriorTopReboundActive && Time.time >= _warriorTopReboundBusyUntil)
-            _warriorTopReboundActive = false;
-
-        if (Time.time < _nextAllowedWarriorTopReboundTime)
-            return false;
-
         Warrior warrior = collision.collider != null
             ? collision.collider.GetComponentInParent<Warrior>()
             : null;
 
         if (warrior == null || warrior.collider2 == null || warrior.IsDead)
+            return false;
+
+        // While the controlled Warrior-top rebound is already running, consume
+        // Warrior contacts. Otherwise the same collision can fall through into
+        // TryHandleDifferentPlatformWarriorImpact() / side-contact combat and
+        // restart pushing or attacking before Zalayty has cleared Warrior's box.
+        if (_warriorTopReboundActive && Time.time < _warriorTopReboundBusyUntil)
+            return true;
+
+        if (_warriorTopReboundActive && Time.time >= _warriorTopReboundBusyUntil)
+            _warriorTopReboundActive = false;
+
+        if (Time.time < _nextAllowedWarriorTopReboundTime)
             return false;
 
         if (!IsZalaytyOnWarriorTop(collision, warrior))
@@ -3782,7 +3835,150 @@ public class ZalaytyMonster : Enemy
     private void OnDisable()
     {
         RestoreIgnoredWarriorTopReboundCollisions();
+        RestoreIgnoredWarriorPlatformJumpCollisions();
         RestoreActiveJumpDownSourcePlatformNow();
+    }
+
+    private bool ShouldIgnoreWarriorCollisionForPlatformJump(
+        Warrior warrior,
+        PlatFormColliderTrigger sourcePlatform,
+        PlatFormColliderTrigger targetPlatform)
+    {
+        if (!ignoreWarriorCollisionWhileJumpingToWarriorPlatform)
+            return false;
+
+        if (warrior == null)
+            return false;
+
+        if (sourcePlatform == null || targetPlatform == null)
+            return false;
+
+        // Do not affect same-platform chase/contact combat.
+        if (sourcePlatform == targetPlatform)
+            return false;
+
+        // Only apply when Zalayty is jumping to the platform where Warrior is standing.
+        // Use the recent cached value too, because Warrior.CurrentplatForm can be null
+        // for one physics tick on moving/rotating platforms.
+        PlatFormColliderTrigger warriorPlatform = warrior.CurrentplatForm;
+
+        if (warriorPlatform == null &&
+            _lastKnownWarriorPlatform != null &&
+            Time.time <= _lastKnownWarriorPlatformTime + temporaryPlatformLossGraceTime)
+        {
+            warriorPlatform = _lastKnownWarriorPlatform;
+        }
+
+        if (warriorPlatform != targetPlatform)
+            return false;
+
+        return true;
+    }
+
+    private void TemporarilyIgnoreWarriorForPlatformJump(
+        Warrior warrior,
+        PlatFormColliderTrigger targetPlatform,
+        float timeout)
+    {
+        RestoreIgnoredWarriorPlatformJumpCollisions();
+
+        if (warrior == null || targetPlatform == null)
+            return;
+
+        Collider2D[] zalaytyColliders = GetComponentsInChildren<Collider2D>(true);
+        Collider2D[] warriorColliders = warrior.GetComponentsInChildren<Collider2D>(true);
+
+        if (zalaytyColliders == null || warriorColliders == null)
+            return;
+
+        for (int z = 0; z < zalaytyColliders.Length; z++)
+        {
+            Collider2D zc = zalaytyColliders[z];
+            if (zc == null || !zc.enabled)
+                continue;
+
+            for (int w = 0; w < warriorColliders.Length; w++)
+            {
+                Collider2D wc = warriorColliders[w];
+                if (wc == null || !wc.enabled)
+                    continue;
+
+                if (zc == wc)
+                    continue;
+
+                Physics2D.IgnoreCollision(zc, wc, true);
+                _ignoredWarriorPlatformJumpCollisionPairs.Add(new IgnoredCollisionPair(zc, wc));
+            }
+        }
+
+        if (_ignoredWarriorPlatformJumpCollisionPairs.Count == 0)
+            return;
+
+        _restoreWarriorPlatformJumpCollisionCoroutine =
+            StartCoroutine(RestoreWarriorPlatformJumpCollisionWhenSafe(targetPlatform, timeout));
+    }
+
+    private IEnumerator RestoreWarriorPlatformJumpCollisionWhenSafe(
+        PlatFormColliderTrigger targetPlatform,
+        float timeout)
+    {
+        float timer = 0f;
+        WaitForFixedUpdate wait = new WaitForFixedUpdate();
+
+        while (timer < timeout)
+        {
+            if (HasSafelyLandedOnPlatform(targetPlatform))
+                break;
+
+            timer += Time.fixedDeltaTime > 0f ? Time.fixedDeltaTime : Time.deltaTime;
+            yield return wait;
+        }
+
+        RestoreIgnoredWarriorPlatformJumpCollisions();
+    }
+
+    private bool HasSafelyLandedOnPlatform(PlatFormColliderTrigger platform)
+    {
+        if (platform == null || platform.platformCollider == null)
+            return false;
+
+        if (CurrentplatForm != platform)
+            return false;
+
+        if (_isJumping || activesJumpCoroutine != null)
+            return false;
+
+        return IsZalaytyReallyGroundedOnPlatform(platform);
+    }
+
+    private void TryRestoreWarriorPlatformJumpCollisionAfterLanding(PlatFormColliderTrigger landedPlatform)
+    {
+        if (_ignoredWarriorPlatformJumpCollisionPairs.Count == 0)
+            return;
+
+        if (!HasSafelyLandedOnPlatform(landedPlatform))
+            return;
+
+        RestoreIgnoredWarriorPlatformJumpCollisions();
+    }
+
+    private void RestoreIgnoredWarriorPlatformJumpCollisions()
+    {
+        if (_restoreWarriorPlatformJumpCollisionCoroutine != null)
+        {
+            StopCoroutine(_restoreWarriorPlatformJumpCollisionCoroutine);
+            _restoreWarriorPlatformJumpCollisionCoroutine = null;
+        }
+
+        for (int i = 0; i < _ignoredWarriorPlatformJumpCollisionPairs.Count; i++)
+        {
+            IgnoredCollisionPair pair = _ignoredWarriorPlatformJumpCollisionPairs[i];
+
+            if (pair.zalaytyCollider != null && pair.warriorCollider != null)
+                Physics2D.IgnoreCollision(pair.zalaytyCollider, pair.warriorCollider, false);
+        }
+
+        _ignoredWarriorPlatformJumpCollisionPairs.Clear();
     }
 
     private void TemporarilyIgnoreWarriorForTopRebound(Warrior warrior, float reboundDuration)
