@@ -106,6 +106,10 @@ namespace Assets.Scripts.Platforms
         [Tooltip("When true, if Zalayty requested his own MovePosition in this FixedUpdate, the platform adds its horizontal delta on top of that requested position instead of overwriting it.")]
         [SerializeField] private bool mergeZalaytyIndependentMoveWithPlatformDelta = true;
 
+        [Header("Warrior / Character Movement Merge")]
+        [Tooltip("When true, if Warrior or another CharacterController requested a core MovePosition, the platform adds its horizontal delta on top of that request instead of overwriting it.")]
+        [SerializeField] private bool mergeCharacterCoreMoveWithPlatformDelta = true;
+
         private sealed class Passenger
         {
             public int id;
@@ -161,7 +165,6 @@ namespace Assets.Scripts.Platforms
                 RememberPlatformDelta(Vector2.zero);
 
                 // Even while the platform waits, keep passengers lightly seated.
-                // This prevents a one-frame vertical gap from making Zalayty think he is airborne.
                 CarryPassengers(Vector2.zero);
                 return;
             }
@@ -177,9 +180,8 @@ namespace Assets.Scripts.Platforms
 
             RememberPlatformDelta(platformDelta);
 
-            // Apply the same horizontal delta to every valid passenger. This is not parenting
-            // and it does not freeze the passenger's own movement. For Zalayty, if his AI also
-            // requested a MovePosition during this same physics step, we merge both requests.
+            // Carry passengers before moving the platform body.
+            // Support checks use platformDelta as prediction.
             CarryPassengers(platformDelta);
 
             _rb.MovePosition(next);
@@ -202,38 +204,34 @@ namespace Assets.Scripts.Platforms
         protected override void OnCollisionEnter2D(Collision2D collision)
         {
             base.OnCollisionEnter2D(collision);
-            var character = collision.collider.GetComponentInParent<CharacterController>();
-            if(character is ZalaytyMonster)
+
+            // IMPORTANT:
+            // Do not limit this to Zalayty.
+            // Warrior must also be registered as a passenger.
             TryAddPassenger(collision);
         }
 
         protected override void OnCollisionStay2D(Collision2D collision)
         {
             base.OnCollisionStay2D(collision);
-            var character = collision.collider.GetComponentInParent<CharacterController>();
-            if (character is ZalaytyMonster)
-       
+
+            // Refresh top support every physics contact frame.
             TryAddPassenger(collision);
         }
 
         protected override void OnCollisionExit2D(Collision2D collision)
         {
             base.OnCollisionExit2D(collision);
-            var character = collision.collider.GetComponentInParent<CharacterController>();
-            if (character is ZalaytyMonster) 
+
+            Passenger passenger;
+            if (!TryBuildPassengerFromCollision(collision, out passenger))
+                return;
+
+            if (!_pendingRemove.Contains(passenger.id))
             {
-                Passenger passenger;
-                if (!TryBuildPassengerFromCollision(collision, out passenger))
-                    return;
-
-                if (!_pendingRemove.Contains(passenger.id))
-                {
-                    _pendingRemove.Add(passenger.id);
-                    StartCoroutine(RemovePassengerIfReallyLeft(passenger.id));
-                }
-
+                _pendingRemove.Add(passenger.id);
+                StartCoroutine(RemovePassengerIfReallyLeft(passenger.id));
             }
-             
         }
 
         private void RememberPlatformDelta(Vector2 platformDelta)
@@ -315,8 +313,7 @@ namespace Assets.Scripts.Platforms
             Bounds platformBounds = platformCollider.bounds;
             Bounds hitBounds = hitCollider.bounds;
 
-            // The collider that generated the contact must at least be above the platform center.
-            // This rejects underside and most side contacts early.
+            // Reject underside and most side contacts early.
             if (hitBounds.center.y < platformBounds.center.y)
                 return false;
 
@@ -333,9 +330,7 @@ namespace Assets.Scripts.Platforms
                     return true;
             }
 
-            // Fallback for noisy normals and child-collider setups:
-            // check the root character's non-trigger colliders, not only the exact collider
-            // that produced this collision callback.
+            // Fallback for noisy normals and child-collider setups.
             return IsPassengerSupportedByTopSurface(passenger, Vector2.zero, Vector2.zero);
         }
 
@@ -395,16 +390,14 @@ namespace Assets.Scripts.Platforms
             Vector2 passengerDeltaForSupportCheck = platformCarry;
 
             ZalaytyMonster zalayty = character as ZalaytyMonster;
+
             if (zalayty != null)
             {
                 zalayty.NotifyMovingPlatformTopSupport(this);
 
-                // Zalayty's independent chase runs from a WaitForFixedUpdate coroutine.
-                // That coroutine can run after this platform FixedUpdate, so a direct
-                // body.MovePosition here may be overwritten by Zalayty's own MovePosition.
-                // When Zalayty is actively chasing, let Zalayty pull this platform delta
-                // through TryGetHorizontalCarryDeltaForCurrentFixedStep() and add it inside
-                // MoveZalaytyBody(). Idle/non-moving Zalayty is still carried here normally.
+                // Zalayty has his own independent movement merge path.
+                // If he wants to consume the platform delta inside his own move,
+                // do not MovePosition him here.
                 if (mergeZalaytyIndependentMoveWithPlatformDelta &&
                     zalayty.ShouldApplyHorizontalMovingPlatformCarryInsideOwnMove())
                 {
@@ -412,8 +405,6 @@ namespace Assets.Scripts.Platforms
                 }
             }
 
-            // Must be initialized because C# definite-assignment analysis does not
-            // know that this value is only used when mergeWithZalaytyMove is true.
             Vector2 zalaytyRequestedPosition = body.position;
 
             bool mergeWithZalaytyMove =
@@ -423,14 +414,37 @@ namespace Assets.Scripts.Platforms
 
             if (mergeWithZalaytyMove)
             {
-                // Zalayty is actively chasing/moving this FixedUpdate.
-                // Do NOT replace his AI movement with the platform movement.
-                // Instead: final position = Zalayty requested position + platform horizontal delta.
                 targetPosition = zalaytyRequestedPosition + platformCarry;
                 passengerDeltaForSupportCheck = targetPosition - body.position;
 
-                // If Zalayty's own move intentionally leaves the platform top, stop carrying him.
-                // This prevents an edge clamp while still allowing normal same-platform chase.
+                if (!IsPassengerSupportedByTopSurface(passenger, passengerDeltaForSupportCheck, platformDelta))
+                {
+                    RemovePassenger(passenger.id, clearCurrentPlatform: true);
+                    return;
+                }
+            }
+
+            Vector2 coreRequestedPosition = body.position;
+
+            bool mergeWithCharacterCoreMove =
+                !mergeWithZalaytyMove &&
+                zalayty == null &&
+                mergeCharacterCoreMoveWithPlatformDelta &&
+                character != null &&
+                character.IsMoving &&
+                character.TryGetCoreMoveRequestForRecentStep(out coreRequestedPosition);
+
+            if (mergeWithCharacterCoreMove)
+            {
+                // Warrior/core character movement is active.
+                // Final position = character requested movement + platform horizontal carry.
+                // This prevents "Run animation but no movement" and also prevents the platform
+                // from overwriting Warrior's input movement.
+                targetPosition = coreRequestedPosition + platformCarry;
+                passengerDeltaForSupportCheck = targetPosition - body.position;
+
+                // If Warrior intentionally walks off the edge, stop carrying him.
+                // Do not clamp him back onto the platform.
                 if (!IsPassengerSupportedByTopSurface(passenger, passengerDeltaForSupportCheck, platformDelta))
                 {
                     RemovePassenger(passenger.id, clearCurrentPlatform: true);
@@ -449,9 +463,17 @@ namespace Assets.Scripts.Platforms
                 return;
 
             if (mergeWithZalaytyMove)
+            {
                 zalayty.ApplyMovingPlatformMergedIndependentMove(targetPosition);
+            }
+            else if (mergeWithCharacterCoreMove)
+            {
+                character.ApplyMovingPlatformMergedCoreMove(targetPosition);
+            }
             else
+            {
                 body.MovePosition(targetPosition);
+            }
         }
 
         private bool CanCarryPassengerNow(Passenger passenger)
