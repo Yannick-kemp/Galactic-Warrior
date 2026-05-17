@@ -147,6 +147,11 @@ public class M97Monster : Enemy
     [SerializeField] private float platformSurfaceBottomTolerance = -0.08f;
     [SerializeField] private bool zeroNegativeVerticalVelocityOnStick = true;
 
+    [Header("Laser Grounded Target Gate")]
+    [SerializeField] private bool laserRequiresWarriorGrounded = true;
+    [SerializeField, Min(1)] private int laserMinWarriorGroundPoints = 1;
+    [SerializeField] private bool stopLaserWhenWarriorJumps = true;
+
     private bool _isDeadOrDying;
 
     private int _damageHitCount;
@@ -198,7 +203,7 @@ public class M97Monster : Enemy
 
             return;
         }
-
+        StopLaserIfWarriorCannotBeTargeted(warrior);
         // M97 is only frozen by stun if warrior is in front
         if (IsStunned && IsWarriorInFrontStrict(warrior))
         {
@@ -323,7 +328,7 @@ public class M97Monster : Enemy
 
         if (EnemyRangeService != null && target != null)
         {
-            if (IsSamePlatform(warrior))
+            if (CanM97TargetWarriorWithLaser(warrior))
             {
                 if (laserVFX == null)
                     InitializeLaserVFX();
@@ -934,7 +939,7 @@ public class M97Monster : Enemy
         }
 
         // Final re-check after state change
-        if (mustFaceToFire && !CanFireLaserNow(w))
+        if (!CanM97TargetWarriorWithLaser(w) || (mustFaceToFire && !CanFireLaserNow(w)))
         {
             DeactivateLaser();
             return;
@@ -970,6 +975,12 @@ public class M97Monster : Enemy
         if (w == null) return;
         if (w.IsDeadOrDying) return;
         if (w.IsDodging) return;
+
+        if (!CanM97TargetWarriorWithLaser(w))
+        {
+            DeactivateLaser();
+            return;
+        }
 
         Debug.Log($"M97 {name}: Warrior detected in laser!");
         warriorInLaserScope = true;
@@ -1085,6 +1096,9 @@ public class M97Monster : Enemy
             if (!IsSamePlatform(warrior))
                 break;
 
+            if (!CanM97TargetWarriorWithLaser(warrior))
+                break;
+
             if (warrior.IsDodging)
             {
                 yield return new WaitForSeconds(laserDamageTick);
@@ -1138,7 +1152,58 @@ public class M97Monster : Enemy
         return w != null && CurrentplatForm != null && CurrentplatForm == w.CurrentplatForm;
     }
 
+    private bool IsWarriorGroundedEnoughForLaser(Warrior w)
+    {
+        if (w == null || w.IsDeadOrDying)
+            return false;
 
+        if (!laserRequiresWarriorGrounded)
+            return true;
+
+        // Controlled jump must immediately cancel M97 laser targeting.
+        if (w.activesJumpCoroutine != null)
+            return false;
+
+        // Edge fall / platform exit / grazing edge must also cancel the laser.
+        if (w.IsFallingEdge || w.IsFallingPlfExit || w.IsFallingHitEnemy || w.IsFallingGrazesEdge)
+            return false;
+
+        return w.CountGroundPoints() >= laserMinWarriorGroundPoints;
+    }
+
+    private bool CanM97TargetWarriorWithLaser(Warrior w)
+    {
+        if (w == null || w.IsDeadOrDying)
+            return false;
+
+        if (!IsSamePlatform(w))
+            return false;
+
+        if (!IsWarriorGroundedEnoughForLaser(w))
+            return false;
+
+        return true;
+    }
+
+    private void StopLaserIfWarriorCannotBeTargeted(Warrior w)
+    {
+        if (!stopLaserWhenWarriorJumps)
+            return;
+
+        if (CanM97TargetWarriorWithLaser(w))
+            return;
+
+        if (IsLaserShowing || warriorInLaserScope || laserDamageCoroutine != null)
+        {
+            DeactivateLaser();
+
+            CanMove = true;
+            Speed = runSpeed;
+
+            if (!_isDeadOrDying)
+                RunAnimationDisplay();
+        }
+    }
 
     private bool TryFlipTowardWarriorIfNeeded(Warrior w)
     {
