@@ -229,24 +229,33 @@ public class RelicUIController : MonoBehaviour
             return;
         }
 
-        // SPRINT: arm now, consume later on world touch / actual sprint start
+        // SPRINT:
+        // - first click arms sprint
+        // - extra click while armed queues more duration
+        // - extra click while active extends the same running sprint timer
         if (r.slot != null && r.slot.Definition is SprintRelic sprintDef)
         {
-            // Consommer avant d'armer
             bool consumed = relicManager.TryConsumeById(relicId, consume);
-            if (!consumed) { RefreshButton(r); return; }
+            if (!consumed)
+            {
+                RefreshButton(r);
+                return;
+            }
 
-            bool armed = warrior != null && warrior.TryArmSprintRelic(
+            float durationToAdd = sprintDef.sprintDuration * consume;
+
+            bool used = warrior != null && warrior.TryExtendOrQueueSprintRelic(
                 relicId: relicId,
                 speedMultiplier: sprintDef.speedMultiplier,
-                duration: sprintDef.sprintDuration,
+                duration: durationToAdd,
                 cooldown: sprintDef.sprintCooldown,
-                consumeOnUse: false); // déjà consommé
+                consumeOnUse: false); // UI already consumed the stack(s).
 
-            if (!armed)
+            if (!used)
             {
-                // Rembourser si TryArm a refusé
-                relicManager.Collect(sprintDef, bypassFrameCap: true);
+                // Refund exactly what this click consumed.
+                for (int i = 0; i < consume; i++)
+                    relicManager.Collect(sprintDef, bypassFrameCap: true);
             }
 
             RefreshButton(r);
@@ -491,10 +500,11 @@ public class RelicUIController : MonoBehaviour
         if (isShieldRule)
             return warrior.IsDodging || warrior.IsSprintArmed;
 
-        // Sprint button blocked while shield is up
+        // Sprint button is still allowed while sprint is armed/active,
+        // because extra Sprint Relic stacks extend/queue duration.
         bool isSprintRule = (r.slot != null && r.slot.Definition is SprintRelic);
         if (isSprintRule)
-            return warrior.ShieldIsUp || warrior.IsSprintArmed || warrior.IsDodging;
+            return warrior.ShieldIsUp;
 
         return false;
     }

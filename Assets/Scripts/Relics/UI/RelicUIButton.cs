@@ -154,25 +154,26 @@ namespace Assets.Scripts.Relics.UI
 
                 return;
             }
-            // 2) Sprint relic branch (ARM only; actual consume/use happens when movement starts)
+            // 2) Sprint relic branch.
+            // First click arms sprint. Extra clicks while armed/active add duration.
             if (definition is SprintRelic sprintDef)
             {
-                // Consommer d'abord
                 if (ShouldConsumeOnUse() && !_rm.TryConsume(definition, 1))
-                    return; // plus de stack
+                    return; // no stack available
 
-                bool armed = warrior.TryArmSprintRelic(
+                bool used = warrior.TryExtendOrQueueSprintRelic(
                     relicId: _id,
                     speedMultiplier: sprintDef.speedMultiplier,
                     duration: sprintDef.sprintDuration,
                     cooldown: sprintDef.sprintCooldown,
-                    consumeOnUse: false); // Warrior ne reconsomme pas
+                    consumeOnUse: false); // UI already consumed the stack.
 
-                if (!armed)
+                if (!used && ShouldConsumeOnUse())
                 {
-                    // Annulé (shield up, déjà armé, etc.) ? rembourser
-                    _rm.Collect(definition); // ou une méthode Refund() dédiée
+                    // Refund if Warrior rejected the sprint because of shield/death/etc.
+                    _rm.Collect(definition, bypassFrameCap: true);
                 }
+
                 return;
             }
 

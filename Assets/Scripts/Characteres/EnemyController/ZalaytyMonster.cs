@@ -3422,7 +3422,6 @@ public class ZalaytyMonster : Enemy
 
         return verticalOverlap >= requiredOverlap;
     }
-
     private Vector2 ResolvePlatformJumpLandingAwayFromWarriorTop(
         Vector2 requestedLanding,
         PlatFormColliderTrigger destinationPlatform,

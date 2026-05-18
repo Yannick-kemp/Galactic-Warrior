@@ -7,26 +7,93 @@ namespace Assets.Scripts.Characteres.WarriorController
 {
     public partial class Warrior : CharacterController
     {
+        private float _sprintEndTime = -999f;
 
         #region Relic Effects
+
+        /// <summary>
+        /// Backward-compatible entry point.
+        /// First click arms sprint.
+        /// Extra clicks while armed add duration to the upcoming sprint.
+        /// Extra clicks while active add duration to the current sprint timer.
+        /// </summary>
         public bool TryArmSprintRelic(string relicId, float speedMultiplier, float duration, float cooldown, bool consumeOnUse)
+        {
+            return TryExtendOrQueueSprintRelic(
+                relicId: relicId,
+                speedMultiplier: speedMultiplier,
+                duration: duration,
+                cooldown: cooldown,
+                consumeOnUse: consumeOnUse);
+        }
+
+        public bool TryExtendOrQueueSprintRelic(string relicId, float speedMultiplier, float duration, float cooldown, bool consumeOnUse)
         {
             if (CanDie) return false;
             if (string.IsNullOrEmpty(relicId)) return false;
-            if (_sprintActive) return false;
-            if (_sprintArmed) return false;   // NEW
             if (IsShieldBlockingSprintUse()) return false;
 
+            float safeDuration = Mathf.Max(sprintMinDuration, duration);
+            float safeMultiplier = Mathf.Max(sprintMinMultiplier, speedMultiplier);
+            float safeCooldown = Mathf.Max(0f, cooldown);
+
+            // Sprint is already running: extend the SAME timer.
+            // Do not restart the coroutine and do not multiply Speed again.
+            if (_sprintActive)
+            {
+                if (consumeOnUse && !TryConsumeSprintStackInsideWarriorNow(relicId))
+                    return false;
+
+                _sprintEndTime = Mathf.Max(_sprintEndTime, Time.time) + safeDuration;
+                NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.12f));
+                return true;
+            }
+
+            // Sprint is armed but has not started yet: queue extra duration
+            // for the upcoming sprint. Keep the first relic's multiplier.
+            if (_sprintArmed)
+            {
+                if (consumeOnUse && !TryConsumeSprintStackInsideWarriorNow(relicId))
+                    return false;
+
+                _sprintDuration = Mathf.Max(sprintMinDuration, _sprintDuration) + safeDuration;
+
+                // Keep existing relic id/multiplier once armed. Only fill safe defaults if needed.
+                if (string.IsNullOrEmpty(_sprintRelicId))
+                    _sprintRelicId = relicId;
+
+                if (_sprintSpeedMultiplier <= 0f)
+                    _sprintSpeedMultiplier = safeMultiplier;
+
+                _sprintCooldown = Mathf.Max(_sprintCooldown, safeCooldown);
+                _sprintConsumeOnUse = _sprintConsumeOnUse || consumeOnUse;
+                _sprintArmFrame = Time.frameCount;
+
+                NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.12f));
+                return true;
+            }
+
+            // First relic: arm sprint. Actual activation still happens on movement.
             _sprintArmed = true;
             _sprintRelicId = relicId;
-            _sprintSpeedMultiplier = Mathf.Max(sprintMinMultiplier, speedMultiplier);
-            _sprintDuration = Mathf.Max(sprintMinDuration, duration);
-            _sprintCooldown = Mathf.Max(0f, cooldown);
+            _sprintSpeedMultiplier = safeMultiplier;
+            _sprintDuration = safeDuration;
+            _sprintCooldown = safeCooldown;
             _sprintConsumeOnUse = consumeOnUse;
             _sprintArmFrame = Time.frameCount;
+            _sprintEndTime = -999f;
 
             NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.12f));
             return true;
+        }
+
+        private bool TryConsumeSprintStackInsideWarriorNow(string relicId)
+        {
+            if (!consumeSprintStackInsideWarrior)
+                return true;
+
+            var rm = GetComponent<RelicManager>();
+            return rm != null && rm.TryConsumeById(relicId, 1);
         }
 
         private bool TryStartArmedSprintFromMove()
@@ -34,8 +101,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (!_sprintArmed || _sprintActive) return false;
             if (Time.time < _nextSprintReadyTime) return false;
 
-
-            // NEW: don't start sprint while shield is up
+            // Don't start sprint while shield is up.
             if (IsShieldBlockingSprintUse()) return false;
 
             // Only consume here if Warrior is responsible for stack consumption.
@@ -69,7 +135,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             _sprintActive = true;
             _nextSprintReadyTime = Time.time + cooldown;
 
-            // Prevent previous enemy-contact lock from freezing movement
+            // Prevent previous enemy-contact lock from freezing movement.
             _blockedByEnemyContact = false;
             _blockingEnemy = null;
 
@@ -79,8 +145,9 @@ namespace Assets.Scripts.Characteres.WarriorController
             RefreshIgnoredEnemyColliders();
             _nextSprintIgnoreRefreshTime = Time.time + sprintIgnoreRefreshInterval;
 
-            float endTime = Time.time + duration;
-            while (Time.time < endTime)
+            _sprintEndTime = Time.time + Mathf.Max(sprintMinDuration, duration);
+
+            while (Time.time < _sprintEndTime)
             {
                 if (CanDie) break;
 
@@ -98,6 +165,7 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             _sprintActive = false;
             _sprintRoutine = null;
+            _sprintEndTime = -999f;
         }
 
         private void RefreshIgnoredEnemyColliders()
@@ -152,6 +220,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             _sprintActive = false;
             _sprintArmed = false;
             _sprintArmFrame = -1;
+            _sprintEndTime = -999f;
         }
 
         public void CancelArmedSprintRelic()
@@ -166,7 +235,9 @@ namespace Assets.Scripts.Characteres.WarriorController
             _sprintSpeedMultiplier = 0f;
             _sprintCooldown = 0f;
             _sprintArmFrame = -1;
+            _sprintEndTime = -999f;
         }
+
         #endregion
     }
 }

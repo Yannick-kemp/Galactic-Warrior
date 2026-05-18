@@ -134,6 +134,9 @@ namespace Assets.Scripts.Platforms
         private readonly HashSet<int> _pendingRemove = new HashSet<int>();
         private readonly List<int> _passengersToRemove = new List<int>();
 
+        // Snapshot used so _passengers can be safely modified after iteration.
+        private readonly List<Passenger> _passengersSnapshot = new List<Passenger>();
+
         protected override void Start()
         {
             base.Start();
@@ -354,30 +357,56 @@ namespace Assets.Scripts.Platforms
         private void CarryPassengers(Vector2 platformDelta)
         {
             _passengersToRemove.Clear();
+            _passengersSnapshot.Clear();
 
+            // Snapshot first. Do not iterate the dictionary while later code may remove passengers.
             foreach (KeyValuePair<int, Passenger> pair in _passengers)
             {
-                Passenger passenger = pair.Value;
+                if (pair.Value != null)
+                    _passengersSnapshot.Add(pair.Value);
+            }
+
+            for (int i = 0; i < _passengersSnapshot.Count; i++)
+            {
+                Passenger passenger = _passengersSnapshot[i];
+                if (passenger == null)
+                    continue;
+
+                // Passenger may already have been removed by another check.
+                Passenger currentPassenger;
+                if (!_passengers.TryGetValue(passenger.id, out currentPassenger))
+                    continue;
+
+                if (currentPassenger != passenger)
+                    continue;
 
                 if (!CanCarryPassengerNow(passenger))
                 {
-                    _passengersToRemove.Add(pair.Key);
+                    if (!_passengersToRemove.Contains(passenger.id))
+                        _passengersToRemove.Add(passenger.id);
+
                     continue;
                 }
 
-                MovePassengerWithPlatform(passenger, platformDelta);
+                bool stillValid = TryMovePassengerWithPlatform(passenger, platformDelta);
+                if (!stillValid)
+                {
+                    if (!_passengersToRemove.Contains(passenger.id))
+                        _passengersToRemove.Add(passenger.id);
+                }
             }
 
             for (int i = 0; i < _passengersToRemove.Count; i++)
                 RemovePassenger(_passengersToRemove[i], clearCurrentPlatform: true);
 
             _passengersToRemove.Clear();
+            _passengersSnapshot.Clear();
         }
 
-        private void MovePassengerWithPlatform(Passenger passenger, Vector2 platformDelta)
+        private bool TryMovePassengerWithPlatform(Passenger passenger, Vector2 platformDelta)
         {
             if (passenger == null || passenger.body == null)
-                return;
+                return false;
 
             CharacterController character = passenger.character;
             Rigidbody2D body = passenger.body;
@@ -401,7 +430,7 @@ namespace Assets.Scripts.Platforms
                 if (mergeZalaytyIndependentMoveWithPlatformDelta &&
                     zalayty.ShouldApplyHorizontalMovingPlatformCarryInsideOwnMove())
                 {
-                    return;
+                    return true;
                 }
             }
 
@@ -419,8 +448,9 @@ namespace Assets.Scripts.Platforms
 
                 if (!IsPassengerSupportedByTopSurface(passenger, passengerDeltaForSupportCheck, platformDelta))
                 {
-                    RemovePassenger(passenger.id, clearCurrentPlatform: true);
-                    return;
+                    // Do not call RemovePassenger here.
+                    // CarryPassengers will remove it after iteration.
+                    return false;
                 }
             }
 
@@ -438,8 +468,6 @@ namespace Assets.Scripts.Platforms
             {
                 // Warrior/core character movement is active.
                 // Final position = character requested movement + platform horizontal carry.
-                // This prevents "Run animation but no movement" and also prevents the platform
-                // from overwriting Warrior's input movement.
                 targetPosition = coreRequestedPosition + platformCarry;
                 passengerDeltaForSupportCheck = targetPosition - body.position;
 
@@ -447,8 +475,9 @@ namespace Assets.Scripts.Platforms
                 // Do not clamp him back onto the platform.
                 if (!IsPassengerSupportedByTopSurface(passenger, passengerDeltaForSupportCheck, platformDelta))
                 {
-                    RemovePassenger(passenger.id, clearCurrentPlatform: true);
-                    return;
+                    // Do not call RemovePassenger here.
+                    // CarryPassengers will remove it after iteration.
+                    return false;
                 }
             }
 
@@ -460,7 +489,7 @@ namespace Assets.Scripts.Platforms
 
             Vector2 finalDelta = targetPosition - body.position;
             if (finalDelta.sqrMagnitude <= 0.0000001f)
-                return;
+                return true;
 
             if (mergeWithZalaytyMove)
             {
@@ -474,6 +503,8 @@ namespace Assets.Scripts.Platforms
             {
                 body.MovePosition(targetPosition);
             }
+
+            return true;
         }
 
         private bool CanCarryPassengerNow(Passenger passenger)

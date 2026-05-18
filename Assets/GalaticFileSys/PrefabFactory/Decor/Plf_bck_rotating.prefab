@@ -420,6 +420,11 @@ MonoBehaviour:
   restoreAfterTriggerExitTimeout: 0.75
   zalaytyJumpDownRestoreContactSkin: 0.01
   edgeZoneWidth: 0.35
+  enableWarriorAntiLedgeSnag: 1
+  warriorAntiSnagMinUpVelocity: 0.05
+  warriorAntiSnagBelowTopSkin: 0.04
+  warriorAntiSnagTopNormalY: 0.55
+  warriorAntiSnagSideNormalX: 0.35
   Radius: 2
   Speed: 2
   startAngleDegrees: 0
