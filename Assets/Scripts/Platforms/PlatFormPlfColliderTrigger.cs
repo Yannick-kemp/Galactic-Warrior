@@ -245,7 +245,15 @@ namespace Assets.Scripts.Platforms
             // Safety for missed Enter events: if Unity gives us Stay first, treat it
             // as trigger-first unless the normal body collider was already recorded first
             // in an older physics frame.
-            RememberTriggerContactWithPriority(character);
+            //
+            // IMPORTANT: Only refresh TriggerFirst when there is a genuine trigger contact
+            // registered in _triggerContactsByCharacter. Without this guard,
+            // OnTriggerStay2D would keep writing TriggerFirst even when the character
+            // is only standing on the normal platformCollider (no longer inside the
+            // trigger zone), causing Zalayty to permanently ignore the platform and
+            // get stuck at the edge unable to fall or pursue the Warrior.
+            if (HasRealTriggerContact(character))
+                RememberTriggerContactWithPriority(character);
 
             // If the normal platformCollider was touched first, never let trigger /
             // edge / going-up logic turn this platform pass-through for this character.
@@ -305,7 +313,7 @@ namespace Assets.Scripts.Platforms
 
             if (IsZalaytyJumpDownLocked(character))
             {
-               
+
                 SetIgnoreForCharacter(character, true);
                 StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
                 return;
@@ -313,7 +321,7 @@ namespace Assets.Scripts.Platforms
 
             if (IsSourceFallThroughLocked(character))
             {
-               // Debug.Log("Source fall-through still locked on trigger exit for " + character.name);
+                // Debug.Log("Source fall-through still locked on trigger exit for " + character.name);
                 // Do not restore on the first child-collider exit. Restore only after
                 // all Warrior colliders have left this trigger and no body overlap remains.
                 SetIgnoreForCharacter(character, true);
@@ -1075,6 +1083,35 @@ namespace Assets.Scripts.Platforms
 
             // Fallback for cases where Unity missed one enter/exit callback.
             return IsAnyBodyColliderInsideTrigger(character);
+        }
+
+        /// <summary>
+        /// Returns true only when at least one of the character's colliders is
+        /// currently registered in _triggerContactsByCharacter (i.e. has produced
+        /// a real OnTriggerEnter2D that was not yet matched by OnTriggerExit2D).
+        /// Unlike IsCharacterStillInsideThisTrigger, this method does NOT fall back
+        /// to the physics overlap query, so it cannot return true for a character
+        /// that is only on the normal platformCollider.
+        /// </summary>
+        private bool HasRealTriggerContact(CharacterController character)
+        {
+            int id = GetCharacterKey(character);
+
+            if (id == 0)
+                return false;
+
+            if (!_triggerContactsByCharacter.TryGetValue(id, out HashSet<Collider2D> contacts))
+                return false;
+
+            contacts.RemoveWhere(c => c == null || !c.enabled || !c.gameObject.activeInHierarchy);
+
+            if (contacts.Count == 0)
+            {
+                _triggerContactsByCharacter.Remove(id);
+                return false;
+            }
+
+            return true;
         }
 
         private FirstPlatformContact GetFirstContact(CharacterController character)

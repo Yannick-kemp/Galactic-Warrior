@@ -443,23 +443,23 @@ public class CharacterController : Character, ICharacterController
     public IEnumerator JumpTowardPositionAction(Vector2 target, float height, float duration, Collider2D enemyCollider = null)
     {
 
-        bool isWarrior = this is Warrior;
+        //bool isWarrior = this is Warrior;
 
-        if (isWarrior)
-        {
-            WarriorJumpTowardPositionMarker.Begin();
+        //if (isWarrior)
+        //{
+        //    WarriorJumpTowardPositionMarker.Begin();
 
-            Debug.Log(
-                $"[Warrior JumpTowardPositionAction START] " +
-                $"frame={Time.frameCount}, " +
-                $"time={Time.time:F3}, " +
-                $"target={target}, " +
-                $"height={height}, " +
-                $"duration={duration}, " +
-                $"enemyCollider={(enemyCollider != null ? enemyCollider.name : "NULL")}, " +
-                $"currentPlatform={(CurrentplatForm != null ? CurrentplatForm.name : "NULL")}"
-            );
-        }
+        //    Debug.Log(
+        //        $"[Warrior JumpTowardPositionAction START] " +
+        //        $"frame={Time.frameCount}, " +
+        //        $"time={Time.time:F3}, " +
+        //        $"target={target}, " +
+        //        $"height={height}, " +
+        //        $"duration={duration}, " +
+        //        $"enemyCollider={(enemyCollider != null ? enemyCollider.name : "NULL")}, " +
+        //        $"currentPlatform={(CurrentplatForm != null ? CurrentplatForm.name : "NULL")}"
+        //    );
+        //}
 
         if (_isJumping) yield break;
         _isJumping = true;
@@ -511,18 +511,18 @@ public class CharacterController : Character, ICharacterController
                 MoveCharacterTo(predictedLandingPosition);
                 CompletePredictedTopLanding(destinationPlatform);
 
-                if (isWarrior)
-                {
-                    Debug.Log(
-                        $"[Warrior JumpTowardPositionAction PREDICTED LANDING] " +
-                        $"frame={Time.frameCount}, " +
-                        $"time={Time.time:F3}, " +
-                        $"landing={predictedLandingPosition}, " +
-                        $"destinationPlatform={(destinationPlatform != null ? destinationPlatform.name : "NULL")}"
-                    );
+                //if (isWarrior)
+                //{
+                //    Debug.Log(
+                //        $"[Warrior JumpTowardPositionAction PREDICTED LANDING] " +
+                //        $"frame={Time.frameCount}, " +
+                //        $"time={Time.time:F3}, " +
+                //        $"landing={predictedLandingPosition}, " +
+                //        $"destinationPlatform={(destinationPlatform != null ? destinationPlatform.name : "NULL")}"
+                //    );
 
-                    WarriorJumpTowardPositionMarker.End();
-                }
+                //    WarriorJumpTowardPositionMarker.End();
+                //}
 
                 yield break;
             }
@@ -541,18 +541,18 @@ public class CharacterController : Character, ICharacterController
         _isJumping = false;
         activesJumpCoroutine = null;
 
-        if (isWarrior)
-        {
-            Debug.Log(
-                $"[Warrior JumpTowardPositionAction END] " +
-                $"frame={Time.frameCount}, " +
-                $"time={Time.time:F3}, " +
-                $"position={transform.position}, " +
-                $"currentPlatform={(CurrentplatForm != null ? CurrentplatForm.name : "NULL")}"
-            );
+        //if (isWarrior)
+        //{
+        //    Debug.Log(
+        //        $"[Warrior JumpTowardPositionAction END] " +
+        //        $"frame={Time.frameCount}, " +
+        //        $"time={Time.time:F3}, " +
+        //        $"position={transform.position}, " +
+        //        $"currentPlatform={(CurrentplatForm != null ? CurrentplatForm.name : "NULL")}"
+        //    );
 
-            WarriorJumpTowardPositionMarker.End();
-        }
+        //    WarriorJumpTowardPositionMarker.End();
+        //}
     }
 
     protected bool TryResolveDestinationPlatformTopLanding(
