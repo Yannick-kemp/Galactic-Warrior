@@ -664,6 +664,14 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 8844300943211186592, guid: 600ff9f5b05e2d44e91721494c69429d, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 2.27
+      objectReference: {fileID: 0}
+    - target: {fileID: 8844300943211186592, guid: 600ff9f5b05e2d44e91721494c69429d, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 1.8
+      objectReference: {fileID: 0}
+    - target: {fileID: 8844300943211186592, guid: 600ff9f5b05e2d44e91721494c69429d, type: 3}
       propertyPath: m_LocalPosition.x
       value: 64.69
       objectReference: {fileID: 0}
@@ -916,7 +924,10 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
-    m_AddedGameObjects: []
+    m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: 144242117760303234, guid: a90e1fc77e183d44988febb4330bf67b, type: 3}
+      insertIndex: 0
+      addedObject: {fileID: 3125731345743318403}
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: a90e1fc77e183d44988febb4330bf67b, type: 3}
 --- !u!4 &323103251 stripped
@@ -1445,6 +1456,14 @@ MonoBehaviour:
     parallaxSpeed: 0.134
     zPosition: -7
     patternType: 6
+    randomDensity: 0.1
+    gridSpacing: 5
+    centerRadius: 10
+    randomSeed: 2
+  - prefab: {fileID: 1142655058018906357, guid: 5fdc9ddf40e1fca43b358d46464471dc, type: 3}
+    parallaxSpeed: 0.134
+    zPosition: 2
+    patternType: 0
     randomDensity: 0.1
     gridSpacing: 5
     centerRadius: 10
@@ -3251,6 +3270,11 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
+--- !u!4 &1425630945 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 144242117760303234, guid: a90e1fc77e183d44988febb4330bf67b, type: 3}
+  m_PrefabInstance: {fileID: 283838556}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1459296493
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -5351,12 +5375,12 @@ GameObject:
   - component: {fileID: 3125731345743318403}
   - component: {fileID: 4680147845387014900}
   m_Layer: 0
-  m_Name: Spawn_bee (1)
+  m_Name: Spawn_M97
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!1 &802858266581454692
 GameObject:
   m_ObjectHideFlags: 0
@@ -6116,11 +6140,11 @@ Transform:
   m_GameObject: {fileID: 792426515413282696}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 19.79, y: 13.45, z: 0}
+  m_LocalPosition: {x: -0.2, y: 2.4, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 8181523265786368330}
+  m_Father: {fileID: 1425630945}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &3140816810443817057
 GameObject:
@@ -6676,7 +6700,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b69556622272dc438d2397527a80af2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enemyType: 2
+  enemyType: 4
   overrides:
     overrideSpeed: 0
     speed: 2
@@ -7737,7 +7761,6 @@ Transform:
   - {fileID: 6108553635089933431}
   - {fileID: 9005875892903212641}
   - {fileID: 3907588725806507817}
-  - {fileID: 3125731345743318403}
   - {fileID: 6816699177447754938}
   - {fileID: 9145882668406987}
   - {fileID: 6176347837363429749}
