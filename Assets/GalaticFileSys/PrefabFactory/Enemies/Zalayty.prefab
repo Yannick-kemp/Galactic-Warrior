@@ -434,7 +434,7 @@ MonoBehaviour:
   useContactReleaseHysteresis: 1
   repeatAttackWhileMainBoxesStillTouchingOnSamePlatform: 1
   warriorEdgeMargin: 1.8
-  sparkPrefab: {fileID: 8169396821578944445, guid: f8b9a6b02e3ac79408304329fda320f7, type: 3}
+  sparkPrefab: {fileID: 1973752797466364135, guid: 8fdcc63a1e232cf4a8d281962659c178, type: 3}
   sparkScale: 1
   sparkDestroyAfter: 0.2
   sparkOffset: {x: 0, y: 0, z: 0}
@@ -498,6 +498,8 @@ MonoBehaviour:
   warriorTopReboundDuration: 0.59
   warriorTopReboundHeight: 0.9
   warriorTopReboundCooldown: 0.33
+  ignoreWarriorCollisionWhileJumpingToWarriorPlatform: 1
+  platformJumpWarriorCollisionRestoreTimeout: 2.25
 --- !u!114 &337278386865177105
 MonoBehaviour:
   m_ObjectHideFlags: 0
