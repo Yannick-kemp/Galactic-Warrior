@@ -637,6 +637,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         public IEnumerator SmoothStepBack(bool positif)
         {
+            var platformSnapshot = CurrentplatForm; // snapshot au début
+           
             if (!CanStepBack(positif))
                 yield break;
 
@@ -670,8 +672,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 newPos = ResolveStepBackPositionOnMovingVerticalPlatform(newPos);
                 MoveStepBackBody(newPos);
 
-                elapsed += Time.deltaTime;
-                yield return null;
+                elapsed += Time.fixedDeltaTime; //<- cohérent avec FixedUpdate
+                yield return new WaitForFixedUpdate(); //<- synchronisé avec le lift
             }
 
             targetPos.x = ClampToCurrentPlatform(targetPos.x);

@@ -25,7 +25,9 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (TryHandleArmedIceBallTouch())
                 return;
 
-            // IMPORTANT: must be before CanJump / CanAttack block
+            // IMPORTANT: must be before CanJump / CanAttack block.
+            // Rustine: only restore CanMove when warrior is genuinely standing on a
+            // platform surface, not just touching a collider from the side/below.
             if (activesJumpCoroutine == null
                 && !IsFallingEdge
                 && CountGroundPoints() >= 1
@@ -33,7 +35,8 @@ namespace Assets.Scripts.Characteres.WarriorController
                 && !CanDie
                 && !CanMove
                 && CanAttackWarrior
-                && activesMoveCoroutine == null)
+                && activesMoveCoroutine == null
+                && IsStandingOnPlatformSurface())
                 CanMove = true; // rustine
 
             if (!CanMove || !CanAttackWarrior)
@@ -81,6 +84,19 @@ namespace Assets.Scripts.Characteres.WarriorController
             }
 
             if (!CanMove) return;
+
+            // Do not start movement or run animation when the warrior is not actually
+            // standing on the platform top surface (e.g. touching a side/bottom edge,
+            // or a stale ground-point from a one-way platform).
+            if (!IsStandingOnPlatformSurface())
+            {
+                // Treat identically to the losing-balance edge case.
+                bool movingNow = activesMoveCoroutine != null ||
+                                 (rigidbody2 != null && Mathf.Abs(rigidbody2.linearVelocity.x) > 0.05f);
+                if (!movingNow)
+                    ShowLosingBalance();
+                return;
+            }
 
             if (animator.GetBool("IsLosingCtrl"))
                 animator.SetBool("IsLosingCtrl", false);
@@ -324,6 +340,33 @@ namespace Assets.Scripts.Characteres.WarriorController
         private void ForceCancelCurrentAttackForExternalLock()
         {
             ForceCancelCurrentAttackInternal(restoreMovementAfterAttack3Cancel: false);
+        }
+
+        /// <summary>
+        /// Returns true only when the warrior's feet (collider2 bottom) are at or above
+        /// the current platform's top surface (platformCollider.bounds.max.y), within a
+        /// small tolerance.  Falls back to CountGroundPoints >= 1 when no CurrentplatForm
+        /// is available, so landing paths driven by PlatFormColliderTrigger / predicted
+        /// anti-tunnel are never blocked.
+        /// </summary>
+        private bool IsStandingOnPlatformSurface()
+        {
+            // No platform reference → trust the ground-point check (e.g. very first frame,
+            // or after a landing that hasn't set CurrentplatForm yet).
+            if (CurrentplatForm == null || CurrentplatForm.platformCollider == null)
+                return CountGroundPoints() >= 1;
+
+            if (collider2 == null)
+                return CountGroundPoints() >= 1;
+
+            float warriorBottom = collider2.bounds.min.y;
+            float platformTop = CurrentplatForm.platformCollider.bounds.max.y;
+
+            // Allow a tolerance equal to the platform's edgeRadius (0.02 f set in Start())
+            // plus a small physics skin so micro-bounces don't flicker the state.
+            const float tolerance = 0.06f;
+
+            return warriorBottom >= platformTop - tolerance;
         }
 
         private void ForceCancelCurrentAttackInternal(bool restoreMovementAfterAttack3Cancel)

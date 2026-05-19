@@ -47,6 +47,8 @@ public class GameMgr : MonoBehaviour, IGame
     [SerializeField] private AudioClip level1Music;
     [SerializeField] private AudioClip level2Music; // assign IceOfAge.mp3 for AgeOfIce
     [SerializeField] private string level2MusicResourcesPath = "Music/IceOfAge"; // optional fallback: Assets/Resources/Music/IceOfAge.mp3
+    [SerializeField] private AudioClip level3Music; // assign LandOfFire.mp3 for LandOfFire
+    [SerializeField] private string level3MusicResourcesPath = "Music/LandOfFire"; // optional fallback: Assets/Resources/Music/LandOfFire.mp3
     [SerializeField, Range(0f, 1f)] private float musicVolume = 0.35f;
     [SerializeField] private bool restartMusicOnLevelRestart = false;
 
@@ -60,7 +62,8 @@ public class GameMgr : MonoBehaviour, IGame
     [Header("Campaign / Scenes")]
     [SerializeField] private string mainMenuSceneName = "menu";
     [SerializeField] private string level2SceneName = "AgeOfIce";
-    [SerializeField] private List<string> campaignSceneOrder = new List<string> { "WarriorScene", "AgeOfIce" };
+    [SerializeField] private string level3SceneName = "LandOfFire";
+    [SerializeField] private List<string> campaignSceneOrder = new List<string> { "WarriorScene", "AgeOfIce", "LandOfFire" };
 
     [Header("Scene Transition")]
     [SerializeField] private float levelCompleteSlowMoScale = 0.30f;
@@ -209,6 +212,7 @@ public class GameMgr : MonoBehaviour, IGame
 
         bool isLevel1 = scene.name == warriorSceneName;
         bool isLevel2 = scene.name == level2SceneName;
+        bool isLevel3 = scene.name == level3SceneName;
 
         _levelCompletionHandledThisScene = false;
         _bossSlowMoPlaying = false;
@@ -238,6 +242,10 @@ public class GameMgr : MonoBehaviour, IGame
         else if (isLevel2)
         {
             StartLevel2Music();
+        }
+        else if (isLevel3)
+        {
+            StartLevel3Music();
         }
         else
         {
@@ -293,6 +301,19 @@ public class GameMgr : MonoBehaviour, IGame
         StartMusic(clip);
     }
 
+    private void StartLevel3Music()
+    {
+        AudioClip clip = level3Music;
+
+        // Useful if GameMgr is created at runtime by GameInitializer and the Inspector field is empty.
+        // Put the file here: Assets/Resources/Music/LandOfFire.mp3
+        // Then Resources path must be: Music/LandOfFire  (no .mp3 extension)
+        if (clip == null && !string.IsNullOrEmpty(level3MusicResourcesPath))
+            clip = Resources.Load<AudioClip>(level3MusicResourcesPath);
+
+        StartMusic(clip);
+    }
+
     private void StartMusic(AudioClip clip)
     {
         if (_musicSource == null)
@@ -328,7 +349,10 @@ public class GameMgr : MonoBehaviour, IGame
         if (!restartMusicOnLevelRestart) return;
 
         string activeSceneName = SceneManager.GetActiveScene().name;
-        if (activeSceneName != warriorSceneName && activeSceneName != level2SceneName) return;
+        if (activeSceneName != warriorSceneName &&
+            activeSceneName != level2SceneName &&
+            activeSceneName != level3SceneName)
+            return;
 
         if (_musicSource != null && _musicSource.clip != null)
         {
@@ -1508,24 +1532,60 @@ public class GameMgr : MonoBehaviour, IGame
         if (campaignSceneOrder == null)
             campaignSceneOrder = new List<string>();
 
+        var seen = new HashSet<string>();
+
         for (int i = campaignSceneOrder.Count - 1; i >= 0; i--)
         {
-            if (string.IsNullOrWhiteSpace(campaignSceneOrder[i]))
+            string sceneName = campaignSceneOrder[i];
+
+            if (string.IsNullOrWhiteSpace(sceneName))
+            {
+                campaignSceneOrder.RemoveAt(i);
+                continue;
+            }
+
+            sceneName = sceneName.Trim();
+            campaignSceneOrder[i] = sceneName;
+
+            if (!seen.Add(sceneName))
                 campaignSceneOrder.RemoveAt(i);
         }
 
-        if (!campaignSceneOrder.Contains(warriorSceneName))
-            campaignSceneOrder.Insert(0, warriorSceneName);
+        EnsureCampaignSceneFirst(warriorSceneName);
+        EnsureCampaignSceneAfter(level2SceneName, warriorSceneName);
+        EnsureCampaignSceneAfter(level3SceneName, level2SceneName);
+    }
 
-        if (!string.IsNullOrWhiteSpace(level2SceneName) && !campaignSceneOrder.Contains(level2SceneName))
-            campaignSceneOrder.Add(level2SceneName);
+    private void EnsureCampaignSceneFirst(string sceneName)
+    {
+        if (string.IsNullOrWhiteSpace(sceneName))
+            return;
 
-        int warriorIndex = campaignSceneOrder.IndexOf(warriorSceneName);
-        if (warriorIndex > 0)
+        sceneName = sceneName.Trim();
+        campaignSceneOrder.RemoveAll(s => s == sceneName);
+        campaignSceneOrder.Insert(0, sceneName);
+    }
+
+    private void EnsureCampaignSceneAfter(string sceneName, string previousSceneName)
+    {
+        if (string.IsNullOrWhiteSpace(sceneName))
+            return;
+
+        sceneName = sceneName.Trim();
+        campaignSceneOrder.RemoveAll(s => s == sceneName);
+
+        int insertIndex = campaignSceneOrder.Count;
+
+        if (!string.IsNullOrWhiteSpace(previousSceneName))
         {
-            campaignSceneOrder.RemoveAt(warriorIndex);
-            campaignSceneOrder.Insert(0, warriorSceneName);
+            previousSceneName = previousSceneName.Trim();
+            int previousIndex = campaignSceneOrder.IndexOf(previousSceneName);
+            if (previousIndex >= 0)
+                insertIndex = previousIndex + 1;
         }
+
+        insertIndex = Mathf.Clamp(insertIndex, 0, campaignSceneOrder.Count);
+        campaignSceneOrder.Insert(insertIndex, sceneName);
     }
 
     private void LoadProgression()

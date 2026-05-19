@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 6702624970374534674}
   - component: {fileID: 1582777672770621207}
   m_Layer: 6
-  m_Name: plf-blk_1
+  m_Name: plf_blk_1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

@@ -434,7 +434,7 @@ MonoBehaviour:
   useContactReleaseHysteresis: 1
   repeatAttackWhileMainBoxesStillTouchingOnSamePlatform: 1
   warriorEdgeMargin: 1.8
-  sparkPrefab: {fileID: 1973752797466364135, guid: 8fdcc63a1e232cf4a8d281962659c178, type: 3}
+  sparkPrefab: {fileID: 6192724089161036641, guid: e17d9a3f04750764c8c0a7a0461e4c3b, type: 3}
   sparkScale: 1
   sparkDestroyAfter: 0.2
   sparkOffset: {x: 0, y: 0, z: 0}

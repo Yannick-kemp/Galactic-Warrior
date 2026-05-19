@@ -66,6 +66,8 @@ public class HashagarMonster : Enemy
 
     //  NEW: hide Warrior visuals during hold (without disabling the GO)
     private SpriteRenderer[] _warriorSprites;
+    private bool[] _warriorSpritesWereEnabledBeforeHold;
+    private bool _warriorVisualSnapshotValid;
     private int _cachedWarriorId = -1;
 
     private bool IsWarriorShieldUp()
@@ -483,14 +485,16 @@ public class HashagarMonster : Enemy
         if (_warrior == null)
             _warrior = (GameMgr.Instance != null) ? GameMgr.Instance.WarriorInstance : null;
 
-        //  if warrior instance changed (scene reload etc.) refresh cached renderers
         if (_warrior != null)
         {
             int id = _warrior.GetInstanceID();
+
             if (id != _cachedWarriorId)
             {
                 _cachedWarriorId = id;
                 _warriorSprites = null;
+                _warriorSpritesWereEnabledBeforeHold = null;
+                _warriorVisualSnapshotValid = false;
             }
         }
     }
@@ -504,16 +508,64 @@ public class HashagarMonster : Enemy
             _warriorSprites = _warrior.GetComponentsInChildren<SpriteRenderer>(true);
     }
 
-    private void SetWarriorVisible(bool visible)
+    private void HideWarriorVisualsForHashagarHold()
     {
         CacheWarriorVisuals();
-        if (_warriorSprites == null) return;
+
+        if (_warriorSprites == null || _warriorSprites.Length == 0)
+            return;
+
+        // Take the snapshot only once per Attack2 hold.
+        // If this is overwritten after the Warrior is already hidden,
+        // the normal renderers are saved as false and never recover.
+        if (!_warriorVisualSnapshotValid ||
+            _warriorSpritesWereEnabledBeforeHold == null ||
+            _warriorSpritesWereEnabledBeforeHold.Length != _warriorSprites.Length)
+        {
+            _warriorSpritesWereEnabledBeforeHold = new bool[_warriorSprites.Length];
+
+            for (int i = 0; i < _warriorSprites.Length; i++)
+            {
+                SpriteRenderer sr = _warriorSprites[i];
+                _warriorSpritesWereEnabledBeforeHold[i] = sr != null && sr.enabled;
+            }
+
+            _warriorVisualSnapshotValid = true;
+        }
 
         for (int i = 0; i < _warriorSprites.Length; i++)
         {
-            if (_warriorSprites[i] != null)
-                _warriorSprites[i].enabled = visible;
+            SpriteRenderer sr = _warriorSprites[i];
+            if (sr != null)
+                sr.enabled = false;
         }
+    }
+
+    private void RestoreWarriorVisualsAfterHashagarHold()
+    {
+        CacheWarriorVisuals();
+
+        if (_warriorSprites != null &&
+            _warriorVisualSnapshotValid &&
+            _warriorSpritesWereEnabledBeforeHold != null &&
+            _warriorSpritesWereEnabledBeforeHold.Length == _warriorSprites.Length)
+        {
+            for (int i = 0; i < _warriorSprites.Length; i++)
+            {
+                SpriteRenderer sr = _warriorSprites[i];
+                if (sr != null)
+                    sr.enabled = _warriorSpritesWereEnabledBeforeHold[i];
+            }
+        }
+
+        _warriorSpritesWereEnabledBeforeHold = null;
+        _warriorVisualSnapshotValid = false;
+
+        // Final correction: let Warrior restore its own default visual setup.
+        // This prevents the Hivernox frozen overlay from staying visible,
+        // and also prevents the default Warrior renderers from staying hidden.
+        if (_warrior != null)
+            _warrior.ForceRestoreNormalVisualsAfterExternalHide();
     }
 
     private void CacheAttack2Clip()
@@ -610,7 +662,7 @@ public class HashagarMonster : Enemy
             rb.angularVelocity = 0f;
         }
 
-        SetWarriorVisible(false);
+        HideWarriorVisualsForHashagarHold();
         _warriorDisabledByHold = true;
     }
 
@@ -632,7 +684,7 @@ public class HashagarMonster : Enemy
             rb.angularVelocity = 0f;
         }
 
-        SetWarriorVisible(false);
+        HideWarriorVisualsForHashagarHold();
         _warriorDisabledByHold = true;
     }
 
@@ -645,12 +697,16 @@ public class HashagarMonster : Enemy
         CacheWarriorRefs();
         if (_warrior == null) return;
 
-        if (!force && !_warriorDisabledByHold) return;
+        bool hashagarActuallyDisabledWarrior =
+            _warriorDisabledByHold || _warriorVisualSnapshotValid;
+
+        if (!hashagarActuallyDisabledWarrior)
+            return;
 
         _warrior.CanMove = true;
         _warrior.CanAttackWarrior = true;
-        //  Show visuals again
-        SetWarriorVisible(true);
+
+        RestoreWarriorVisualsAfterHashagarHold();
 
         if (_warrior.collider2 != null && NormalCollider != null)
             Physics2D.IgnoreCollision(_warrior.collider2, NormalCollider, false);
@@ -662,16 +718,17 @@ public class HashagarMonster : Enemy
             float warriorHalfX = _warrior.collider2.bounds.extents.x;
             float myEdge = (dir > 0f) ? NormalCollider.bounds.max.x : NormalCollider.bounds.min.x;
 
-            // push warrior fully OUTSIDE our collider
-            float targetX = myEdge + (dir > 0f ? +(warriorHalfX + releaseNudgePadding)
-                                              : -(warriorHalfX + releaseNudgePadding));
+            // Push Warrior fully outside Hashagar's collider.
+            float targetX = myEdge + (dir > 0f
+                ? +(warriorHalfX + releaseNudgePadding)
+                : -(warriorHalfX + releaseNudgePadding));
 
-            var p = _warrior.transform.position;
+            Vector3 p = _warrior.transform.position;
             p.x = targetX;
             _warrior.transform.position = p;
         }
 
-
+        _noStepBackUntil = Time.time + noStepBackAfterReleaseSeconds;
         _warriorDisabledByHold = false;
     }
 
@@ -795,7 +852,7 @@ public class HashagarMonster : Enemy
 
     private float _lastImpactTime = -999f;
 
-  //  private bool _impact02HitDone;
+    //  private bool _impact02HitDone;
     public void AE_SpawnImpact02()
     {
         // only during Attack2 melee
