@@ -1709,6 +1709,24 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 ForceDeathImmediate();
             }
         }
+
+        [Header("Warrior Top Ping-Pong")]
+        [SerializeField] private bool participatesInWarriorTopPingPongEscape = true;
+
+        public virtual bool CanCauseWarriorTopPingPongTrap =>
+            participatesInWarriorTopPingPongEscape &&
+            !IsDeadOrDying &&
+            currentHealth > 0f;
+
+        public virtual Collider2D WarriorTopPingPongCollider =>
+            NormalCollider != null ? NormalCollider : collider2;
+
+        public virtual void OnWarriorTopPingPongTrapBroken(Warrior warrior)
+        {
+            // Optional extension point.
+            // Most enemies do nothing.
+            // A special enemy can override this to step aside, stop attacking, etc.
+        }
     }
 
 

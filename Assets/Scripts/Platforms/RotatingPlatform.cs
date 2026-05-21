@@ -116,10 +116,26 @@ public class RotatingPlatform : PlatFormPlfColliderTrigger
     {
         base.FixedUpdate();
 
+        RemoveInvalidPassengersBeforeMove();
+
+        if (!CanRunPlatformMotion)
+        {
+            _platformPosition = _platformBody != null
+                ? _platformBody.position
+                : (Vector2)transform.position;
+
+            _lastCarryDelta = Vector2.zero;
+            _lastCarryFixedTime = Time.fixedTime;
+
+            // Motion is disabled, but passenger validation / light seating can stay active.
+            if (carryWarriorAndZalayty)
+                CarryPassengers(Vector2.zero);
+
+            return;
+        }
+
         if (centerOverride != null)
             _center = centerOverride.position;
-
-        RemoveInvalidPassengersBeforeMove();
 
         Vector2 oldPosition = _platformPosition;
 

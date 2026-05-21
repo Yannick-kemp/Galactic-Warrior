@@ -89,12 +89,14 @@ namespace Assets.Scripts.Platforms
         // would report the next direction too early and can make pass-through logic
         // treat Zalayty as unsupported during the turn frame.
         public bool IsMovingUpNow =>
-            _lastLiftDelta.y > LiftDirectionEpsilon ||
-            (Mathf.Abs(_lastLiftDelta.y) <= LiftDirectionEpsilon && _isMovingUp);
+            CanRunPlatformMotion &&
+            (_lastLiftDelta.y > LiftDirectionEpsilon ||
+             (Mathf.Abs(_lastLiftDelta.y) <= LiftDirectionEpsilon && _isMovingUp));
 
         public bool IsMovingDownNow =>
-            _lastLiftDelta.y < -LiftDirectionEpsilon ||
-            (Mathf.Abs(_lastLiftDelta.y) <= LiftDirectionEpsilon && !_isMovingUp);
+            CanRunPlatformMotion &&
+            (_lastLiftDelta.y < -LiftDirectionEpsilon ||
+             (Mathf.Abs(_lastLiftDelta.y) <= LiftDirectionEpsilon && !_isMovingUp));
 
         public Vector2 LastLiftDelta => _lastLiftDelta;
 
@@ -131,6 +133,17 @@ namespace Assets.Scripts.Platforms
         protected override void FixedUpdate()
         {
             base.FixedUpdate();
+
+            if (!CanRunPlatformMotion)
+            {
+                _lastLiftDelta = Vector2.zero;
+
+                // Motion is disabled, but rider validation / surface seating can stay active.
+                if (carryCharactersLikeLift)
+                    CarryRegisteredRiders(_lastLiftDelta);
+
+                return;
+            }
 
             _lastLiftDelta = MovePlatformStep();
 

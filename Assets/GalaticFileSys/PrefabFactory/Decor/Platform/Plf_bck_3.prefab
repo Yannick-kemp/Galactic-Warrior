@@ -302,7 +302,7 @@ PrefabInstance:
     - target: {fileID: 8668228748519376013, guid: fc18dcf1738d09f4d81545f53a1a218a, type: 3}
       propertyPath: initialTheme
       value: 
-      objectReference: {fileID: 11400000, guid: 2b6e4cd25d1e4c44a825ee758fd2447f, type: 2}
+      objectReference: {fileID: 11400000, guid: 055d3cf2bb5ee0e4dabb64286ed0b435, type: 2}
     - target: {fileID: 8668228748519376013, guid: fc18dcf1738d09f4d81545f53a1a218a, type: 3}
       propertyPath: mainRenderer
       value: 

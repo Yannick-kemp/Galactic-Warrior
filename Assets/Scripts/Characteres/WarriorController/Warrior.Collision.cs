@@ -26,40 +26,51 @@ namespace Assets.Scripts.Characteres.WarriorController
         private Vector2 _lastPhysicsFallAntiTunnelPosition;
         private bool _hasLastPhysicsFallAntiTunnelPosition;
 
-        [Header("Zalayty Top Ping-Pong Escape - Warrior Side")]
-        [SerializeField] private bool enableZalaytyTopPingPongEscape = true;
+        [Header("Enemy Top Ping-Pong Escape - Warrior Side")]
+        [SerializeField] private bool enableEnemyTopPingPongEscape = true;
 
-        [Tooltip("How long Warrior may stay in post-bounce / controlled jump on top of nearby Zalaytys before we force a natural fall.")]
-        [SerializeField, Min(0.05f)] private float zalaytyTopTrapMinStuckTime = 0.28f;
+        [Tooltip("How long Warrior may stay in post-bounce / controlled jump on top of nearby enemies before we force a natural fall.")]
+        [SerializeField, Min(0.05f)] private float enemyTopTrapMinStuckTime = 0.28f;
 
-        [Tooltip("Repeated Warrior-on-Zalayty-top contacts inside this window count as ping-pong.")]
-        [SerializeField, Min(0.1f)] private float zalaytyTopTrapWindow = 1.20f;
+        [Tooltip("Repeated Warrior-on-enemy-top contacts inside this window count as ping-pong.")]
+        [SerializeField, Min(0.1f)] private float enemyTopTrapWindow = 1.20f;
 
-        [Tooltip("How many Warrior-on-Zalayty-top contacts are allowed before breaking the loop. Keep this low because OnCollisionStay may not register Enter on the second Zalayty.")]
-        [SerializeField, Min(1)] private int zalaytyTopTrapBounceThreshold = 2;
+        [Tooltip("Fallback safety threshold. The normal rule below is: bounce each nearby enemy top once, then force final landing.")]
+        [SerializeField, Min(2)] private int enemyTopTrapBounceThreshold = 2;
 
-        [Tooltip("Nearby search width around Warrior. Two Zalaytys inside this zone can create the ping-pong bridge.")]
-        [SerializeField, Min(0f)] private float zalaytyTopTrapNearbyRadiusX = 4.0f;
+        [Tooltip("ON = Warrior may use each nearby Enemy top-bound once as a bounce pad. After every known nearby enemy top was used once, Warrior performs a final landing instead of bouncing forever.")]
+        [SerializeField] private bool enemyTopTrapBounceEachEnemyOnceBeforeLanding = true;
+
+        [Tooltip("ON = after the last allowed enemy-top bounce, temporarily ignore all nearby enemy body colliders for the full ignore window so the final landing cannot be interrupted by another enemy top.")]
+        [SerializeField] private bool enemyTopTrapIgnoreAllEnemiesDuringFinalLanding = true;
+
+        [Tooltip("Nearby search width around Warrior. Multiple enemies inside this zone can create the ping-pong bridge.")]
+        [SerializeField, Min(0f)] private float enemyTopTrapNearbyRadiusX = 4.0f;
 
         [Tooltip("Nearby search height around Warrior. Keep this modest so enemies far above/below are ignored.")]
-        [SerializeField, Min(0f)] private float zalaytyTopTrapNearbyRadiusY = 2.5f;
+        [SerializeField, Min(0f)] private float enemyTopTrapNearbyRadiusY = 2.5f;
 
-        [Tooltip("How long Warrior ignores nearby Zalayty colliders after the trap breaks so he can fall through the gap naturally.")]
-        [SerializeField, Min(0.05f)] private float zalaytyTopTrapIgnoreCollisionTime = 0.65f;
+        [Tooltip("How long Warrior ignores nearby enemy colliders after the trap breaks so he can fall through the gap naturally.")]
+        [SerializeField, Min(0.05f)] private float enemyTopTrapIgnoreCollisionTime = 0.65f;
+
+        [Tooltip("Extra clearance required before enemy collisions are restored early.")]
+        [SerializeField, Min(0f)] private float enemyTopTrapRestoreClearance = 0.03f;
 
         [Tooltip("Gravity used when forcing Warrior out of the stale top-bounce jump.")]
-        [SerializeField, Min(0f)] private float zalaytyTopTrapFallGravity = 3.5f;
+        [SerializeField, Min(0f)] private float enemyTopTrapFallGravity = 3.5f;
 
         [Tooltip("Minimum downward velocity applied when the ping-pong trap is broken.")]
-        [SerializeField, Min(0f)] private float zalaytyTopTrapMinDownVelocity = 1.25f;
+        [SerializeField, Min(0f)] private float enemyTopTrapMinDownVelocity = 1.25f;
 
-        [Tooltip("Ask nearby Zalaytys to side-step away via SendMessage if their script exposes ForceAntiPingPongSideStepAwayFromWarrior(Warrior). Safe if the method does not exist.")]
-        [SerializeField] private bool notifyZalaytysToSideStepOnTopTrap = true;
+        [Tooltip("Optional: asks nearby enemies to side-step away via SendMessage if their script exposes ForceAntiPingPongSideStepAwayFromWarrior(Warrior). Safe if the method does not exist.")]
+        [SerializeField] private bool notifyEnemiesToSideStepOnTopTrap = true;
 
-        private float _zalaytyTopTrapWindowStartedAt = -999f;
-        private int _zalaytyTopTrapBounceCount;
-        private readonly HashSet<int> _zalaytyTopTrapTouchedIds = new HashSet<int>();
-        private Coroutine _zalaytyTopTrapIgnoreRoutine;
+        private float _enemyTopTrapWindowStartedAt = -999f;
+        private int _enemyTopTrapBounceCount;
+        private readonly HashSet<int> _enemyTopTrapTouchedIds = new HashSet<int>();
+        private int _enemyTopTrapLatestRegisteredEnemyId = -1;
+        private bool _enemyTopTrapLatestRegisteredEnemyWasUnique;
+        private Coroutine _enemyTopTrapIgnoreRoutine;
 
         #endregion
 
@@ -85,7 +96,7 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             if (enemy != null)
             {
-                if (TryBreakZalaytyTopPingPongTrap(enemy, collision, registerBounceContact: true))
+                if (TryBreakEnemyTopPingPongTrap(enemy, collision, registerBounceContact: true))
                     return;
 
                 if (DescendentPhase && CountGroundPoints() == 0)
@@ -112,7 +123,6 @@ namespace Assets.Scripts.Characteres.WarriorController
                     IsFallingHitEnemy = true;
                     StopJumpTowardCoroutine();
                     WaitAnimationDisplay();
-
                 }
 
                 if (!_postBounceActive && !IsFalling && activesJumpCoroutine == null)
@@ -143,6 +153,13 @@ namespace Assets.Scripts.Characteres.WarriorController
                     return;
                 }
             }
+
+            // Important:
+            // The generic ping-pong guard must run BEFORE enemy.CurrentplatForm == null return.
+            // Some enemies may temporarily lose CurrentplatForm during moving-platform / edge / jump transitions,
+            // but their top collider can still catch Warrior and create the ping-pong loop.
+            if (enemy != null && TryBreakEnemyTopPingPongTrap(enemy, collision, registerBounceContact: false))
+                return;
 
             // ── Morvex-top stuck guard ────────────────────────────────────────────────
             // Morvex flies with gravityScale = 0 and moves via transform.position, so
@@ -181,9 +198,6 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             if (enemy == null || enemy.CurrentplatForm == null) return;
 
-            if (TryBreakZalaytyTopPingPongTrap(enemy, collision, registerBounceContact: false))
-                return;
-
             if (!_postBounceActive && !IsFalling && activesJumpCoroutine == null)
             {
                 StopRunningOnEnemyContact(enemy);
@@ -219,100 +233,239 @@ namespace Assets.Scripts.Characteres.WarriorController
                 _cmp = 0;
         }
 
-        private bool TryBreakZalaytyTopPingPongTrap(Enemy enemy, Collision2D collision, bool registerBounceContact)
+        private bool TryBreakEnemyTopPingPongTrap(Enemy enemy, Collision2D collision, bool registerBounceContact)
         {
-            if (!enableZalaytyTopPingPongEscape)
+            if (!enableEnemyTopPingPongEscape)
                 return false;
 
-            ZalaytyMonster touchedZalayty = enemy as ZalaytyMonster;
-            if (touchedZalayty == null)
+            if (enemy == null || collider2 == null)
                 return false;
 
-            if (collider2 == null)
+            if (!CanEnemyParticipateInTopPingPong(enemy))
                 return false;
 
-            bool warriorOnZalaytyTop =
+            bool warriorOnEnemyTop =
                 WarriorSitsOnEnemyTop(enemy) ||
                 WarriorOverlay(enemy) ||
                 IsWarriorLandingOnEnemyTopByCollision(collision);
 
-            if (!warriorOnZalaytyTop)
+            if (!warriorOnEnemyTop)
                 return false;
 
-            List<ZalaytyMonster> nearbyZalaytys = GetNearbyZalaytiesForTopTrap();
+            List<Enemy> nearbyEnemies = GetNearbyEnemiesForTopTrap(enemy);
 
-            // Keep normal behavior with one Zalayty. The trap is created by two bodies
-            // repeatedly catching Warrior during the controlled BounceAndLandAway jump.
-            if (nearbyZalaytys.Count < 2)
+            // Keep normal behavior with only one nearby enemy.
+            // The special chain rule exists only for the multi-enemy top-bounce bridge.
+            if (nearbyEnemies.Count < 2)
                 return false;
 
-            if (registerBounceContact || Time.time > _zalaytyTopTrapWindowStartedAt + zalaytyTopTrapWindow)
-                RegisterZalaytyTopTrapBounce(touchedZalayty);
-            else
-                _zalaytyTopTrapTouchedIds.Add(touchedZalayty.GetInstanceID());
+            RegisterEnemyTopTrapBounce(enemy, registerBounceContact);
 
-            bool repeatedBounce = _zalaytyTopTrapBounceCount >= zalaytyTopTrapBounceThreshold;
-            bool touchedSeveralZalaytys = _zalaytyTopTrapTouchedIds.Count >= 2;
+            bool touchedAtLeastTwoDifferentEnemies =
+                _enemyTopTrapTouchedIds.Count >= 2;
+
+            bool currentEnemyWasAlreadyUsed =
+                _enemyTopTrapTouchedIds.Contains(enemy.GetInstanceID()) &&
+                !IsLatestRegisteredEnemyUnique(enemy, nearbyEnemies);
+
+            bool hasUnbouncedNearbyEnemy =
+                HasUnbouncedEnemyTopCandidate(nearbyEnemies);
+
             bool stalePostBounce =
                 _postBounceActive &&
-                Time.time >= _postBounceStartTime + zalaytyTopTrapMinStuckTime;
+                Time.time >= _postBounceStartTime + enemyTopTrapMinStuckTime;
+
             bool staleControlledJump =
                 activesJumpCoroutine != null &&
                 CountGroundPoints() == 0 &&
-                Time.time >= _postBounceStartTime + zalaytyTopTrapMinStuckTime;
+                Time.time >= _postBounceStartTime + enemyTopTrapMinStuckTime;
 
-            if (!repeatedBounce && !touchedSeveralZalaytys && !stalePostBounce && !staleControlledJump)
+            if (enemyTopTrapBounceEachEnemyOnceBeforeLanding)
+            {
+                // Rule:
+                // Each nearby enemy top-bound may be used once as a bounce pad.
+                // If there is still another nearby enemy that was not used, bounce away from this one.
+                if (IsLatestRegisteredEnemyUnique(enemy, nearbyEnemies) && hasUnbouncedNearbyEnemy)
+                {
+                    ContinueEnemyTopBounceChainFrom(enemy, nearbyEnemies);
+                    return true;
+                }
+
+                // If this was the last known nearby enemy top, let Warrior bounce from it once,
+                // then ignore all nearby enemies so the jump can finish as a safe landing.
+                if (IsLatestRegisteredEnemyUnique(enemy, nearbyEnemies) &&
+                    touchedAtLeastTwoDifferentEnemies &&
+                    !hasUnbouncedNearbyEnemy)
+                {
+                    FinishEnemyTopBounceChainWithFinalBounce(enemy, nearbyEnemies);
+                    return true;
+                }
+
+                // If Warrior touches an enemy top already used in the same chain, do not bounce again.
+                // This is the hard anti-loop rule: one enemy top = one bounce maximum per chain.
+                if (currentEnemyWasAlreadyUsed &&
+                    touchedAtLeastTwoDifferentEnemies &&
+                    (_postBounceActive || stalePostBounce || staleControlledJump || registerBounceContact))
+                {
+                    BreakEnemyTopPingPongTrap(nearbyEnemies);
+                    return true;
+                }
+            }
+
+            // Fallback safety:
+            // If for any reason the chain mode above does not finish the situation,
+            // keep the old threshold behavior as a last resort.
+            bool repeatedBounce =
+                _enemyTopTrapBounceCount >= enemyTopTrapBounceThreshold;
+
+            bool confirmedMultiEnemyTopPingPong =
+                repeatedBounce &&
+                touchedAtLeastTwoDifferentEnemies;
+
+            bool staleMultiEnemyTrap =
+                touchedAtLeastTwoDifferentEnemies &&
+                (stalePostBounce || staleControlledJump);
+
+            if (!confirmedMultiEnemyTopPingPong && !staleMultiEnemyTrap)
                 return false;
 
-            BreakZalaytyTopPingPongTrap(nearbyZalaytys);
+            BreakEnemyTopPingPongTrap(nearbyEnemies);
             return true;
         }
 
-        private void RegisterZalaytyTopTrapBounce(ZalaytyMonster zalayty)
+        private void RegisterEnemyTopTrapBounce(Enemy enemy, bool forceCountBounce)
         {
-            if (zalayty == null)
+            _enemyTopTrapLatestRegisteredEnemyId = -1;
+            _enemyTopTrapLatestRegisteredEnemyWasUnique = false;
+
+            if (enemy == null)
                 return;
 
-            if (Time.time > _zalaytyTopTrapWindowStartedAt + zalaytyTopTrapWindow)
-            {
-                _zalaytyTopTrapWindowStartedAt = Time.time;
-                _zalaytyTopTrapBounceCount = 0;
-                _zalaytyTopTrapTouchedIds.Clear();
-            }
+            if (Time.time > _enemyTopTrapWindowStartedAt + enemyTopTrapWindow)
+                ResetEnemyTopTrapTracking();
 
-            _zalaytyTopTrapBounceCount++;
-            _zalaytyTopTrapTouchedIds.Add(zalayty.GetInstanceID());
+            if (_enemyTopTrapWindowStartedAt < 0f)
+                _enemyTopTrapWindowStartedAt = Time.time;
+
+            int id = enemy.GetInstanceID();
+            bool firstTimeThisEnemyInWindow = _enemyTopTrapTouchedIds.Add(id);
+
+            _enemyTopTrapLatestRegisteredEnemyId = id;
+            _enemyTopTrapLatestRegisteredEnemyWasUnique = firstTimeThisEnemyInWindow;
+
+            // OnCollisionEnter counts as a bounce.
+            // OnCollisionStay counts only when it discovers a new enemy top that Enter missed.
+            if (forceCountBounce || firstTimeThisEnemyInWindow)
+                _enemyTopTrapBounceCount++;
         }
 
-        private List<ZalaytyMonster> GetNearbyZalaytiesForTopTrap()
+        private bool IsLatestRegisteredEnemyUnique(Enemy enemy, List<Enemy> nearbyEnemies)
         {
-            List<ZalaytyMonster> result = new List<ZalaytyMonster>();
+            if (enemy == null)
+                return false;
+
+            return _enemyTopTrapLatestRegisteredEnemyWasUnique &&
+                   _enemyTopTrapLatestRegisteredEnemyId == enemy.GetInstanceID();
+        }
+
+        private bool HasUnbouncedEnemyTopCandidate(List<Enemy> nearbyEnemies)
+        {
+            if (nearbyEnemies == null)
+                return false;
+
+            for (int i = 0; i < nearbyEnemies.Count; i++)
+            {
+                Enemy candidate = nearbyEnemies[i];
+
+                if (!CanEnemyParticipateInTopPingPong(candidate))
+                    continue;
+
+                if (!_enemyTopTrapTouchedIds.Contains(candidate.GetInstanceID()))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private void ResetEnemyTopTrapTracking()
+        {
+            _enemyTopTrapWindowStartedAt = Time.time;
+            _enemyTopTrapBounceCount = 0;
+            _enemyTopTrapTouchedIds.Clear();
+            _enemyTopTrapLatestRegisteredEnemyId = -1;
+            _enemyTopTrapLatestRegisteredEnemyWasUnique = false;
+        }
+
+        private List<Enemy> GetNearbyEnemiesForTopTrap(Enemy touchedEnemy)
+        {
+            List<Enemy> result = new List<Enemy>();
 
             if (collider2 == null)
                 return result;
 
             Vector2 warriorCenter = collider2.bounds.center;
-            ZalaytyMonster[] allZalaytys = FindObjectsByType<ZalaytyMonster>(FindObjectsSortMode.None);
+            Enemy[] allEnemies = FindObjectsByType<Enemy>(FindObjectsSortMode.None);
 
-            for (int i = 0; i < allZalaytys.Length; i++)
+            for (int i = 0; i < allEnemies.Length; i++)
             {
-                ZalaytyMonster z = allZalaytys[i];
-                if (z == null || z.currentHealth <= 0f)
+                Enemy enemy = allEnemies[i];
+
+                if (!CanEnemyParticipateInTopPingPong(enemy))
                     continue;
 
-                Collider2D zCollider = z.NormalCollider != null ? z.NormalCollider : z.collider2;
-                if (zCollider == null)
+                Collider2D enemyCollider = GetEnemyTopTrapCollider(enemy);
+                if (enemyCollider == null || !enemyCollider.enabled)
                     continue;
 
-                Vector2 zCenter = zCollider.bounds.center;
-                float dx = Mathf.Abs(zCenter.x - warriorCenter.x);
-                float dy = Mathf.Abs(zCenter.y - warriorCenter.y);
+                Vector2 enemyCenter = enemyCollider.bounds.center;
+                float dx = Mathf.Abs(enemyCenter.x - warriorCenter.x);
+                float dy = Mathf.Abs(enemyCenter.y - warriorCenter.y);
 
-                if (dx <= zalaytyTopTrapNearbyRadiusX && dy <= zalaytyTopTrapNearbyRadiusY)
-                    result.Add(z);
+                if (dx <= enemyTopTrapNearbyRadiusX &&
+                    dy <= enemyTopTrapNearbyRadiusY)
+                {
+                    result.Add(enemy);
+                }
             }
 
+            // Safety: make sure the touched enemy is included even if FindObjectsByType
+            // misses it during a frame where the object was just enabled/spawned.
+            if (touchedEnemy != null && !result.Contains(touchedEnemy))
+                result.Add(touchedEnemy);
+
             return result;
+        }
+
+        private bool CanEnemyParticipateInTopPingPong(Enemy enemy)
+        {
+            if (enemy == null)
+                return false;
+
+            if (!enemy.gameObject.activeInHierarchy)
+                return false;
+
+            if (!enemy.CanCauseWarriorTopPingPongTrap)
+                return false;
+
+            Collider2D enemyCollider = GetEnemyTopTrapCollider(enemy);
+            return enemyCollider != null && enemyCollider.enabled && !enemyCollider.isTrigger;
+        }
+
+        private Collider2D GetEnemyTopTrapCollider(Enemy enemy)
+        {
+            if (enemy == null)
+                return null;
+
+            if (enemy.WarriorTopPingPongCollider != null)
+                return enemy.WarriorTopPingPongCollider;
+
+            if (enemy.NormalCollider != null)
+                return enemy.NormalCollider;
+
+            if (enemy.collider2 != null)
+                return enemy.collider2;
+
+            return enemy.GetComponentInChildren<Collider2D>();
         }
 
         private bool IsWarriorLandingOnEnemyTopByCollision(Collision2D collision)
@@ -333,11 +486,54 @@ namespace Assets.Scripts.Characteres.WarriorController
             return false;
         }
 
-        private void BreakZalaytyTopPingPongTrap(List<ZalaytyMonster> nearbyZalaytys)
+        private void ContinueEnemyTopBounceChainFrom(Enemy enemy, List<Enemy> nearbyEnemies)
         {
-            _zalaytyTopTrapBounceCount = 0;
-            _zalaytyTopTrapTouchedIds.Clear();
-            _zalaytyTopTrapWindowStartedAt = Time.time;
+            if (enemy == null)
+                return;
+
+            if (DescendentPhase && CountGroundPoints() == 0 && ShieldIsUp)
+                DoShieldStomp(enemy);
+
+            if (_postBounceActive)
+                EndPostBounce();
+
+            BounceAndLandAway(enemy);
+        }
+
+        private void FinishEnemyTopBounceChainWithFinalBounce(Enemy enemy, List<Enemy> nearbyEnemies)
+        {
+            if (enemy == null)
+            {
+                BreakEnemyTopPingPongTrap(nearbyEnemies);
+                return;
+            }
+
+            if (DescendentPhase && CountGroundPoints() == 0 && ShieldIsUp)
+                DoShieldStomp(enemy);
+
+            if (_postBounceActive)
+                EndPostBounce();
+
+            // This is the last allowed enemy-top bounce in the current cluster.
+            // Warrior still visually bounces from this enemy once, then all nearby
+            // enemy colliders are ignored long enough for the landing to complete.
+            BounceAndLandAway(enemy);
+
+            if (_enemyTopTrapIgnoreRoutine != null)
+                StopCoroutine(_enemyTopTrapIgnoreRoutine);
+
+            _enemyTopTrapIgnoreRoutine =
+                StartCoroutine(TemporarilyIgnoreNearbyEnemiesForTopTrap(
+                    nearbyEnemies,
+                    waitFullDuration: enemyTopTrapIgnoreAllEnemiesDuringFinalLanding));
+
+            NotifyNearbyEnemiesToSideStep(nearbyEnemies);
+            ResetEnemyTopTrapTracking();
+        }
+
+        private void BreakEnemyTopPingPongTrap(List<Enemy> nearbyEnemies)
+        {
+            ResetEnemyTopTrapTracking();
 
             StopJumpTowardCoroutine();
             StopMoveTowardCoroutine();
@@ -365,13 +561,16 @@ namespace Assets.Scripts.Characteres.WarriorController
                 constraints |= RigidbodyConstraints2D.FreezeRotation;
                 rigidbody2.constraints = constraints;
 
-                rigidbody2.gravityScale = Mathf.Max(rigidbody2.gravityScale, zalaytyTopTrapFallGravity);
+                rigidbody2.gravityScale =
+                    Mathf.Max(rigidbody2.gravityScale, enemyTopTrapFallGravity);
 
                 Vector2 velocity = rigidbody2.linearVelocity;
+
+                // Stop horizontal bridge ping-pong.
                 velocity.x = 0f;
 
-                if (velocity.y > -zalaytyTopTrapMinDownVelocity)
-                    velocity.y = -zalaytyTopTrapMinDownVelocity;
+                if (velocity.y > -enemyTopTrapMinDownVelocity)
+                    velocity.y = -enemyTopTrapMinDownVelocity;
 
                 rigidbody2.linearVelocity = velocity;
                 rigidbody2.WakeUp();
@@ -379,73 +578,138 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             JumpAnimationDisplay();
 
-            if (_zalaytyTopTrapIgnoreRoutine != null)
-                StopCoroutine(_zalaytyTopTrapIgnoreRoutine);
+            if (_enemyTopTrapIgnoreRoutine != null)
+                StopCoroutine(_enemyTopTrapIgnoreRoutine);
 
-            _zalaytyTopTrapIgnoreRoutine =
-                StartCoroutine(TemporarilyIgnoreNearbyZalaytiesForTopTrap(nearbyZalaytys));
+            _enemyTopTrapIgnoreRoutine =
+                StartCoroutine(TemporarilyIgnoreNearbyEnemiesForTopTrap(
+                    nearbyEnemies,
+                    waitFullDuration: false));
 
-            NotifyNearbyZalaytysToSideStep(nearbyZalaytys);
+            NotifyNearbyEnemiesToSideStep(nearbyEnemies);
         }
 
-        private IEnumerator TemporarilyIgnoreNearbyZalaytiesForTopTrap(List<ZalaytyMonster> zalaytys)
+        private IEnumerator TemporarilyIgnoreNearbyEnemiesForTopTrap(List<Enemy> enemies, bool waitFullDuration)
         {
-            SetIgnoreNearbyZalayties(zalaytys, true);
+            SetIgnoreNearbyEnemies(enemies, true);
 
-            yield return new WaitForSeconds(zalaytyTopTrapIgnoreCollisionTime);
+            float timeoutAt = Time.time + enemyTopTrapIgnoreCollisionTime;
 
-            SetIgnoreNearbyZalayties(zalaytys, false);
-            _zalaytyTopTrapIgnoreRoutine = null;
+            while (Time.time < timeoutAt)
+            {
+                if (!waitFullDuration && AreWarriorAndNearbyEnemiesClear(enemies))
+                    break;
+
+                yield return new WaitForFixedUpdate();
+            }
+
+            SetIgnoreNearbyEnemies(enemies, false);
+            _enemyTopTrapIgnoreRoutine = null;
         }
 
-        private void SetIgnoreNearbyZalayties(List<ZalaytyMonster> zalaytys, bool ignore)
+        private void SetIgnoreNearbyEnemies(List<Enemy> enemies, bool ignore)
         {
-            if (zalaytys == null)
+            if (enemies == null)
                 return;
 
             Collider2D[] warriorColliders = GetComponentsInChildren<Collider2D>(true);
 
-            for (int i = 0; i < zalaytys.Count; i++)
+            for (int i = 0; i < enemies.Count; i++)
             {
-                ZalaytyMonster z = zalaytys[i];
-                if (z == null)
+                Enemy enemy = enemies[i];
+                if (enemy == null)
                     continue;
 
-                Collider2D[] zColliders = z.GetComponentsInChildren<Collider2D>(true);
+                Collider2D[] enemyColliders = enemy.GetComponentsInChildren<Collider2D>(true);
 
                 for (int w = 0; w < warriorColliders.Length; w++)
                 {
                     Collider2D warriorCollider = warriorColliders[w];
-                    if (warriorCollider == null || !warriorCollider.enabled || warriorCollider.isTrigger)
+
+                    if (warriorCollider == null ||
+                        !warriorCollider.enabled ||
+                        warriorCollider.isTrigger)
                         continue;
 
-                    for (int e = 0; e < zColliders.Length; e++)
+                    for (int e = 0; e < enemyColliders.Length; e++)
                     {
-                        Collider2D zCollider = zColliders[e];
-                        if (zCollider == null || !zCollider.enabled || zCollider.isTrigger)
+                        Collider2D enemyCollider = enemyColliders[e];
+
+                        if (enemyCollider == null ||
+                            !enemyCollider.enabled ||
+                            enemyCollider.isTrigger)
                             continue;
 
-                        Physics2D.IgnoreCollision(warriorCollider, zCollider, ignore);
+                        Physics2D.IgnoreCollision(warriorCollider, enemyCollider, ignore);
                     }
                 }
             }
         }
 
-        private void NotifyNearbyZalaytysToSideStep(List<ZalaytyMonster> zalaytys)
+        private bool AreWarriorAndNearbyEnemiesClear(List<Enemy> enemies)
         {
-            if (!notifyZalaytysToSideStepOnTopTrap || zalaytys == null)
-                return;
+            if (enemies == null)
+                return true;
 
-            for (int i = 0; i < zalaytys.Count; i++)
+            Collider2D[] warriorColliders = GetComponentsInChildren<Collider2D>(true);
+
+            for (int i = 0; i < enemies.Count; i++)
             {
-                ZalaytyMonster z = zalaytys[i];
-                if (z == null)
+                Enemy enemy = enemies[i];
+                if (enemy == null)
                     continue;
 
-                // Safe optional hook. If ZalaytyMonster has this method, he will step away.
-                // If not, Unity ignores it and Warrior still falls because collisions are
-                // temporarily ignored and the controlled jump was cancelled.
-                z.SendMessage(
+                Collider2D[] enemyColliders = enemy.GetComponentsInChildren<Collider2D>(true);
+
+                for (int w = 0; w < warriorColliders.Length; w++)
+                {
+                    Collider2D warriorCollider = warriorColliders[w];
+
+                    if (warriorCollider == null ||
+                        !warriorCollider.enabled ||
+                        warriorCollider.isTrigger)
+                        continue;
+
+                    for (int e = 0; e < enemyColliders.Length; e++)
+                    {
+                        Collider2D enemyCollider = enemyColliders[e];
+
+                        if (enemyCollider == null ||
+                            !enemyCollider.enabled ||
+                            enemyCollider.isTrigger)
+                            continue;
+
+                        ColliderDistance2D distance =
+                            Physics2D.Distance(warriorCollider, enemyCollider);
+
+                        if (distance.isOverlapped ||
+                            distance.distance < enemyTopTrapRestoreClearance)
+                            return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        private void NotifyNearbyEnemiesToSideStep(List<Enemy> enemies)
+        {
+            if (!notifyEnemiesToSideStepOnTopTrap || enemies == null)
+                return;
+
+            for (int i = 0; i < enemies.Count; i++)
+            {
+                Enemy enemy = enemies[i];
+
+                if (enemy == null)
+                    continue;
+
+                enemy.OnWarriorTopPingPongTrapBroken(this);
+
+                // Safe optional hook.
+                // Existing Zalayty can implement this.
+                // Other enemies ignore it without compile/runtime errors.
+                enemy.SendMessage(
                     "ForceAntiPingPongSideStepAwayFromWarrior",
                     this,
                     SendMessageOptions.DontRequireReceiver);
@@ -462,8 +726,10 @@ namespace Assets.Scripts.Characteres.WarriorController
             _postBounceStartTime = Time.time;
             _lastBouncedEnemy = enemy;
 
-            if (enemy.NormalCollider != null)
-                _requiredClearanceX = enemy.NormalCollider.bounds.extents.x + collider2.bounds.extents.x + clearancePad;
+            Collider2D enemyCollider = GetEnemyTopTrapCollider(enemy);
+
+            if (enemyCollider != null)
+                _requiredClearanceX = enemyCollider.bounds.extents.x + collider2.bounds.extents.x + clearancePad;
             else
                 _requiredClearanceX = collider2.bounds.extents.x + 0.2f;
 
@@ -485,7 +751,8 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private Vector2 CalculateLandingAwayFromEnemy(Enemy enemy, bool plfExitMode)
         {
-            float enemyX = enemy.NormalCollider != null ? enemy.NormalCollider.bounds.center.x : enemy.transform.position.x;
+            Collider2D enemyCollider = GetEnemyTopTrapCollider(enemy);
+            float enemyX = enemyCollider != null ? enemyCollider.bounds.center.x : enemy.transform.position.x;
             float dir = (transform.position.x < enemyX) ? -1f : 1f;
 
             float desiredSeparation = _requiredClearanceX + Mathf.Max(0f, landAwayDistance);
@@ -563,14 +830,12 @@ namespace Assets.Scripts.Characteres.WarriorController
             colA.transform.position += separation;
         }
 
-
-
         private void TriggerJump(Vector2 targetPosition, float height = 2.2f, float duration = 0.6f)
         {
             StopMoveTowardCoroutine();
             StopJumpTowardCoroutine();
 
-            MarkJumpStarted(); // <--- ADD THIS
+            MarkJumpStarted();
 
             JumpAnimationDisplay();
             activesJumpCoroutine = JumpTowardPositionAction(targetPosition, height, duration);
@@ -591,21 +856,34 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private bool WarriorOverlay(Enemy enemy)
         {
+            if (enemy == null || collider2 == null)
+                return false;
+
+            Collider2D enemyCollider = GetEnemyTopTrapCollider(enemy);
+            if (enemyCollider == null)
+                return false;
+
             float warriorBottom = collider2.bounds.min.y;
-            float enemyTop = enemy.NormalCollider.bounds.max.y;
+            float enemyTop = enemyCollider.bounds.max.y;
+
             return warriorBottom >= enemyTop - 0.01f;
         }
 
         /// <summary>
         /// Returns true when the warrior's collider bottom is within CONTACT_Y_TOLERANCE
-        /// of the enemy's NormalCollider top — i.e. he is resting on top of it.
+        /// of the enemy's top collider — i.e. he is resting on top of it.
         /// </summary>
         private bool WarriorSitsOnEnemyTop(Enemy enemy)
         {
-            if (enemy?.NormalCollider == null || collider2 == null) return false;
+            if (enemy == null || collider2 == null)
+                return false;
+
+            Collider2D enemyCollider = GetEnemyTopTrapCollider(enemy);
+            if (enemyCollider == null)
+                return false;
 
             float warriorBottom = collider2.bounds.min.y;
-            float enemyTop = enemy.NormalCollider.bounds.max.y;
+            float enemyTop = enemyCollider.bounds.max.y;
 
             return Mathf.Abs(warriorBottom - enemyTop) <= CONTACT_Y_TOLERANCE;
         }

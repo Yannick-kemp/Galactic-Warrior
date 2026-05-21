@@ -158,6 +158,15 @@ namespace Assets.Scripts.Platforms
             if (_rb == null)
                 return;
 
+            if (!CanRunPlatformMotion)
+            {
+                RememberPlatformDelta(Vector2.zero);
+
+                // Motion is disabled, but passenger validation / light seating can stay active.
+                CarryPassengers(Vector2.zero);
+                return;
+            }
+
             Vector2 current = _rb.position;
             Vector2 next = current;
 
