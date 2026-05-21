@@ -600,7 +600,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5649069418253514439, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -1156,6 +1156,10 @@ PrefabInstance:
     - target: {fileID: 2504946399227555978, guid: 5c6f1a92ae369954fbbc1bbae52103e2, type: 3}
       propertyPath: m_Name
       value: Raka
+      objectReference: {fileID: 0}
+    - target: {fileID: 2504946399227555978, guid: 5c6f1a92ae369954fbbc1bbae52103e2, type: 3}
+      propertyPath: m_IsActive
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
