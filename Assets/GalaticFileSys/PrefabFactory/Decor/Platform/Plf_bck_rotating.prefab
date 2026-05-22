@@ -221,6 +221,7 @@ GameObject:
   - component: {fileID: 31883336412376738}
   - component: {fileID: 5241839290931434373}
   - component: {fileID: 408357779365454138}
+  - component: {fileID: 5592358145387891359}
   m_Layer: 6
   m_Name: Plf_bck_rotating
   m_TagString: Untagged
@@ -405,10 +406,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   platformCollider: {fileID: 8062383137721862977}
   platformTrigger: {fileID: 31883336412376738}
+  platformMotionEnabled: 0
   defaultRenderer: {fileID: 0}
   mainRenderer: {fileID: 2685570082510214208}
   overlayRenderer: {fileID: 5078805795568046411}
-  initialTheme: {fileID: 11400000, guid: ae44a17c017073046b588620600703ac, type: 2}
+  initialTheme: {fileID: 11400000, guid: f1ed0f0689605b3449ffaa95dde46554, type: 2}
   applyInitialThemeOnStart: 1
   hideDefaultRendererWhenThemeApplied: 1
   autoBindDefaultRenderer: 1
@@ -464,3 +466,36 @@ Rigidbody2D:
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 0
+--- !u!114 &5592358145387891359
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5112530203942996760}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 99e2a177cb79e8248938a50a892790f2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mode: 0
+  keyRelic: {fileID: 11400000, guid: 10be32f63ed74764585e8bd4137849cb, type: 2}
+  requiredKeys: 1
+  platformMotionTarget: {fileID: 5241839290931434373}
+  objectToDisableOnUnlock: {fileID: 0}
+  objectToEnableOnUnlock: {fileID: 0}
+  animator: {fileID: 0}
+  onUnlocked:
+    m_PersistentCalls:
+      m_Calls: []
+  onMissingKey:
+    m_PersistentCalls:
+      m_Calls: []
+  onPlatformMotionPromptAvailable:
+    m_PersistentCalls:
+      m_Calls: []
+  onPlatformMotionPromptClosed:
+    m_PersistentCalls:
+      m_Calls: []
+  keyRelicIdOverride: key
+  extraCollidersToDisable: []

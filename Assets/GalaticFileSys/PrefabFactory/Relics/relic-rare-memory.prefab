@@ -209,7 +209,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   definition: {fileID: 11400000, guid: 07063a1c4ca9e5b4398afdef09205dcf, type: 2}
-  armDelay: 0
   pickupVfxPrefab: {fileID: 3478075088277106161, guid: 798123c9326b0bd41b6f60b8da33448c, type: 3}
   pickupVfxOffset: {x: 0, y: 0.2, z: 0}
   parentVfxToWarrior: 0

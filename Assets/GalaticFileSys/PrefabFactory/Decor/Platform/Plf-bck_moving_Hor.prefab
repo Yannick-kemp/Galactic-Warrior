@@ -221,6 +221,7 @@ GameObject:
   - component: {fileID: 8552015165985086351}
   - component: {fileID: 2611256554595507297}
   - component: {fileID: 6547704289311175083}
+  - component: {fileID: 5890545762866366058}
   m_Layer: 6
   m_Name: Plf-bck_moving_Hor
   m_TagString: Untagged
@@ -405,20 +406,54 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   platformCollider: {fileID: 6785547456226989282}
   platformTrigger: {fileID: 8552015165985086351}
+  platformMotionEnabled: 0
+  defaultRenderer: {fileID: 0}
   mainRenderer: {fileID: 7790710115549172433}
   overlayRenderer: {fileID: 5940445395235138023}
-  initialTheme: {fileID: 11400000, guid: 3e9e55fae6bd33b4298375c99eef9630, type: 2}
+  initialTheme: {fileID: 11400000, guid: b1840824bbfe2b24fa9c61dbc71e34c6, type: 2}
   applyInitialThemeOnStart: 1
+  hideDefaultRendererWhenThemeApplied: 1
+  autoBindDefaultRenderer: 1
+  autoBindThemeRenderers: 1
+  maxWarriorSpeed: 20
+  passThroughBuffer: 0.08
+  landingBand: 0.14
+  horizontalLandingSkin: 0.03
+  restoreAfterTriggerExitTimeout: 0.75
+  zalaytyJumpDownRestoreContactSkin: 0.01
   edgeZoneWidth: 0.35
+  enableWarriorAntiLedgeSnag: 1
+  warriorAntiSnagMinUpVelocity: 0.05
+  warriorAntiSnagBelowTopSkin: 0.04
+  warriorAntiSnagTopNormalY: 0.55
+  warriorAntiSnagSideNormalX: 0.35
   xMin: -9
-  xMax: 20
+  xMax: 6.89
   speed: 5
   waitAtLeft: 0.25
   waitAtRight: 0.25
   arriveEpsilon: 0.01
+  carryAllStandingRigidbodies: 1
   exitGraceFixedSteps: 2
   topNormalMin: 0.55
   topPointBuffer: 0.08
+  supportFallbackTopTolerance: 0.14
+  supportFallbackSideTolerance: 0.04
+  movingSupportFallbackSideTolerance: 0.01
+  minRiderWidthOverlapRatio: 0.12
+  movingMinRiderWidthOverlapRatio: 0.02
+  movingTopSupportMemoryTime: 0.08
+  movingEdgeSideGrace: 0.06
+  keepRidersSeatedOnTop: 1
+  seatOnTopOffset: 0.015
+  maxSeatCorrectionPerFixedStep: 0.06
+  respawnId: Plf-bck_moving_Hor
+  respawnSeatOffset: 0.05
+  respawnHorizontalSkin: 0.08
+  respawnVerticalClearance: 0.01
+  registerRespawnedWarriorAsPassenger: 1
+  mergeZalaytyIndependentMoveWithPlatformDelta: 1
+  mergeCharacterCoreMoveWithPlatformDelta: 1
 --- !u!50 &6547704289311175083
 Rigidbody2D:
   serializedVersion: 5
@@ -504,5 +539,41 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 6427047292250704763, guid: 87b171698052e8b4c8fe331730f82027, type: 3}
       insertIndex: -1
       addedObject: {fileID: 5580671649081435733}
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 2399810368481880105, guid: 87b171698052e8b4c8fe331730f82027, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 5890545762866366058}
   m_SourcePrefab: {fileID: 100100000, guid: 87b171698052e8b4c8fe331730f82027, type: 3}
+--- !u!114 &5890545762866366058
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8826158980743357392}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 99e2a177cb79e8248938a50a892790f2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mode: 1
+  keyRelic: {fileID: 11400000, guid: 10be32f63ed74764585e8bd4137849cb, type: 2}
+  requiredKeys: 1
+  platformMotionTarget: {fileID: 2611256554595507297}
+  objectToDisableOnUnlock: {fileID: 0}
+  objectToEnableOnUnlock: {fileID: 0}
+  animator: {fileID: 0}
+  onUnlocked:
+    m_PersistentCalls:
+      m_Calls: []
+  onMissingKey:
+    m_PersistentCalls:
+      m_Calls: []
+  onPlatformMotionPromptAvailable:
+    m_PersistentCalls:
+      m_Calls: []
+  onPlatformMotionPromptClosed:
+    m_PersistentCalls:
+      m_Calls: []
+  keyRelicIdOverride: relic_key
+  extraCollidersToDisable: []

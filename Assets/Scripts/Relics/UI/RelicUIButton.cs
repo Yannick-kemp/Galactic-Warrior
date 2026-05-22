@@ -1,6 +1,7 @@
 using Assets.Scripts.Characteres.WarriorController;
 using Assets.Scripts.Relics.Core;
 using Assets.Scripts.Relics.Definitions;
+using Assets.Scripts.Relics.World;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -19,122 +20,193 @@ namespace Assets.Scripts.Relics.UI
         [SerializeField] private Image iconImage;
         [SerializeField] private TMP_Text countText;
 
-        [Header("Use Behavior")]
+        [Header("Click Handling")]
+        [Tooltip(
+            "OFF when this button is controlled by RelicUIController. " +
+            "Recommended OFF for KeyRelic buttons. " +
+            "Use ON only for old/standalone buttons that are not listed in RelicUIController rules."
+        )]
+        [SerializeField] private bool bindInternalClick = false;
+
+        [Header("Generic Use Behavior")]
         [SerializeField] private bool consumeOneOnUse = true;
         [SerializeField] private float fallbackAttack2Duration = 1.0f;
         [SerializeField] private float fallbackAttack2Cooldown = 6f;
-        [SerializeField] private bool triggerAttackImmediately = true;
         [SerializeField] private float worldInputBlockSeconds = 0.12f;
 
         [Header("Refs")]
         [SerializeField] private Warrior warrior;
 
-        [SerializeField] private bool bindInternalClick = true;
-
-        private Button _btn;
-        private RelicManager _rm;
-        private string _id;
+        private Button _button;
+        private RelicManager _relicManager;
+        private string _relicId;
 
         private void Awake()
         {
-            _btn = GetComponent<Button>();
+            _button = GetComponent<Button>();
 
-            _btn.onClick.RemoveListener(OnClicked);
+            ResolveRelicId();
+            AutoBindIcon();
 
-            if (bindInternalClick) // <- respect flag
-                _btn.onClick.AddListener(OnClicked);
+            _button.onClick.RemoveListener(OnClicked);
 
-            if (iconImage == null) iconImage = GetComponent<Image>();
+            if (bindInternalClick)
+                _button.onClick.AddListener(OnClicked);
+        }
 
-            _id = (definition != null && !string.IsNullOrEmpty(definition.relicId))
+        private void Start()
+        {
+            ResolveRefs();
+
+            if (_relicManager != null)
+            {
+                _relicManager.OnRelicCountChanged += HandleCountChanged;
+                SetCount(_relicManager.GetCount(definition));
+            }
+
+            RefreshInteractable();
+        }
+
+        private void OnEnable()
+        {
+            RefreshInteractable();
+        }
+
+        private void Update()
+        {
+            RefreshInteractable();
+        }
+
+        private void OnDestroy()
+        {
+            if (_button != null)
+                _button.onClick.RemoveListener(OnClicked);
+
+            if (_relicManager != null)
+                _relicManager.OnRelicCountChanged -= HandleCountChanged;
+        }
+
+        public void OnPointerDown(PointerEventData eventData)
+        {
+            ResolveRefs();
+
+            if (warrior != null)
+                warrior.NotifyUIConsumedInput(worldInputBlockSeconds);
+        }
+
+        private void ResolveRefs()
+        {
+            if (warrior == null)
+                warrior = FindFirstObjectByType<Warrior>();
+
+            if (_relicManager == null && warrior != null)
+                _relicManager = warrior.GetComponent<RelicManager>();
+        }
+
+        private void ResolveRelicId()
+        {
+            _relicId = definition != null && !string.IsNullOrEmpty(definition.relicId)
                 ? definition.relicId
-                : (definition != null ? definition.name : "");
+                : definition != null ? definition.name : string.Empty;
+        }
+
+        private void AutoBindIcon()
+        {
+            if (iconImage == null)
+                iconImage = GetComponent<Image>();
 
             if (definition != null && iconImage != null && definition.icon != null)
                 iconImage.sprite = definition.icon;
         }
 
-        private void Start()
+        private void HandleCountChanged(RelicDefinition changedDefinition, int newCount)
         {
-            if (warrior == null) warrior = FindFirstObjectByType<Warrior>();
-            if (warrior == null) return;
+            if (changedDefinition == null)
+                return;
 
-            _rm = warrior.GetComponent<RelicManager>();
-            if (_rm == null) return;
+            string changedId = !string.IsNullOrEmpty(changedDefinition.relicId)
+                ? changedDefinition.relicId
+                : changedDefinition.name;
 
-            _rm.OnRelicCountChanged += HandleCountChanged;
-            SetCount(_rm.GetCount(definition));
-        }
-
-        private void Update()
-        {
-            if (_btn == null || _rm == null || definition == null || warrior == null) return;
-
-            bool hasResource = _rm.GetCount(definition) > 0;
-            bool canUseNow =
-                !warrior.IsDead &&
-                !warrior.CanDie &&
-                warrior.CanAttackWarrior &&
-                !warrior.IsFrozenByHivernox;
-
-            bool blockedByIceArmed = definition is IceBallRelic && warrior != null && warrior.IsIceBallArmed;
-            _btn.interactable = hasResource && canUseNow && !blockedByIceArmed;
-        }
-
-        private void OnDestroy()
-        {
-            if (_btn != null) _btn.onClick.RemoveListener(OnClicked);
-            if (_rm != null) _rm.OnRelicCountChanged -= HandleCountChanged;
-        }
-
-        private int _lastHandledFrame = -1;
-        private int _callsThisFrame = 0;
-
-        //private void HandleCountChanged(RelicDefinition def, int newCount)
-        //{
-        //    if (def == null) return;
-
-        //    string id = !string.IsNullOrEmpty(def.relicId) ? def.relicId : def.name;
-        //    if (id != _id) return;
-
-        //    if (Time.frameCount != _lastHandledFrame)
-        //    {
-        //        _lastHandledFrame = Time.frameCount;
-        //        _callsThisFrame = 0;
-        //    }
-
-        //    if (_callsThisFrame >= 1) return; // set to 2 if you truly want max 2
-        //    _callsThisFrame++;
-        //    Debug.Log($"Updating count for {id} to {newCount} (calls this frame: {_callsThisFrame})");
-        //    SetCount(newCount);
-        //}
-        private void HandleCountChanged(RelicDefinition def, int newCount)
-        {
-            if (def == null) return;
-
-            string id = !string.IsNullOrEmpty(def.relicId) ? def.relicId : def.name;
-            if (id != _id) return;
+            if (changedId != _relicId)
+                return;
 
             SetCount(newCount);
+            RefreshInteractable();
         }
-        private void SetCount(int c)
-        {
-            if (countText != null) countText.text = "x" + c;
-        }
-        public void OnPointerDown(PointerEventData eventData)
-        {
-            if (warrior == null) warrior = FindFirstObjectByType<Warrior>();
-            if (warrior == null) return;
 
-            // Keep your existing UI-world input block
-            warrior.NotifyUIConsumedInput(worldInputBlockSeconds);
-
+        private void SetCount(int count)
+        {
+            if (countText != null)
+                countText.text = "x" + Mathf.Max(0, count);
         }
+
+        private void RefreshInteractable()
+        {
+            if (_button == null)
+                return;
+
+            ResolveRefs();
+
+            if (definition == null || warrior == null || _relicManager == null)
+            {
+                _button.interactable = false;
+                return;
+            }
+
+            if (IsWarriorUnavailable())
+            {
+                _button.interactable = false;
+                return;
+            }
+
+            int count = _relicManager.GetCount(definition);
+            bool hasResource = count > 0;
+
+            // KeyRelic is contextual.
+            // It must be consumed by KeyRelicLock through RelicUIController,
+            // not by this generic button script.
+            if (definition is KeyRelic)
+            {
+                KeyRelicLock activeLock = KeyRelicLock.ActivePlatformMotionLock;
+
+                _button.interactable =
+                    hasResource &&
+                    activeLock != null &&
+                    activeLock.CanActivateFromUI(warrior);
+
+                return;
+            }
+
+            bool blockedByIceAlreadyArmed =
+                definition is IceBallRelic &&
+                warrior.IsIceBallArmed;
+
+            _button.interactable =
+                hasResource &&
+                !blockedByIceAlreadyArmed;
+        }
+
+        private bool IsWarriorUnavailable()
+        {
+            return warrior == null ||
+                   warrior.IsDead ||
+                   warrior.CanDie ||
+                   !warrior.CanAttackWarrior ||
+                   warrior.IsFrozenByHivernox;
+        }
+
         private void OnClicked()
         {
-            if (definition == null || warrior == null || _rm == null) return;
-            // Hard guard: do not arm or use relics while dead, frozen, or action-locked by Hivernox.
-            if (warrior.IsDead || warrior.CanDie || !warrior.CanAttackWarrior || warrior.IsFrozenByHivernox)
+            ResolveRefs();
+
+            if (!bindInternalClick)
+                return;
+
+            if (definition == null || warrior == null || _relicManager == null)
+                return;
+
+            if (IsWarriorUnavailable())
                 return;
 
             warrior.NotifyUIConsumedInput(worldInputBlockSeconds);
@@ -142,90 +214,120 @@ namespace Assets.Scripts.Relics.UI
             if (!HasResourceToUse())
                 return;
 
-            // 1) Shield relic branch
+            // IMPORTANT:
+            // KeyRelic is not consumed here.
+            // For platform motion, RelicUIController must call KeyRelicLock.TryActivateFromUI().
+            if (definition is KeyRelic)
+            {
+                KeyRelicLock activeLock = KeyRelicLock.ActivePlatformMotionLock;
+
+                if (activeLock == null)
+                    return;
+
+                activeLock.TryActivateFromUI(warrior);
+                return;
+            }
+
             if (definition is ShieldRelic shieldDef)
             {
-                bool used = warrior.TryUseShieldRelic(shieldDef.shieldDuration, shieldDef.shieldCooldown);
+                bool used = warrior.TryUseShieldRelic(
+                    shieldDef.shieldDuration,
+                    shieldDef.shieldCooldown
+                );
+
                 if (!used)
                     return;
 
                 if (ShouldConsumeOnUse())
-                    _rm.TryConsume(definition, 1);
+                    _relicManager.TryConsume(definition, 1);
 
+                RefreshInteractable();
                 return;
             }
-            // 2) Sprint relic branch.
-            // First click arms sprint. Extra clicks while armed/active add duration.
+
             if (definition is SprintRelic sprintDef)
             {
-                if (ShouldConsumeOnUse() && !_rm.TryConsume(definition, 1))
-                    return; // no stack available
+                if (ShouldConsumeOnUse() && !_relicManager.TryConsume(definition, 1))
+                    return;
 
                 bool used = warrior.TryExtendOrQueueSprintRelic(
-                    relicId: _id,
+                    relicId: _relicId,
                     speedMultiplier: sprintDef.speedMultiplier,
                     duration: sprintDef.sprintDuration,
                     cooldown: sprintDef.sprintCooldown,
-                    consumeOnUse: false); // UI already consumed the stack.
+                    consumeOnUse: false
+                );
 
                 if (!used && ShouldConsumeOnUse())
-                {
-                    // Refund if Warrior rejected the sprint because of shield/death/etc.
-                    _rm.Collect(definition, bypassFrameCap: true);
-                }
+                    _relicManager.Collect(definition, bypassFrameCap: true);
 
+                RefreshInteractable();
                 return;
             }
 
-            // Ice Ball relic branch (arm now, consume on next world touch)
             if (definition is IceBallRelic iceDef)
             {
                 bool armed = warrior.TryArmIceBallRelic(
                     iceDef,
-                    consumeOnCast: ShouldConsumeOnUse());
+                    consumeOnCast: ShouldConsumeOnUse()
+                );
 
                 if (!armed)
                     return;
 
+                RefreshInteractable();
                 return;
             }
-            // 2) Attack2 relic branch
+
             float duration = fallbackAttack2Duration;
             float cooldown = fallbackAttack2Cooldown;
 
-            if (definition is PowerComboRelic p)
+            if (definition is PowerComboRelic powerCombo)
             {
-                duration = p.attack2UseDuration;
-                cooldown = p.attack2Cooldown;
+                duration = powerCombo.attack2UseDuration;
+                cooldown = powerCombo.attack2Cooldown;
             }
 
-            bool ok = warrior.TryUseRelicAttack2(duration, cooldown, triggerNow: false);
-            if (!ok) return;
+            bool attack2Used = warrior.TryUseRelicAttack2(
+                duration,
+                cooldown,
+                triggerNow: false
+            );
+
+            if (!attack2Used)
+                return;
 
             if (ShouldConsumeOnUse())
-                _rm.TryConsume(definition, 1);
-        }
+                _relicManager.TryConsume(definition, 1);
 
-        private bool ShouldConsumeOnUse()
-        {
-            if (definition == null) return false;
-
-            // Unlock-style relics use cooldown/ownership only.
-            if (!definition.isConsumable) return false;
-
-            // Shield remains unlock-style in your current design.
-            if (definition is ShieldRelic) return false;
-
-            return consumeOneOnUse;
+            RefreshInteractable();
         }
 
         private bool HasResourceToUse()
         {
-            if (_rm == null || definition == null) return false;
+            if (_relicManager == null || definition == null)
+                return false;
 
-            return ShouldConsumeOnUse()
-                ? _rm.GetCount(definition) > 0
-                : _rm.IsOwned(definition);
+            return _relicManager.GetCount(definition) > 0;
+        }
+
+        private bool ShouldConsumeOnUse()
+        {
+            if (definition == null)
+                return false;
+
+            if (!definition.isConsumable)
+                return false;
+
+            // Shield is unlock-style in your current design.
+            if (definition is ShieldRelic)
+                return false;
+
+            // KeyRelic is consumed only by KeyRelicLock / gates.
+            if (definition is KeyRelic)
+                return false;
+
+            return consumeOneOnUse;
         }
     }
 }

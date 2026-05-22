@@ -158,11 +158,11 @@ namespace Assets.Scripts.Platforms
             if (_rb == null)
                 return;
 
-            if (!CanRunPlatformMotion)
+            if (!PlatformMotionEnabled)
             {
                 RememberPlatformDelta(Vector2.zero);
 
-                // Motion is disabled, but passenger validation / light seating can stay active.
+                // Motion is paused only. Keep rider/passenger validation and light seating alive.
                 CarryPassengers(Vector2.zero);
                 return;
             }

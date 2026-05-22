@@ -1,10 +1,7 @@
 ﻿using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Characteres.WarriorController;
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-
-
 
 public class PlatFormColliderTrigger : MonoBehaviour
 {
@@ -12,8 +9,8 @@ public class PlatFormColliderTrigger : MonoBehaviour
     public BoxCollider2D platformCollider;
     public BoxCollider2D platformTrigger;
 
-    [Header("Platform Motion")]
-    [Tooltip("True = moving/rotating platform subclasses run their scripted movement. False = this platform stays fixed in place while collision, landing, respawn, and passenger detection remain active.")]
+    [Header("Motion")]
+    [Tooltip("When false, motion platform subclasses must pause only their movement/rotation. Colliders, triggers, landing, riders, respawn, and visuals stay active.")]
     [SerializeField] private bool platformMotionEnabled = true;
 
     public bool PlatformMotionEnabled
@@ -21,13 +18,6 @@ public class PlatFormColliderTrigger : MonoBehaviour
         get => platformMotionEnabled;
         set => platformMotionEnabled = value;
     }
-
-    public void SetPlatformMotionEnabled(bool enabled)
-    {
-        PlatformMotionEnabled = enabled;
-    }
-
-    protected bool CanRunPlatformMotion => platformMotionEnabled;
 
     [Header("Visual Theme")]
     [Tooltip("The original SpriteRenderer directly on the platform root object. Example: Plf_bck_rotating SpriteRenderer.")]
