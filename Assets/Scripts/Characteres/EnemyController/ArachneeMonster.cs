@@ -1,6 +1,7 @@
 ﻿using Assets.Scripts.Characteres.WarriorController;
 using Assets.Scripts.Platforms;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Assets.Scripts.Characteres.EnemyContoller
@@ -11,12 +12,28 @@ namespace Assets.Scripts.Characteres.EnemyContoller
     /// - Patrols only inside the current platform bounds.
     /// - When Warrior enters range and cooldown is ready, runs to the midpoint,
     ///   then performs an explosive jump toward Warrior.
-    /// - If a platform blocks the jump line, only that platform collider is ignored,
-    ///   and the collision is always restored.
+    /// - During the attack jump, every platform body collider on this Arachnee's
+    ///   jump path can be ignored per-instance and restored safely.
     /// </summary>
     [RequireComponent(typeof(Assets.Scripts.Services.EnemyRangeService))]
     public class ArachneeMonster : Enemy
     {
+        private enum AttackPlatformRelation
+        {
+            Unknown = 0,
+            SamePlatform = 1,
+            WarriorBelow = 2,
+            WarriorAbove = 3
+        }
+
+        private sealed class IgnoredAttackPlatformRecord
+        {
+            public Collider2D arachneeCollider;
+            public Collider2D platformCollider;
+            public bool wasOverlapped;
+            public float startedAt;
+        }
+
         [Header("Arachnee Patrol")]
         [SerializeField, Min(0f)] private float idleDurationMin = 0.6f;
         [SerializeField, Min(0f)] private float idleDurationMax = 1.2f;
@@ -36,12 +53,24 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private bool destroySelfAfterExplosion = true;
         [SerializeField, Min(0f)] private float explosionDestroyDelay = 0.1f;
 
+        [Header("Arachnee Platform Ignore")]
+        [Tooltip("Layer used to detect platform body colliders that can block Arachnee's attack jump. If empty, Arachnee falls back to PlatformLayer.")]
         [SerializeField] private LayerMask platformObstacleMask;
-        [SerializeField] private float obstacleRayHeightOffset = 0.4f;
+
+        [Tooltip("Vertical tolerance used to decide if Warrior's platform is above, below, or the same height as Arachnee's current platform.")]
+        [SerializeField, Min(0f)] private float platformRelationVerticalTolerance = 0.12f;
+
+        [Tooltip("How many segments are used to probe the parabolic attack path before the jump starts.")]
+        [SerializeField, Range(4, 40)] private int attackPathProbeSegments = 18;
+
+        [Tooltip("Safety restore time for each ignored platform if Arachnee never cleanly exits that collider.")]
         [SerializeField, Min(0.05f)] private float platformClearSafetyTimeout = 1.5f;
 
         [Header("Arachnee Obstacle Probe")]
+        [Tooltip("Minimum probe height used while scanning the attack path. The real probe also uses part of Arachnee's collider height so body-blocking platforms are not missed.")]
         [SerializeField, Min(0.02f)] private float obstacleProbeHeight = 0.12f;
+
+        [Tooltip("Width multiplier applied to Arachnee's main collider while scanning the attack path.")]
         [SerializeField, Range(0.1f, 1f)] private float obstacleProbeWidthMultiplier = 0.65f;
 
         [Header("Arachnee Safety")]
@@ -54,11 +83,15 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         private bool attackJumpActive;
         private bool attackResolved;
 
-        private Collider2D ignoredBlockingPlatform;
-        private bool ignoredBlockingPlatformWasOverlapped;
-        private float ignoredBlockingPlatformStartedAt = -999f;
+        private readonly List<IgnoredAttackPlatformRecord> ignoredAttackPlatforms =
+            new List<IgnoredAttackPlatformRecord>();
 
-        private static readonly Collider2D[] ObstacleHitsBuffer = new Collider2D[16];
+        private readonly HashSet<int> ignoredAttackPlatformIds = new HashSet<int>();
+
+        private readonly List<Collider2D> attackPathPlatformCandidates =
+            new List<Collider2D>();
+
+        private readonly HashSet<int> attackPathPlatformCandidateIds = new HashSet<int>();
 
         protected override void Start()
         {
@@ -127,19 +160,19 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 attackRoutine = null;
             }
 
-            RestoreIgnoredPlatformCollisionIfNeeded();
+            RestoreAllIgnoredAttackPlatformCollisions();
 
             base.OnDeath();
         }
 
         private void OnDisable()
         {
-            RestoreIgnoredPlatformCollisionIfNeeded();
+            RestoreAllIgnoredAttackPlatformCollisions();
         }
 
         private void OnDestroy()
         {
-            RestoreIgnoredPlatformCollisionIfNeeded();
+            RestoreAllIgnoredAttackPlatformCollisions();
         }
 
         private void OnValidate()
@@ -152,8 +185,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             explosionDamage = Mathf.Max(0, explosionDamage);
             runHalfDistanceStopTolerance = Mathf.Max(0.01f, runHalfDistanceStopTolerance);
             jumpDuration = Mathf.Max(0.01f, jumpDuration);
+            platformRelationVerticalTolerance = Mathf.Max(0f, platformRelationVerticalTolerance);
             platformClearSafetyTimeout = Mathf.Max(0.05f, platformClearSafetyTimeout);
             attackOverallSafetyTimeout = Mathf.Max(0.5f, attackOverallSafetyTimeout);
+            attackPathProbeSegments = Mathf.Clamp(attackPathProbeSegments, 4, 40);
         }
 
         private void SyncLocalAttackFieldsFromBase()
@@ -222,6 +257,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             StopPatrolRoutine();
             StopMoveTowardCoroutine();
             StopJumpTowardCoroutine();
+            RestoreAllIgnoredAttackPlatformCollisions();
 
             attackRoutine = StartCoroutine(ArachneeAttackRoutine());
         }
@@ -235,8 +271,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             Vector2 warriorPositionAtAttackStart = target != null
                 ? (Vector2)target.position
                 : attackStartPosition;
-
-            Collider2D blockingPlatform = DetectBlockingPlatform(warriorPositionAtAttackStart);
 
             float midpointX = (attackStartPosition.x + warriorPositionAtAttackStart.x) * 0.5f;
 
@@ -274,17 +308,15 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 ? (Vector2)target.position
                 : warriorPositionAtAttackStart;
 
-            if (blockingPlatform != null)
-                IgnoreBlockingPlatformTemporarily(blockingPlatform);
+            PrepareAttackPlatformIgnoresForJump(warriorJumpTarget);
 
             JumpAnimationDisplay();
             attackJumpActive = true;
 
-            activesJumpCoroutine = JumpTowardPositionAction(
+            activesJumpCoroutine = ArachneeAttackJumpTowardPositionAction(
                 warriorJumpTarget,
                 jumpHeight,
-                jumpDuration,
-                collider2
+                jumpDuration
             );
 
             StartCoroutine(activesJumpCoroutine);
@@ -321,6 +353,59 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             FinishAttackAfterResolution();
         }
 
+        /// <summary>
+        /// Private attack-only jump.
+        /// The base CharacterController.JumpTowardPositionAction contains destination-platform
+        /// top-landing anti-tunneling that intentionally restores/solidifies platforms.
+        /// Arachnee's attack jump needs the opposite behavior for detected path blockers,
+        /// so this attack-only jump keeps the same parabolic motion but lets the
+        /// per-instance IgnoreCollision list control what can stop Arachnee.
+        /// </summary>
+        private IEnumerator ArachneeAttackJumpTowardPositionAction(Vector2 targetPosition, float height, float duration)
+        {
+            if (_isJumping)
+                yield break;
+
+            _isJumping = true;
+            targetReached = false;
+            DescendentPhase = false;
+
+            Vector2 startPosition = rigidbody2 != null ? rigidbody2.position : (Vector2)transform.position;
+            float elapsedTime = 0f;
+            float previousY = startPosition.y;
+
+            FlipCharacter(targetPosition.x);
+
+            WaitForFixedUpdate waitForFixedUpdate = new WaitForFixedUpdate();
+
+            while (!targetReached && elapsedTime < duration)
+            {
+                float stepTime = Time.fixedDeltaTime > 0f ? Time.fixedDeltaTime : Time.deltaTime;
+                elapsedTime += stepTime;
+
+                float t = duration > 0f
+                    ? Mathf.Clamp01(elapsedTime / duration)
+                    : 1f;
+
+                Vector2 desiredPosition = Vector2.Lerp(startPosition, targetPosition, t);
+                desiredPosition.y += height * Mathf.Sin(Mathf.PI * t);
+
+                MoveCharacterTo(desiredPosition);
+                Physics2D.SyncTransforms();
+
+                DescendentPhase = desiredPosition.y < previousY;
+                previousY = desiredPosition.y;
+
+                RestoreIgnoredPlatformCollisionWhenSafe();
+
+                yield return waitForFixedUpdate;
+            }
+
+            _isJumping = false;
+            DescendentPhase = false;
+            activesJumpCoroutine = null;
+        }
+
         private void FinishAttackWithoutExplosion()
         {
             attackJumpActive = false;
@@ -328,7 +413,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             StopMoveTowardCoroutine();
             StopJumpTowardCoroutine();
-            RestoreIgnoredPlatformCollisionIfNeeded();
+            RestoreAllIgnoredAttackPlatformCollisions();
 
             attackRoutine = null;
 
@@ -342,7 +427,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             StopMoveTowardCoroutine();
             StopJumpTowardCoroutine();
-            RestoreIgnoredPlatformCollisionIfNeeded();
+            RestoreAllIgnoredAttackPlatformCollisions();
 
             attackRoutine = null;
 
@@ -457,42 +542,136 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             return Mathf.Abs(targetX - currentX) > patrolTargetReachTolerance;
         }
 
-        private Collider2D DetectBlockingPlatform(Vector2 warriorWorldPosition)
+        private void PrepareAttackPlatformIgnoresForJump(Vector2 jumpTargetWorldPosition)
         {
+            RestoreAllIgnoredAttackPlatformCollisions();
+
+            DetectAttackPathPlatforms(jumpTargetWorldPosition, attackPathPlatformCandidates);
+
+            for (int i = 0; i < attackPathPlatformCandidates.Count; i++)
+                IgnoreAttackPlatformTemporarily(attackPathPlatformCandidates[i]);
+
+            Physics2D.SyncTransforms();
+        }
+
+        private void DetectAttackPathPlatforms(Vector2 jumpTargetWorldPosition, List<Collider2D> result)
+        {
+            result.Clear();
+            attackPathPlatformCandidateIds.Clear();
+
             Collider2D myCollider = GetMainCollider();
             if (myCollider == null)
-                return null;
+                return;
+
+            int mask = GetPlatformObstacleMaskValue();
+            if (mask == 0)
+                return;
+
+            Collider2D sourcePlatform = GetCurrentPlatformBodyCollider();
+            Collider2D warriorPlatform = GetWarriorPlatformBodyCollider();
+            AttackPlatformRelation relation = GetAttackPlatformRelation(jumpTargetWorldPosition, sourcePlatform, warriorPlatform);
+
+            // Case 1: Warrior is below Arachnee. The source platform must be ignored
+            // because it is part of the downward attack path.
+            if (relation == AttackPlatformRelation.WarriorBelow && sourcePlatform != null)
+                TryAddAttackPathPlatformCandidate(sourcePlatform, relation, sourcePlatform, warriorPlatform, result);
 
             Bounds myBounds = myCollider.bounds;
 
-            Vector2 origin = new Vector2(
-                myBounds.center.x,
-                myBounds.center.y + obstacleRayHeightOffset
-            );
+            Vector2 startTransformPosition = rigidbody2 != null
+                ? rigidbody2.position
+                : (Vector2)transform.position;
 
-            Vector2 destination = new Vector2(
-                warriorWorldPosition.x,
-                warriorWorldPosition.y + obstacleRayHeightOffset
-            );
-
-            Vector2 direction = destination - origin;
-            float distance = direction.magnitude;
-
-            if (distance <= 0.05f)
-                return null;
-
-            int mask = platformObstacleMask.value != 0
-                ? platformObstacleMask.value
-                : PlatformLayer.value;
-
-            if (mask == 0)
-                return null;
+            Vector2 centerOffset = (Vector2)myBounds.center - startTransformPosition;
 
             float probeWidth = Mathf.Max(0.05f, myBounds.size.x * obstacleProbeWidthMultiplier);
-            Vector2 probeSize = new Vector2(probeWidth, obstacleProbeHeight);
+            float probeHeight = Mathf.Max(obstacleProbeHeight, myBounds.size.y * 0.8f);
+            Vector2 probeSize = new Vector2(probeWidth, probeHeight);
+
+            int segments = Mathf.Max(4, attackPathProbeSegments);
+            Vector2 previousCenter = SampleAttackJumpColliderCenter(
+                startTransformPosition,
+                jumpTargetWorldPosition,
+                centerOffset,
+                0f
+            );
+
+            CollectOverlappedAttackPathPlatforms(previousCenter, probeSize, mask, relation, sourcePlatform, warriorPlatform, result);
+
+            for (int i = 1; i <= segments; i++)
+            {
+                float t = i / (float)segments;
+                Vector2 currentCenter = SampleAttackJumpColliderCenter(
+                    startTransformPosition,
+                    jumpTargetWorldPosition,
+                    centerOffset,
+                    t
+                );
+
+                CollectOverlappedAttackPathPlatforms(currentCenter, probeSize, mask, relation, sourcePlatform, warriorPlatform, result);
+                CollectCastAttackPathPlatforms(previousCenter, currentCenter, probeSize, mask, relation, sourcePlatform, warriorPlatform, result);
+
+                previousCenter = currentCenter;
+            }
+        }
+
+        private int GetPlatformObstacleMaskValue()
+        {
+            if (platformObstacleMask.value != 0)
+                return platformObstacleMask.value;
+
+            return PlatformLayer.value;
+        }
+
+        private Vector2 SampleAttackJumpColliderCenter(
+            Vector2 startTransformPosition,
+            Vector2 targetTransformPosition,
+            Vector2 colliderCenterOffset,
+            float t)
+        {
+            t = Mathf.Clamp01(t);
+
+            Vector2 position = Vector2.Lerp(startTransformPosition, targetTransformPosition, t);
+            position.y += jumpHeight * Mathf.Sin(Mathf.PI * t);
+
+            return position + colliderCenterOffset;
+        }
+
+        private void CollectOverlappedAttackPathPlatforms(
+            Vector2 center,
+            Vector2 probeSize,
+            int mask,
+            AttackPlatformRelation relation,
+            Collider2D sourcePlatform,
+            Collider2D warriorPlatform,
+            List<Collider2D> result)
+        {
+            Collider2D[] hits = Physics2D.OverlapBoxAll(center, probeSize, 0f, mask);
+            if (hits == null)
+                return;
+
+            for (int i = 0; i < hits.Length; i++)
+                TryAddAttackPathPlatformCandidate(hits[i], relation, sourcePlatform, warriorPlatform, result);
+        }
+
+        private void CollectCastAttackPathPlatforms(
+            Vector2 fromCenter,
+            Vector2 toCenter,
+            Vector2 probeSize,
+            int mask,
+            AttackPlatformRelation relation,
+            Collider2D sourcePlatform,
+            Collider2D warriorPlatform,
+            List<Collider2D> result)
+        {
+            Vector2 direction = toCenter - fromCenter;
+            float distance = direction.magnitude;
+
+            if (distance <= 0.001f)
+                return;
 
             RaycastHit2D[] hits = Physics2D.BoxCastAll(
-                origin,
+                fromCenter,
                 probeSize,
                 0f,
                 direction.normalized,
@@ -500,82 +679,284 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 mask
             );
 
-            if (hits == null || hits.Length == 0)
-                return null;
-
-            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            if (hits == null)
+                return;
 
             for (int i = 0; i < hits.Length; i++)
-            {
-                Collider2D hitCollider = hits[i].collider;
-                if (hitCollider == null) continue;
-                if (hitCollider.isTrigger) continue;
-                if (IsOwnCollider(hitCollider)) continue;
-                if (IsCurrentPlatformCollider(hitCollider)) continue;
-
-                return hitCollider;
-            }
-
-            return null;
+                TryAddAttackPathPlatformCandidate(hits[i].collider, relation, sourcePlatform, warriorPlatform, result);
         }
 
-        private void IgnoreBlockingPlatformTemporarily(Collider2D platformCollider)
+        private void TryAddAttackPathPlatformCandidate(
+            Collider2D rawCollider,
+            AttackPlatformRelation relation,
+            Collider2D sourcePlatform,
+            Collider2D warriorPlatform,
+            List<Collider2D> result)
         {
+            Collider2D platformCollider = NormalizePlatformBodyCollider(rawCollider);
             if (platformCollider == null)
                 return;
 
-            RestoreIgnoredPlatformCollisionIfNeeded();
-
-            Collider2D myCollider = GetMainCollider();
-            if (myCollider == null)
+            if (!ShouldIgnorePlatformForAttackPath(platformCollider, relation, sourcePlatform, warriorPlatform))
                 return;
 
-            ignoredBlockingPlatform = platformCollider;
-            ignoredBlockingPlatformWasOverlapped = myCollider.bounds.Intersects(platformCollider.bounds);
-            ignoredBlockingPlatformStartedAt = Time.time;
+            int id = platformCollider.GetInstanceID();
+            if (!attackPathPlatformCandidateIds.Add(id))
+                return;
 
-            Physics2D.IgnoreCollision(myCollider, ignoredBlockingPlatform, true);
+            result.Add(platformCollider);
+        }
+
+        private Collider2D NormalizePlatformBodyCollider(Collider2D rawCollider)
+        {
+            if (rawCollider == null)
+                return null;
+
+            if (IsOwnCollider(rawCollider))
+                return null;
+
+            // Never ignore trigger colliders. If the trigger belongs to a platform,
+            // normalize to the real platform body collider instead.
+            if (rawCollider.isTrigger)
+            {
+                PlatFormColliderTrigger triggerPlatform = rawCollider.GetComponentInParent<PlatFormColliderTrigger>();
+                if (triggerPlatform == null || triggerPlatform.platformCollider == null)
+                    return null;
+
+                rawCollider = triggerPlatform.platformCollider;
+            }
+
+            if (rawCollider == null || rawCollider.isTrigger || !rawCollider.enabled)
+                return null;
+
+            if (IsOwnCollider(rawCollider))
+                return null;
+
+            PlatFormColliderTrigger platform = rawCollider.GetComponentInParent<PlatFormColliderTrigger>();
+            if (platform != null && platform.platformCollider != null)
+                rawCollider = platform.platformCollider;
+
+            if (rawCollider == null || rawCollider.isTrigger || !rawCollider.enabled)
+                return null;
+
+            if (IsOwnCollider(rawCollider))
+                return null;
+
+            return rawCollider;
+        }
+
+        private bool ShouldIgnorePlatformForAttackPath(
+            Collider2D platformCollider,
+            AttackPlatformRelation relation,
+            Collider2D sourcePlatform,
+            Collider2D warriorPlatform)
+        {
+            if (platformCollider == null)
+                return false;
+
+            if (platformCollider.isTrigger)
+                return false;
+
+            if (IsOwnCollider(platformCollider))
+                return false;
+
+            bool isSourcePlatform = sourcePlatform != null && platformCollider == sourcePlatform;
+
+            // Case 3: same platform. Never ignore the platform both are standing on.
+            // Case 2: Warrior above. Also do not ignore Arachnee's current platform.
+            // Case 1: Warrior below. The source platform is deliberately included.
+            if (isSourcePlatform)
+                return relation == AttackPlatformRelation.WarriorBelow;
+
+            switch (relation)
+            {
+                case AttackPlatformRelation.SamePlatform:
+                    return IsPlatformAboveArachneeSource(platformCollider, sourcePlatform);
+
+                case AttackPlatformRelation.WarriorAbove:
+                    return IsPlatformAboveArachneeSource(platformCollider, sourcePlatform);
+
+                case AttackPlatformRelation.WarriorBelow:
+                    // The path probe already proved this platform intersects the attack path.
+                    // Keep all intermediate/body-blocking platforms, including Warrior's platform.
+                    return true;
+
+                default:
+                    // Unknown platform relation: keep the fix conservative.
+                    // Ignore only path blockers that are not the current platform.
+                    return !IsCurrentPlatformCollider(platformCollider);
+            }
+        }
+
+        private bool IsPlatformAboveArachneeSource(Collider2D platformCollider, Collider2D sourcePlatform)
+        {
+            if (platformCollider == null)
+                return false;
+
+            if (sourcePlatform != null)
+            {
+                Bounds sourceBounds = sourcePlatform.bounds;
+                Bounds platformBounds = platformCollider.bounds;
+
+                return platformBounds.center.y > sourceBounds.center.y + platformRelationVerticalTolerance ||
+                       platformBounds.min.y > sourceBounds.max.y - platformRelationVerticalTolerance;
+            }
+
+            Collider2D myCollider = GetMainCollider();
+            float referenceY = myCollider != null ? myCollider.bounds.center.y : transform.position.y;
+
+            return platformCollider.bounds.center.y > referenceY + platformRelationVerticalTolerance;
+        }
+
+        private AttackPlatformRelation GetAttackPlatformRelation(
+            Vector2 warriorWorldPosition,
+            Collider2D sourcePlatform,
+            Collider2D warriorPlatform)
+        {
+            if (sourcePlatform != null && warriorPlatform != null)
+            {
+                if (sourcePlatform == warriorPlatform)
+                    return AttackPlatformRelation.SamePlatform;
+
+                float platformDeltaY = warriorPlatform.bounds.center.y - sourcePlatform.bounds.center.y;
+
+                if (platformDeltaY > platformRelationVerticalTolerance)
+                    return AttackPlatformRelation.WarriorAbove;
+
+                if (platformDeltaY < -platformRelationVerticalTolerance)
+                    return AttackPlatformRelation.WarriorBelow;
+
+                return AttackPlatformRelation.Unknown;
+            }
+
+            Vector2 myCenter = GetColliderCenter();
+            float deltaY = warriorWorldPosition.y - myCenter.y;
+
+            if (deltaY > platformRelationVerticalTolerance)
+                return AttackPlatformRelation.WarriorAbove;
+
+            if (deltaY < -platformRelationVerticalTolerance)
+                return AttackPlatformRelation.WarriorBelow;
+
+            return AttackPlatformRelation.Unknown;
+        }
+
+        private Collider2D GetCurrentPlatformBodyCollider()
+        {
+            if (CurrentplatForm == null || CurrentplatForm.platformCollider == null)
+                return null;
+
+            return CurrentplatForm.platformCollider;
+        }
+
+        private Collider2D GetWarriorPlatformBodyCollider()
+        {
+            Warrior warrior = target != null ? target.GetComponentInParent<Warrior>() : null;
+            if (warrior == null || warrior.CurrentplatForm == null || warrior.CurrentplatForm.platformCollider == null)
+                return null;
+
+            return warrior.CurrentplatForm.platformCollider;
+        }
+
+        private void IgnoreAttackPlatformTemporarily(Collider2D platformCollider)
+        {
+            platformCollider = NormalizePlatformBodyCollider(platformCollider);
+            if (platformCollider == null)
+                return;
+
+            Collider2D myCollider = GetMainCollider();
+            if (myCollider == null || !myCollider.enabled)
+                return;
+
+            if (myCollider == platformCollider)
+                return;
+
+            int id = platformCollider.GetInstanceID();
+            if (!ignoredAttackPlatformIds.Add(id))
+                return;
+
+            ignoredAttackPlatforms.Add(new IgnoredAttackPlatformRecord
+            {
+                arachneeCollider = myCollider,
+                platformCollider = platformCollider,
+                wasOverlapped = myCollider.bounds.Intersects(platformCollider.bounds),
+                startedAt = Time.time
+            });
+
+            Physics2D.IgnoreCollision(myCollider, platformCollider, true);
         }
 
         private void RestoreIgnoredPlatformCollisionWhenSafe()
         {
-            if (ignoredBlockingPlatform == null)
+            if (ignoredAttackPlatforms.Count == 0)
                 return;
 
-            Collider2D myCollider = GetMainCollider();
-            if (myCollider == null || !myCollider.enabled || !ignoredBlockingPlatform.enabled)
+            for (int i = ignoredAttackPlatforms.Count - 1; i >= 0; i--)
             {
-                RestoreIgnoredPlatformCollisionIfNeeded();
-                return;
+                IgnoredAttackPlatformRecord record = ignoredAttackPlatforms[i];
+
+                if (record == null)
+                {
+                    ignoredAttackPlatforms.RemoveAt(i);
+                    continue;
+                }
+
+                bool shouldRestore = !attackJumpActive;
+
+                if (!shouldRestore)
+                {
+                    if (record.arachneeCollider == null || record.platformCollider == null)
+                    {
+                        shouldRestore = true;
+                    }
+                    else if (!record.arachneeCollider.enabled || !record.platformCollider.enabled)
+                    {
+                        shouldRestore = true;
+                    }
+                    else
+                    {
+                        bool overlapsNow = record.arachneeCollider.bounds.Intersects(record.platformCollider.bounds);
+                        if (overlapsNow)
+                            record.wasOverlapped = true;
+
+                        bool clearedAfterOverlap = record.wasOverlapped && !overlapsNow;
+                        bool safetyTimeout = Time.time - record.startedAt >= platformClearSafetyTimeout;
+
+                        shouldRestore = clearedAfterOverlap || safetyTimeout;
+                    }
+                }
+
+                if (shouldRestore)
+                    RestoreIgnoredAttackPlatformAt(i);
             }
-
-            bool overlapsNow = myCollider.bounds.Intersects(ignoredBlockingPlatform.bounds);
-            if (overlapsNow)
-                ignoredBlockingPlatformWasOverlapped = true;
-
-            bool clearedAfterOverlap =
-                ignoredBlockingPlatformWasOverlapped &&
-                !overlapsNow;
-
-            bool safetyTimeout =
-                Time.time - ignoredBlockingPlatformStartedAt >= platformClearSafetyTimeout;
-
-            if (clearedAfterOverlap || safetyTimeout)
-                RestoreIgnoredPlatformCollisionIfNeeded();
         }
 
-        private void RestoreIgnoredPlatformCollisionIfNeeded()
+        private void RestoreAllIgnoredAttackPlatformCollisions()
         {
-            if (ignoredBlockingPlatform == null)
+            for (int i = ignoredAttackPlatforms.Count - 1; i >= 0; i--)
+                RestoreIgnoredAttackPlatformAt(i);
+
+            ignoredAttackPlatforms.Clear();
+            ignoredAttackPlatformIds.Clear();
+        }
+
+        private void RestoreIgnoredAttackPlatformAt(int index)
+        {
+            if (index < 0 || index >= ignoredAttackPlatforms.Count)
                 return;
 
-            Collider2D myCollider = GetMainCollider();
-            if (myCollider != null)
-                Physics2D.IgnoreCollision(myCollider, ignoredBlockingPlatform, false);
+            IgnoredAttackPlatformRecord record = ignoredAttackPlatforms[index];
 
-            ignoredBlockingPlatform = null;
-            ignoredBlockingPlatformWasOverlapped = false;
-            ignoredBlockingPlatformStartedAt = -999f;
+            if (record != null)
+            {
+                if (record.arachneeCollider != null && record.platformCollider != null)
+                    Physics2D.IgnoreCollision(record.arachneeCollider, record.platformCollider, false);
+
+                if (record.platformCollider != null)
+                    ignoredAttackPlatformIds.Remove(record.platformCollider.GetInstanceID());
+            }
+
+            ignoredAttackPlatforms.RemoveAt(index);
         }
 
         private void TryResolveWarriorJumpHit(Collision2D collision)
@@ -623,7 +1004,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             StopMoveTowardCoroutine();
             StopJumpTowardCoroutine();
-            RestoreIgnoredPlatformCollisionIfNeeded();
+            RestoreAllIgnoredAttackPlatformCollisions();
 
             SpawnExplosion(explosionPoint);
 
