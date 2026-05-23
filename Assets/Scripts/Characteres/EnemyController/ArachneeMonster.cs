@@ -966,22 +966,48 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (IsDeadOrDying) return;
             if (collision == null || collision.collider == null) return;
 
-            if (!TryGetDirectWarrior(collision.collider, out Warrior warrior))
+            if (!TryGetWarriorHitOrShieldCollider(collision.collider, out Warrior warrior, out bool directShieldContact))
                 return;
 
             Vector2 point = GetCollisionPoint(collision);
-            ResolveExplosion(point, warrior, damageWarrior: true);
+
+            // Shield rule:
+            // If Arachnee hits the Shield Laser layer, or Warrior's shield is up while
+            // Arachnee reaches the Hit Box layer, the explosion is resolved but Warrior
+            // takes no damage.
+            bool blockedByShield =
+                directShieldContact ||
+                IsWarriorShieldBlockingArachnee(warrior, collision);
+
+            ResolveExplosion(point, warrior, damageWarrior: !blockedByShield);
         }
 
-        private bool TryGetDirectWarrior(Collider2D other, out Warrior warrior)
+        private bool TryGetWarriorHitOrShieldCollider(
+            Collider2D other,
+            out Warrior warrior,
+            out bool directShieldContact)
         {
             warrior = null;
+            directShieldContact = false;
 
             if (other == null)
                 return false;
 
+            int warriorLayer = LayerMask.NameToLayer("Hit Box");
             int shieldLayer = LayerMask.NameToLayer("Shield Laser");
-            if (shieldLayer >= 0 && other.gameObject.layer == shieldLayer)
+
+            bool isWarriorHitBoxLayer =
+                warriorLayer >= 0 &&
+                other.gameObject.layer == warriorLayer;
+
+            bool isShieldLayer =
+                shieldLayer >= 0 &&
+                other.gameObject.layer == shieldLayer;
+
+            // Arachnee damage/block resolution must only be driven by Warrior's
+            // gameplay hitbox or the active shield collider. This prevents random
+            // Warrior child colliders from triggering the explosion.
+            if (!isWarriorHitBoxLayer && !isShieldLayer)
                 return false;
 
             warrior = other.GetComponentInParent<Warrior>();
@@ -991,6 +1017,56 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (warrior.IsDeadOrDying)
                 return false;
 
+            directShieldContact = isShieldLayer;
+            return true;
+        }
+
+        private bool IsWarriorShieldBlockingArachnee(Warrior warrior, Collision2D collision)
+        {
+            if (warrior == null)
+                return false;
+
+            if (!warrior.ShieldIsUp)
+                return false;
+
+            int shieldLayer = LayerMask.NameToLayer("Shield Laser");
+
+            Collider2D otherCollider = collision != null ? collision.collider : null;
+            if (otherCollider != null &&
+                shieldLayer >= 0 &&
+                otherCollider.gameObject.layer == shieldLayer)
+            {
+                return true;
+            }
+
+            Collider2D arachneeCollider = null;
+            if (collision != null && collision.otherCollider != null && IsOwnCollider(collision.otherCollider))
+                arachneeCollider = collision.otherCollider;
+
+            if (arachneeCollider == null)
+                arachneeCollider = GetMainCollider();
+
+            // If the shield collider is configured and currently touches Arachnee,
+            // this is a definite shield block.
+            if (warrior.shieldHitbox != null &&
+                warrior.shieldHitbox.enabled &&
+                arachneeCollider != null)
+            {
+                bool shieldColliderUsesExpectedLayer =
+                    shieldLayer < 0 ||
+                    warrior.shieldHitbox.gameObject.layer == shieldLayer;
+
+                if (shieldColliderUsesExpectedLayer &&
+                    (warrior.shieldHitbox.IsTouching(arachneeCollider) ||
+                     warrior.shieldHitbox.bounds.Intersects(arachneeCollider.bounds)))
+                {
+                    return true;
+                }
+            }
+
+            // Final rule requested for Arachnee: when Warrior's shield is up,
+            // Arachnee cannot damage him even if Unity reports the collision through
+            // the Hit Box layer first during the same physics step.
             return true;
         }
 
