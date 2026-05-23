@@ -251,6 +251,27 @@ namespace Assets.Scripts.Characteres.WarriorController
                 warriorIceOverlay.ForceRestoreDefaultRendererAfterFreeze();
         }
 
+        /// <summary>
+        /// Used by external enemies, such as Hashagar, after temporarily hiding the Warrior visuals.
+        /// Hashagar must not blindly enable every SpriteRenderer because that can reveal hidden overlays
+        /// such as the Hivernox frozen Warrior layer.
+        /// </summary>
+        public void ForceRestoreNormalVisualsAfterExternalHide()
+        {
+            if (IsDeadOrDying || _deathStarted)
+                return;
+
+            // If Warrior is really frozen by Hivernox, Hivernox owns the frozen overlay state.
+            if (_frozenByHivernox)
+                return;
+
+            if (animator != null && !string.IsNullOrWhiteSpace(hivernoxFrozenAnimatorBool))
+                animator.SetBool(hivernoxFrozenAnimatorBool, false);
+
+            HideHivernoxFreezeVfx();
+            RestoreNormalWarriorVisualsAfterHivernoxFreeze();
+        }
+
         private void ShowHivernoxFreezeVfx()
         {
             if (warriorIceOverlay != null)

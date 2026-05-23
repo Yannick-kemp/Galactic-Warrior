@@ -14,7 +14,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
     public class Enemy : CharacterController, IStepable, IAttacker
     {
         [Header("Attack Configuration")]
-        [SerializeField] public float Range = 3f; 
+        [SerializeField] public float Range = 3f;
         [SerializeField] protected float attackCooldown = 1.5f;
         [SerializeField] protected int attackDamage = 10;
 
@@ -147,6 +147,47 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         protected float _committedPatrolEdgeX;
         protected Collider2D _committedPatrolPlatform;
 
+        [Header("Warrior Body Momentum Guard")]
+        [Tooltip("ON = Warrior body contact cannot physically shove / drag this enemy through Rigidbody2D solver momentum. Scripted movement such as patrol, chase, jumps, SmoothStepBack, stun, death, and platform carry is preserved.")]
+        [SerializeField] private bool preventWarriorBodyMomentumPush = true;
+
+        [Tooltip("How strongly the guard restores unwanted body-push drift. 1 = cancel all excess drift, lower values soften the correction.")]
+        [SerializeField, Range(0f, 1f)] private float warriorBodyPushRestoreStrength = 1f;
+
+        [Tooltip("Small drift allowed during a Warrior body contact before correction starts. Keep this slightly above your physics skin.")]
+        [SerializeField, Min(0f)] private float maxAllowedBodyPushDistance = 0.03f;
+
+        [Tooltip("How long a Warrior body contact is considered active after the latest collision callback.")]
+        [SerializeField, Min(0.02f)] private float warriorBodyPushContactMemory = 0.10f;
+
+        [Tooltip("Maximum position correction applied in one physics callback. Prevents visible teleports if something extreme happens.")]
+        [SerializeField, Min(0.01f)] private float warriorBodyPushMaxCorrectionPerStep = 0.20f;
+
+        [Tooltip("ON = cancel horizontal shove/drag caused by Warrior body contact.")]
+        [SerializeField] private bool preventWarriorBodyHorizontalPush = true;
+
+        [Tooltip("ON = cancel unwanted vertical lifting caused by Warrior body contact. Automatically skipped on moving/rotating platforms and while jumping.")]
+        [SerializeField] private bool preventWarriorBodyVerticalLift = true;
+
+        [Tooltip("Extra vertical tolerance before treating upward drift as Warrior lifting the enemy.")]
+        [SerializeField, Min(0f)] private float warriorBodyLiftAllowance = 0.04f;
+
+        [Tooltip("ON = clears enemy Rigidbody2D velocity along the Warrior push direction while body contact is active.")]
+        [SerializeField] private bool cancelWarriorBodyPushVelocity = true;
+
+        private Vector2 _warriorBodyPushPhysicsStepStart;
+        private bool _hasWarriorBodyPushPhysicsStepStart;
+
+        private Vector2 _warriorBodyPushSafePosition;
+        private bool _hasWarriorBodyPushSafePosition;
+
+        private float _lastWarriorBodyContactTime = -999f;
+        private int _lastWarriorBodyContactFrame = -999;
+        private Warrior _lastWarriorBodyContactWarrior;
+        private Vector2 _lastWarriorBodyPushAxis = Vector2.right;
+        private float _ignoreWarriorBodyPushCorrectionUntil = -999f;
+        private int _ignoreWarriorBodyPushCorrectionFrame = -999;
+
         public EnemySpawnPoint OwnerSpawnPoint { get; private set; }
 
         public void SetEnemyType(EnemyType type)
@@ -175,26 +216,32 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         protected virtual void FixedUpdate()
         {
-            if (groundCheckPoint == null) return;
+            CaptureWarriorBodyPushPhysicsStepStart();
 
-            RaycastHit2D hit = Physics2D.Raycast(
-                groundCheckPoint.position,
-                Vector2.down,
-                rayLength,
-                PlatformLayer
-            );
+            if (groundCheckPoint != null)
+            {
+                RaycastHit2D hit = Physics2D.Raycast(
+                    groundCheckPoint.position,
+                    Vector2.down,
+                    rayLength,
+                    PlatformLayer
+                );
 
-            if (hit.collider != null)
-            {
-                var platform = hit.collider.GetComponent<PlatFormPlfColliderTrigger>();
-                if (platform != null)
-                    CurrentplatForm = platform;
+                if (hit.collider != null)
+                {
+                    var platform = hit.collider.GetComponent<PlatFormPlfColliderTrigger>();
+                    if (platform != null)
+                        CurrentplatForm = platform;
+                }
+                else
+                {
+                    if (CurrentplatForm != null)
+                        CurrentplatForm = null;
+                }
             }
-            else
-            {
-                if (CurrentplatForm != null)
-                    CurrentplatForm = null;
-            }
+
+            PreventUnwantedWarriorBodyPush(null);
+            RefreshWarriorBodyPushSafePosition();
         }
 
         protected override void Start()
@@ -572,6 +619,389 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 return platformBounds.max.x;
         }
 
+        #region Warrior Body Momentum Guard
+
+        private void CaptureWarriorBodyPushPhysicsStepStart()
+        {
+            _warriorBodyPushPhysicsStepStart = GetEnemyPhysicsPosition();
+            _hasWarriorBodyPushPhysicsStepStart = true;
+        }
+
+        private void RefreshWarriorBodyPushSafePosition()
+        {
+            if (!preventWarriorBodyMomentumPush)
+                return;
+
+            if (HasRecentWarriorBodyContact())
+                return;
+
+            _warriorBodyPushSafePosition = GetEnemyPhysicsPosition();
+            _hasWarriorBodyPushSafePosition = true;
+            _lastWarriorBodyContactWarrior = null;
+        }
+
+        protected virtual void OnCollisionEnter2D(Collision2D collision)
+        {
+            TryRegisterWarriorBodyMomentumContact(collision);
+        }
+
+        protected virtual void OnCollisionStay2D(Collision2D collision)
+        {
+            TryRegisterWarriorBodyMomentumContact(collision);
+        }
+
+        protected virtual void OnCollisionExit2D(Collision2D collision)
+        {
+            Warrior warrior = GetWarriorFromCollision(collision);
+
+            if (warrior == null)
+                return;
+
+            if (_lastWarriorBodyContactWarrior == warrior)
+            {
+                _lastWarriorBodyContactTime = Time.time;
+                _lastWarriorBodyContactFrame = Time.frameCount;
+            }
+        }
+
+        private void TryRegisterWarriorBodyMomentumContact(Collision2D collision)
+        {
+            if (!preventWarriorBodyMomentumPush)
+                return;
+
+            Warrior warrior = GetWarriorFromCollision(collision);
+
+            if (warrior == null)
+                return;
+
+            Collider2D warriorCollider = collision != null ? collision.collider : null;
+
+            if (!IsWarriorBodyMomentumCollider(warrior, warriorCollider))
+                return;
+
+            _lastWarriorBodyContactWarrior = warrior;
+            _lastWarriorBodyContactTime = Time.time;
+            _lastWarriorBodyContactFrame = Time.frameCount;
+            _lastWarriorBodyPushAxis = GetWarriorBodyPushAxis(warrior);
+
+            if (!_hasWarriorBodyPushSafePosition)
+            {
+                _warriorBodyPushSafePosition = _hasWarriorBodyPushPhysicsStepStart
+                    ? _warriorBodyPushPhysicsStepStart
+                    : GetEnemyPhysicsPosition();
+
+                _hasWarriorBodyPushSafePosition = true;
+            }
+
+            PreventUnwantedWarriorBodyPush(collision);
+        }
+
+        private Warrior GetWarriorFromCollision(Collision2D collision)
+        {
+            if (collision == null || collision.collider == null)
+                return null;
+
+            return collision.collider.GetComponentInParent<Warrior>();
+        }
+
+        private bool IsWarriorBodyMomentumCollider(Warrior warrior, Collider2D warriorCollider)
+        {
+            if (warrior == null || warriorCollider == null)
+                return false;
+
+            if (warriorCollider.isTrigger)
+                return false;
+
+            int shieldLaserLayer = LayerMask.NameToLayer("Shield Laser");
+
+            if (shieldLaserLayer >= 0 && warriorCollider.gameObject.layer == shieldLaserLayer)
+                return false;
+
+            return true;
+        }
+
+        private Vector2 GetEnemyPhysicsPosition()
+        {
+            if (rigidbody2 != null)
+                return rigidbody2.position;
+
+            return transform.position;
+        }
+
+        private Vector2 GetEnemyBodyCenter()
+        {
+            Collider2D body = NormalCollider != null && NormalCollider.enabled
+                ? NormalCollider
+                : collider2;
+
+            if (body != null)
+                return body.bounds.center;
+
+            return transform.position;
+        }
+
+        private Vector2 GetWarriorBodyCenter(Warrior warrior)
+        {
+            if (warrior != null && warrior.collider2 != null)
+                return warrior.collider2.bounds.center;
+
+            return warrior != null ? (Vector2)warrior.transform.position : Vector2.zero;
+        }
+
+        private Vector2 GetWarriorBodyPushAxis(Warrior warrior)
+        {
+            Vector2 myCenter = GetEnemyBodyCenter();
+            Vector2 warriorCenter = GetWarriorBodyCenter(warrior);
+
+            float dx = myCenter.x - warriorCenter.x;
+
+            if (Mathf.Abs(dx) < 0.001f)
+                dx = transform.position.x - warrior.transform.position.x;
+
+            if (Mathf.Abs(dx) < 0.001f)
+                dx = transform.localScale.x >= 0f ? 1f : -1f;
+
+            return new Vector2(Mathf.Sign(dx), 0f);
+        }
+
+        private bool HasRecentWarriorBodyContact()
+        {
+            if (_lastWarriorBodyContactWarrior == null)
+                return false;
+
+            if (Time.frameCount == _lastWarriorBodyContactFrame)
+                return true;
+
+            return Time.time - _lastWarriorBodyContactTime <= warriorBodyPushContactMemory;
+        }
+
+        private bool IsIgnoringWarriorBodyPushPositionCorrection()
+        {
+            if (Time.frameCount <= _ignoreWarriorBodyPushCorrectionFrame)
+                return true;
+
+            return Time.time <= _ignoreWarriorBodyPushCorrectionUntil;
+        }
+
+        /// <summary>
+        /// Call this from intentional scripted displacement, for example custom recoil,
+        /// custom dash, boss reposition, or child-specific movement that should not be
+        /// interpreted as Warrior body momentum.
+        /// </summary>
+        protected void MarkIntentionalEnemyDisplacement(float protectSeconds = 0.08f)
+        {
+            _ignoreWarriorBodyPushCorrectionUntil =
+                Mathf.Max(_ignoreWarriorBodyPushCorrectionUntil, Time.time + protectSeconds);
+
+            _ignoreWarriorBodyPushCorrectionFrame =
+                Mathf.Max(_ignoreWarriorBodyPushCorrectionFrame, Time.frameCount + 1);
+        }
+
+        private bool CanCorrectWarriorBodyPushPosition()
+        {
+            if (!preventWarriorBodyMomentumPush)
+                return false;
+
+            if (!HasRecentWarriorBodyContact())
+                return false;
+
+            if (_deathStarted || _isDead || currentHealth <= 0f)
+                return false;
+
+            if (IsIgnoringWarriorBodyPushPositionCorrection())
+                return false;
+
+            // Do not fight active scripted movement. We still cancel Rigidbody2D push
+            // velocity below, but we do not teleport/rollback while AI or pathfinding
+            // is actively moving the enemy.
+            if (activesMoveCoroutine != null)
+                return false;
+
+            if (activesJumpCoroutine != null || _isJumping)
+                return false;
+
+            return true;
+        }
+
+        private void PreventUnwantedWarriorBodyPush(Collision2D collision)
+        {
+            if (!preventWarriorBodyMomentumPush)
+                return;
+
+            if (!HasRecentWarriorBodyContact())
+                return;
+
+            CancelWarriorBodyMomentumVelocity();
+
+            if (!CanCorrectWarriorBodyPushPosition())
+                return;
+
+            Vector2 currentPosition = GetEnemyPhysicsPosition();
+
+            Vector2 referencePosition = _hasWarriorBodyPushPhysicsStepStart
+                ? _warriorBodyPushPhysicsStepStart
+                : (_hasWarriorBodyPushSafePosition ? _warriorBodyPushSafePosition : currentPosition);
+
+            Vector2 delta = currentPosition - referencePosition;
+            Vector2 correction = Vector2.zero;
+
+            if (preventWarriorBodyHorizontalPush)
+            {
+                float pushSign = Mathf.Sign(_lastWarriorBodyPushAxis.x);
+
+                if (Mathf.Abs(pushSign) < 0.001f)
+                    pushSign = 1f;
+
+                float pushedAwayAmount = delta.x * pushSign;
+
+                if (pushedAwayAmount > maxAllowedBodyPushDistance)
+                {
+                    float excess = pushedAwayAmount - maxAllowedBodyPushDistance;
+                    float amount = Mathf.Min(
+                        excess * warriorBodyPushRestoreStrength,
+                        warriorBodyPushMaxCorrectionPerStep
+                    );
+
+                    correction.x = -pushSign * amount;
+                }
+            }
+
+            if (ShouldCorrectWarriorBodyVerticalLift(delta))
+            {
+                float allowedLift = maxAllowedBodyPushDistance + warriorBodyLiftAllowance;
+                float liftedAmount = delta.y - allowedLift;
+
+                if (liftedAmount > 0f)
+                {
+                    float amount = Mathf.Min(
+                        liftedAmount * warriorBodyPushRestoreStrength,
+                        warriorBodyPushMaxCorrectionPerStep
+                    );
+
+                    correction.y = -amount;
+                }
+            }
+
+            if (correction.sqrMagnitude <= 0.0000001f)
+                return;
+
+            Vector2 correctedPosition = currentPosition + correction;
+            correctedPosition = ClampWarriorBodyPushCorrectionToPlatform(correctedPosition, currentPosition);
+
+            ApplyWarriorBodyPushCorrectedPosition(correctedPosition);
+        }
+
+        private bool ShouldCorrectWarriorBodyVerticalLift(Vector2 delta)
+        {
+            if (!preventWarriorBodyVerticalLift)
+                return false;
+
+            if (delta.y <= maxAllowedBodyPushDistance + warriorBodyLiftAllowance)
+                return false;
+
+            if (activesJumpCoroutine != null || _isJumping)
+                return false;
+
+            // Moving/rotating platforms own vertical seating/carry. Do not fight them.
+            if (IsOnMovingOrRotatingPlatform())
+                return false;
+
+            if (CurrentplatForm == null || CurrentplatForm.platformCollider == null)
+                return false;
+
+            return true;
+        }
+
+        private bool IsOnMovingOrRotatingPlatform()
+        {
+            if (CurrentplatForm == null)
+                return false;
+
+            string typeName = CurrentplatForm.GetType().Name;
+
+            return typeName == "MovingVerticalPlatform"
+                || typeName == "MovingHorizontalPlatform"
+                || typeName == "RotatingPlatform";
+        }
+
+        private Vector2 ClampWarriorBodyPushCorrectionToPlatform(Vector2 correctedPosition, Vector2 currentPosition)
+        {
+            if (CurrentplatForm == null || CurrentplatForm.platformCollider == null)
+                return correctedPosition;
+
+            Bounds pb = CurrentplatForm.platformCollider.bounds;
+
+            correctedPosition.x = Mathf.Clamp(correctedPosition.x, pb.min.x, pb.max.x);
+
+            // Never correct downward through the platform surface.
+            Collider2D body = NormalCollider != null && NormalCollider.enabled
+                ? NormalCollider
+                : collider2;
+
+            if (body != null)
+            {
+                float bottomOffsetFromBody = body.bounds.min.y - transform.position.y;
+                float minY = pb.max.y + 0.01f - bottomOffsetFromBody;
+
+                if (correctedPosition.y < minY)
+                    correctedPosition.y = Mathf.Min(currentPosition.y, minY);
+            }
+
+            return correctedPosition;
+        }
+
+        private void ApplyWarriorBodyPushCorrectedPosition(Vector2 correctedPosition)
+        {
+            if (rigidbody2 != null)
+            {
+                rigidbody2.position = correctedPosition;
+                rigidbody2.angularVelocity = 0f;
+                rigidbody2.WakeUp();
+            }
+            else
+            {
+                Vector3 p = transform.position;
+                p.x = correctedPosition.x;
+                p.y = correctedPosition.y;
+                transform.position = p;
+            }
+        }
+
+        private void CancelWarriorBodyMomentumVelocity()
+        {
+            if (!cancelWarriorBodyPushVelocity)
+                return;
+
+            if (rigidbody2 == null)
+                return;
+
+            Vector2 v = rigidbody2.linearVelocity;
+
+            if (preventWarriorBodyHorizontalPush)
+            {
+                float pushSign = Mathf.Sign(_lastWarriorBodyPushAxis.x);
+
+                if (Mathf.Abs(pushSign) > 0.001f)
+                {
+                    float velocityAwayFromWarrior = v.x * pushSign;
+
+                    if (velocityAwayFromWarrior > 0f)
+                        v.x -= velocityAwayFromWarrior * pushSign;
+                }
+            }
+
+            if (preventWarriorBodyVerticalLift && !IsOnMovingOrRotatingPlatform())
+            {
+                if (v.y > 0f && !_isJumping && activesJumpCoroutine == null)
+                    v.y = 0f;
+            }
+
+            rigidbody2.linearVelocity = v;
+            rigidbody2.angularVelocity = 0f;
+        }
+
+        #endregion
+
         #region Trigger Colliders for Warrior Overlap Resolution
         protected virtual void OnTriggerEnter2D(Collider2D collision)
         {
@@ -637,6 +1067,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         public IEnumerator SmoothStepBack(bool positif)
         {
+            var platformSnapshot = CurrentplatForm; // snapshot au début
+
             if (!CanStepBack(positif))
                 yield break;
 
@@ -670,8 +1102,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 newPos = ResolveStepBackPositionOnMovingVerticalPlatform(newPos);
                 MoveStepBackBody(newPos);
 
-                elapsed += Time.deltaTime;
-                yield return null;
+                elapsed += Time.fixedDeltaTime; //<- cohérent avec FixedUpdate
+                yield return new WaitForFixedUpdate(); //<- synchronisé avec le lift
             }
 
             targetPos.x = ClampToCurrentPlatform(targetPos.x);
@@ -681,6 +1113,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private void MoveStepBackBody(Vector3 position)
         {
+            // SmoothStepBack is an intentional gameplay reaction. The Warrior body
+            // momentum guard must never rollback this movement.
+            MarkIntentionalEnemyDisplacement(0.12f);
+
             if (rigidbody2 != null)
                 rigidbody2.MovePosition(position);
             else
@@ -1090,6 +1526,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         // Simple patrol enemies use this.
         // Path-driven enemies like Zalayty override this to false.
         protected virtual bool UsesCommittedPatrolEdge => true;
+
         protected void CommitPatrolEdgeForMovingVerticalPlatform()
         {
             if (!UsesCommittedPatrolEdge)
@@ -1099,15 +1536,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 return;
             }
 
-            if (!(CurrentplatForm is MovingVerticalPlatform))
+            if (CurrentplatForm == null || CurrentplatForm.platformCollider == null)
             {
                 _committedPatrolPlatform = null;
                 _hasCommittedPatrolEdge = false;
                 return;
             }
-
-            if (CurrentplatForm == null || CurrentplatForm.platformCollider == null)
-                return;
 
             Collider2D platformCol = CurrentplatForm.platformCollider;
             Bounds pb = platformCol.bounds;
@@ -1138,13 +1572,13 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             xEdge = _committedPatrolEdgeX;
 
+            // Important: do this for every platform type, not only MovingVerticalPlatform.
+            // This is what flips the patrol target when the enemy reaches an edge.
             if (HasReachedCommittedPatrolEdge(pb))
             {
-                _committedPatrolEdgeX =
-                    Mathf.Abs(_committedPatrolEdgeX - leftEdge) < 0.01f
-                    ? rightEdge
-                    : leftEdge;
+                bool committedLeft = Mathf.Abs(_committedPatrolEdgeX - leftEdge) < 0.01f;
 
+                _committedPatrolEdgeX = committedLeft ? rightEdge : leftEdge;
                 xEdge = _committedPatrolEdgeX;
 
                 if (activesMoveCoroutine != null)
@@ -1274,6 +1708,24 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 Debug.Log($"[Enemy] {name} fell below world death Y");
                 ForceDeathImmediate();
             }
+        }
+
+        [Header("Warrior Top Ping-Pong")]
+        [SerializeField] private bool participatesInWarriorTopPingPongEscape = true;
+
+        public virtual bool CanCauseWarriorTopPingPongTrap =>
+            participatesInWarriorTopPingPongEscape &&
+            !IsDeadOrDying &&
+            currentHealth > 0f;
+
+        public virtual Collider2D WarriorTopPingPongCollider =>
+            NormalCollider != null ? NormalCollider : collider2;
+
+        public virtual void OnWarriorTopPingPongTrapBroken(Warrior warrior)
+        {
+            // Optional extension point.
+            // Most enemies do nothing.
+            // A special enemy can override this to step aside, stop attacking, etc.
         }
     }
 

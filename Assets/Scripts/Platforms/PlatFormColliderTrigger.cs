@@ -9,6 +9,16 @@ public class PlatFormColliderTrigger : MonoBehaviour
     public BoxCollider2D platformCollider;
     public BoxCollider2D platformTrigger;
 
+    [Header("Motion")]
+    [Tooltip("When false, motion platform subclasses must pause only their movement/rotation. Colliders, triggers, landing, riders, respawn, and visuals stay active.")]
+    [SerializeField] private bool platformMotionEnabled = true;
+
+    public bool PlatformMotionEnabled
+    {
+        get => platformMotionEnabled;
+        set => platformMotionEnabled = value;
+    }
+
     [Header("Visual Theme")]
     [Tooltip("The original SpriteRenderer directly on the platform root object. Example: Plf_bck_rotating SpriteRenderer.")]
     [SerializeField] private SpriteRenderer defaultRenderer;

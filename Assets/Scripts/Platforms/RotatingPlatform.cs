@@ -116,6 +116,20 @@ public class RotatingPlatform : PlatFormPlfColliderTrigger
     {
         base.FixedUpdate();
 
+        if (!PlatformMotionEnabled)
+        {
+            RemoveInvalidPassengersBeforeMove();
+
+            _lastCarryDelta = Vector2.zero;
+            _lastCarryFixedTime = Time.fixedTime;
+
+            // Motion is paused only. Keep rider/passenger validation alive without orbit delta.
+            if (carryWarriorAndZalayty)
+                CarryPassengers(Vector2.zero);
+
+            return;
+        }
+
         if (centerOverride != null)
             _center = centerOverride.position;
 

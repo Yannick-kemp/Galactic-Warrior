@@ -104,11 +104,24 @@ namespace Assets.Scripts.Platforms
         {
             base.FixedUpdate();
 
+            if (!PlatformMotionEnabled)
+            {
+                _lastLiftDelta = Vector2.zero;
+
+                // Motion is paused only. Keep rider validation and surface seating alive.
+                if (carryCharactersLikeLift)
+                    CarryRegisteredRiders(_lastLiftDelta);
+
+                return;
+            }
+
             _lastLiftDelta = MovePlatformStep();
 
             if (carryCharactersLikeLift)
                 CarryRegisteredRiders(_lastLiftDelta);
         }
+
+
 
         private Vector2 MovePlatformStep()
         {

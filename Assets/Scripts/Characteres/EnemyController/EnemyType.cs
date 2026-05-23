@@ -9,5 +9,6 @@
     Raka,
     BeeEretic,
     Morvex,
-    Hivernox
+    Hivernox,
+    Arachnee
 }
