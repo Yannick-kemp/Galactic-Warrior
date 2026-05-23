@@ -53,6 +53,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private bool destroySelfAfterExplosion = true;
         [SerializeField, Min(0f)] private float explosionDestroyDelay = 0.1f;
 
+        [Header("Arachnee Ice Bullet Weakness")]
+        [Tooltip("ON = normal Warrior attacks and other generic damage sources cannot damage or kill Arachnee.")]
+        [SerializeField] private bool canOnlyBeKilledByIceBulletProjectile = true;
+
+        [Tooltip("ON = one IceBulletProjectile hit immediately resolves Arachnee's explosion/death sequence.")]
+        [SerializeField] private bool iceBulletKillsInOneShot = true;
+
+
         [Header("Arachnee Platform Ignore")]
         [Tooltip("Layer used to detect platform body colliders that can block Arachnee's attack jump. If empty, Arachnee falls back to PlatformLayer.")]
         [SerializeField] private LayerMask platformObstacleMask;
@@ -957,6 +965,52 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             }
 
             ignoredAttackPlatforms.RemoveAt(index);
+        }
+
+
+        public override bool TakeDamageAndReturnKilled(float damage)
+        {
+            if (canOnlyBeKilledByIceBulletProjectile)
+                return false;
+
+            return base.TakeDamageAndReturnKilled(damage);
+        }
+
+        public override void TakeDamage(float damage)
+        {
+            if (canOnlyBeKilledByIceBulletProjectile)
+                return;
+
+            base.TakeDamage(damage);
+        }
+
+        public bool TryResolveIceBulletProjectileHit(Vector2 hitPoint, Warrior projectileOwner = null)
+        {
+            if (IsDeadOrDying)
+                return false;
+
+            attackResolved = true;
+            attackJumpActive = false;
+
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+            RestoreAllIgnoredAttackPlatformCollisions();
+
+            SpawnExplosion(hitPoint);
+
+            // IceBulletProjectile is Arachnee's dedicated weakness. It must kill in one shot
+            // even when generic damage is blocked by canOnlyBeKilledByIceBulletProjectile.
+            if (iceBulletKillsInOneShot)
+            {
+                if (selfDestructRoutine == null)
+                    selfDestructRoutine = StartCoroutine(SelfDestructAfterExplosionDelay());
+            }
+            else if (!IsDeadOrDying)
+            {
+                WaitAnimationDisplay();
+            }
+
+            return true;
         }
 
         private void TryResolveWarriorJumpHit(Collision2D collision)
