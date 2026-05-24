@@ -81,7 +81,7 @@ namespace Assets.Scripts.Relics.Core
             return true;
         }
 
-        // Ancienne signature conservée (compat)
+        // Ancienne signature conserv?e (compat)
         public bool CollectFromPickup(RelicDefinition def, int pickupInstanceId)
         {
             return CollectFromPickup(def, pickupInstanceId, Vector3.zero);
@@ -237,7 +237,7 @@ namespace Assets.Scripts.Relics.Core
 
             int newCount = current - amount;
 
-            if (newCount <= 0) 
+            if (newCount <= 0)
                 _counts.Remove(relicId);
             else _counts[relicId] = newCount;
 
@@ -264,13 +264,13 @@ namespace Assets.Scripts.Relics.Core
         }
 
         public void RegisterDefinition(RelicDefinition def)
-{
-    if (def == null) return;
+        {
+            if (def == null) return;
 
-    string id = GetId(def);
-    if (string.IsNullOrEmpty(id)) return;
+            string id = GetId(def);
+            if (string.IsNullOrEmpty(id)) return;
 
-    _defsById[id] = def;
-}
+            _defsById[id] = def;
+        }
     }
 }
