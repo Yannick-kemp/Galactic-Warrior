@@ -143,6 +143,12 @@ namespace Assets.Scripts.Relics.Projectiles
         {
             if (enemy == null) return;
 
+            if (enemy is ArachneeMonster arachnee)
+            {
+                HitArachnee(arachnee, hitCollider);
+                return;
+            }
+
             _spent = true;
 
             Vector3 hitPoint = transform.position;
@@ -161,27 +167,51 @@ namespace Assets.Scripts.Relics.Projectiles
             enemy.stepBackDistance = knockback;
             StartCoroutine(_dir.x >= 0f ? enemy.SmoothStepBack(true) : enemy.SmoothStepBack(false));
 
-            if (_hub != null && _owner != null)
-            {
-                _hub.RaiseHit(new HitEvent
-                {
-                    attacker = _owner.gameObject,
-                    target = enemy.gameObject,
-                    damage = _damage,
-                    hitPoint = hitPoint
-                });
-
-                if (killed)
-                {
-                    _hub.RaiseKill(new KillEvent
-                    {
-                        killer = _owner.gameObject,
-                        victim = enemy.gameObject
-                    });
-                }
-            }
+            RaiseHitEvents(enemy, hitPoint, killed);
 
             Destroy(gameObject);
+        }
+
+        private void HitArachnee(ArachneeMonster arachnee, Collider2D hitCollider)
+        {
+            if (arachnee == null) return;
+
+            _spent = true;
+
+            Vector3 hitPoint = transform.position;
+            if (hitCollider != null)
+                hitPoint = hitCollider.ClosestPoint(transform.position);
+
+            SpawnHitFx(hitPoint);
+
+            bool killed = arachnee.TryResolveIceBulletProjectileHit(hitPoint, _owner);
+
+            RaiseHitEvents(arachnee, hitPoint, killed);
+
+            Destroy(gameObject);
+        }
+
+        private void RaiseHitEvents(Enemy enemy, Vector3 hitPoint, bool killed)
+        {
+            if (_hub == null || _owner == null || enemy == null)
+                return;
+
+            _hub.RaiseHit(new HitEvent
+            {
+                attacker = _owner.gameObject,
+                target = enemy.gameObject,
+                damage = _damage,
+                hitPoint = hitPoint
+            });
+
+            if (killed)
+            {
+                _hub.RaiseKill(new KillEvent
+                {
+                    killer = _owner.gameObject,
+                    victim = enemy.gameObject
+                });
+            }
         }
 
         private void SpawnHitFx(Vector3 hitPoint)

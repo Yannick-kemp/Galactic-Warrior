@@ -222,9 +222,7 @@ public class RelicUIController : MonoBehaviour
         string relicId = ResolveRelicId(r);
         if (string.IsNullOrEmpty(relicId)) return;
 
-        // KEY RELIC: contextual use.
-        // If Warrior is in front of a disabled moving/rotating platform lock,
-        // clicking the key consumes it through KeyRelicLock and enables PlatformMotionEnabled.
+        // KEY RELIC
         if (IsKeyRelicRule(r))
         {
             TryActivateKeyPlatformMotion(r);
@@ -238,7 +236,6 @@ public class RelicUIController : MonoBehaviour
             return;
         }
 
-        // hard block before any consume
         if (IsBlockedByMutualExclusion(r))
         {
             RefreshButton(r);
@@ -250,14 +247,13 @@ public class RelicUIController : MonoBehaviour
 
         int consume = Mathf.Max(1, r.consumeStacks);
 
-        // pre-check resource
         if (relicManager.GetCountById(relicId) < consume)
         {
             RefreshButton(r);
             return;
         }
 
-        // ICE BALL: arm now, consume later on world touch
+        // ICE BALL: arm now, consume on world touch
         if (r.slot != null && r.slot.Definition is IceBallRelic iceDef)
         {
             bool armed = warrior != null && warrior.TryArmIceBallRelic(iceDef, consumeOnCast: true);
@@ -265,10 +261,7 @@ public class RelicUIController : MonoBehaviour
             return;
         }
 
-        // SPRINT:
-        // - first click arms sprint
-        // - extra click while armed queues more duration
-        // - extra click while active extends the same running sprint timer
+        // SPRINT
         if (r.slot != null && r.slot.Definition is SprintRelic sprintDef)
         {
             bool consumed = relicManager.TryConsumeById(relicId, consume);
@@ -279,17 +272,15 @@ public class RelicUIController : MonoBehaviour
             }
 
             float durationToAdd = sprintDef.sprintDuration * consume;
-
             bool used = warrior != null && warrior.TryExtendOrQueueSprintRelic(
                 relicId: relicId,
                 speedMultiplier: sprintDef.speedMultiplier,
                 duration: durationToAdd,
                 cooldown: sprintDef.sprintCooldown,
-                consumeOnUse: false); // UI already consumed the stack(s).
+                consumeOnUse: false);
 
             if (!used)
             {
-                // Refund exactly what this click consumed.
                 for (int i = 0; i < consume; i++)
                     relicManager.Collect(sprintDef, bypassFrameCap: true);
             }
@@ -298,25 +289,44 @@ public class RelicUIController : MonoBehaviour
             return;
         }
 
-        // SHIELD: activate first, consume only if activation succeeds
-        if (r.effect == RelicUseEffect.ShieldTimed)
+        // POWER COMBO: arm Attack2, consume only if arming succeeds
+        if (r.slot != null && r.slot.Definition is PowerComboRelic powerDef)
+        {
+            bool armed = warrior != null && warrior.TryUseRelicAttack2(
+                powerDef.attack2UseDuration,
+                powerDef.attack2Cooldown,
+                powerDef.triggerAttackImmediately);
+
+            if (!armed)
+            {
+                RefreshButton(r);
+                return;
+            }
+
+            relicManager.TryConsumeById(relicId, consume);
+            r.onUsed?.Invoke();
+            RefreshButton(r);
+            return;
+        }
+
+        // SHIELD: activate first, consume only if activation succeeds.
+        // Handled by definition type OR by the ShieldTimed effect enum (Inspector fallback).
+        bool isShieldRule = (r.slot != null && r.slot.Definition is ShieldRelic) ||
+                            r.effect == RelicUseEffect.ShieldTimed;
+
+        if (isShieldRule)
         {
             float duration = ResolveShieldDuration(r);
+            float cooldown = ResolveShieldCooldown(r);
 
-            bool used = warrior != null && warrior.TryUseShieldRelic(duration);
+            bool used = warrior != null && warrior.TryUseShieldRelic(duration, cooldown);
             if (!used)
             {
                 RefreshButton(r);
                 return;
             }
 
-            bool consumed = relicManager.TryConsumeById(relicId, consume);
-            if (!consumed)
-            {
-                RefreshButton(r);
-                return;
-            }
-
+            relicManager.TryConsumeById(relicId, consume);
             StartTimedVisual(r, duration);
             r.onUsed?.Invoke();
             RefreshButton(r);
@@ -335,7 +345,15 @@ public class RelicUIController : MonoBehaviour
         r.onUsed?.Invoke();
         RefreshButton(r);
     }
+    private float ResolveShieldCooldown(RelicButtonRule r)
+    {
+        if (r.slot != null && r.slot.Definition is ShieldRelic shieldDef)
+            return Mathf.Max(0f, shieldDef.shieldCooldown);
 
+        // Inspector fallback: no dedicated cooldown field on the rule,
+        // so reuse effectValue (same field already used for duration fallback).
+        return Mathf.Max(0f, r.effectValue);
+    }
     private void ApplyImmediateEffect(RelicButtonRule r)
     {
         switch (r.effect)

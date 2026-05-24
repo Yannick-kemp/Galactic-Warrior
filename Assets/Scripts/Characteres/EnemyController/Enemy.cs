@@ -417,7 +417,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 AttackAnimationDisplay();
         }
 
-        public bool TakeDamageAndReturnKilled(float damage)
+        public virtual bool TakeDamageAndReturnKilled(float damage)
         {
             if (_isDead) return false;
             if (_deathStarted) return false;
