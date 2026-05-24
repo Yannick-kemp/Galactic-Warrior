@@ -40,6 +40,7 @@ namespace Assets.Scripts.Relics.UI
         private Button _button;
         private RelicManager _relicManager;
         private string _relicId;
+        private bool _controlledByRelicUIController;
 
         private void Awake()
         {
@@ -52,6 +53,25 @@ namespace Assets.Scripts.Relics.UI
 
             if (bindInternalClick)
                 _button.onClick.AddListener(OnClicked);
+        }
+
+        /// <summary>
+        /// Called by RelicUIController for buttons listed in its rules.
+        /// This prevents the standalone RelicUIButton.OnClicked path from running
+        /// after the controller has already consumed, disarmed, refunded, or armed.
+        /// </summary>
+        public void SetControlledByRelicUIController(bool controlled)
+        {
+            _controlledByRelicUIController = controlled;
+
+            if (controlled)
+                bindInternalClick = false;
+
+            if (_button == null)
+                _button = GetComponent<Button>();
+
+            if (_button != null)
+                _button.onClick.RemoveListener(OnClicked);
         }
 
         private void Start()
@@ -178,13 +198,14 @@ namespace Assets.Scripts.Relics.UI
                 return;
             }
 
-            bool blockedByIceAlreadyArmed =
-                definition is IceBallRelic &&
-                warrior.IsIceBallArmed;
+            bool thisRelicIsArmedWaitingStage =
+                (definition is IceBallRelic && warrior.IsIceBallArmed) ||
+                (definition is PowerComboRelic && warrior.IsPowerComboArmed);
 
-            _button.interactable =
-                hasResource &&
-                !blockedByIceAlreadyArmed;
+            // RelicUIController owns the actual click behavior.
+            // Keep the button clickable while its own reversible waiting stage is armed
+            // so the second click can cancel/disarm even when the count is already x0.
+            _button.interactable = hasResource || thisRelicIsArmedWaitingStage;
         }
 
         private bool IsWarriorUnavailable()
@@ -200,7 +221,7 @@ namespace Assets.Scripts.Relics.UI
         {
             ResolveRefs();
 
-            if (!bindInternalClick)
+            if (_controlledByRelicUIController || !bindInternalClick)
                 return;
 
             if (definition == null || warrior == null || _relicManager == null)
@@ -210,6 +231,15 @@ namespace Assets.Scripts.Relics.UI
                 return;
 
             warrior.NotifyUIConsumedInput(worldInputBlockSeconds);
+
+            // Standalone fallback only.
+            // RelicUIController normally owns this behavior, but this keeps old
+            // inspector setups safe if bindInternalClick was left ON.
+            if (TryCancelArmedWaitingStageFromStandaloneButton())
+            {
+                RefreshInteractable();
+                return;
+            }
 
             if (!HasResourceToUse())
                 return;
@@ -267,13 +297,24 @@ namespace Assets.Scripts.Relics.UI
 
             if (definition is IceBallRelic iceDef)
             {
+                bool shouldConsume = ShouldConsumeOnUse();
+
+                if (shouldConsume && !_relicManager.TryConsume(definition, 1))
+                    return;
+
                 bool armed = warrior.TryArmIceBallRelic(
                     iceDef,
-                    consumeOnCast: ShouldConsumeOnUse()
+                    consumeOnCast: false
                 );
 
                 if (!armed)
+                {
+                    if (shouldConsume)
+                        _relicManager.Collect(definition, bypassFrameCap: true);
+
+                    RefreshInteractable();
                     return;
+                }
 
                 RefreshInteractable();
                 return;
@@ -288,6 +329,11 @@ namespace Assets.Scripts.Relics.UI
                 cooldown = powerCombo.attack2Cooldown;
             }
 
+            bool shouldConsumeAttack2 = ShouldConsumeOnUse();
+
+            if (shouldConsumeAttack2 && !_relicManager.TryConsume(definition, 1))
+                return;
+
             bool attack2Used = warrior.TryUseRelicAttack2(
                 duration,
                 cooldown,
@@ -295,12 +341,41 @@ namespace Assets.Scripts.Relics.UI
             );
 
             if (!attack2Used)
-                return;
+            {
+                if (shouldConsumeAttack2)
+                    _relicManager.Collect(definition, bypassFrameCap: true);
 
-            if (ShouldConsumeOnUse())
-                _relicManager.TryConsume(definition, 1);
+                RefreshInteractable();
+                return;
+            }
 
             RefreshInteractable();
+        }
+
+        private bool TryCancelArmedWaitingStageFromStandaloneButton()
+        {
+            if (definition == null || warrior == null || _relicManager == null)
+                return false;
+
+            if (definition is IceBallRelic && warrior.IsIceBallArmed)
+            {
+                bool disarmed = warrior.DisarmIceBallRelic();
+                if (disarmed && ShouldConsumeOnUse())
+                    _relicManager.Collect(definition, bypassFrameCap: true);
+
+                return true;
+            }
+
+            if (definition is PowerComboRelic && warrior.IsPowerComboArmed)
+            {
+                bool disarmed = warrior.DisarmPowerComboRelic();
+                if (disarmed && ShouldConsumeOnUse())
+                    _relicManager.Collect(definition, bypassFrameCap: true);
+
+                return true;
+            }
+
+            return false;
         }
 
         private bool HasResourceToUse()

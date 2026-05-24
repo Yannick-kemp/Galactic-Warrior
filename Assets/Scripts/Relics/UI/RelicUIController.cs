@@ -139,6 +139,11 @@ public class RelicUIController : MonoBehaviour
             if (r.button == null && r.slot != null)
                 r.button = r.slot.GetComponent<Button>();
 
+            // Centralize clicks here. This prevents the standalone RelicUIButton
+            // handler from re-arming immediately after this controller disarms/refunds.
+            if (r.slot != null)
+                r.slot.SetControlledByRelicUIController(true);
+
             // Optional: avoid keyboard/gamepad selected-color sticking
             if (r.button != null)
             {
@@ -236,6 +241,11 @@ public class RelicUIController : MonoBehaviour
             return;
         }
 
+        // Click-again-to-disarm must run before any consume/arm logic.
+        // This keeps the armed state reversible without spending another stack.
+        if (TryDisarmAlreadyArmedRelic(r))
+            return;
+
         if (IsBlockedByMutualExclusion(r))
         {
             RefreshButton(r);
@@ -253,10 +263,26 @@ public class RelicUIController : MonoBehaviour
             return;
         }
 
-        // ICE BALL: arm now, consume on world touch
+        // ICE BALL: first click consumes one stack and arms the waiting stage.
+        // The actual projectile is fired later by the world-touch flow.
         if (r.slot != null && r.slot.Definition is IceBallRelic iceDef)
         {
-            bool armed = warrior != null && warrior.TryArmIceBallRelic(iceDef, consumeOnCast: true);
+            bool consumed = relicManager.TryConsumeById(relicId, consume);
+            if (!consumed)
+            {
+                RefreshButton(r);
+                return;
+            }
+
+            bool armed = warrior != null && warrior.TryArmIceBallRelic(iceDef, consumeOnCast: false);
+            if (!armed)
+            {
+                RefundStacks(iceDef, consume);
+                RefreshButton(r);
+                return;
+            }
+
+            r.onUsed?.Invoke();
             RefreshButton(r);
             return;
         }
@@ -289,21 +315,29 @@ public class RelicUIController : MonoBehaviour
             return;
         }
 
-        // POWER COMBO: arm Attack2, consume only if arming succeeds
+        // POWER COMBO: first click consumes one stack and arms Attack2 as a waiting stage.
+        // Do not trigger Attack2 here; the real action happens later from the attack button/input.
         if (r.slot != null && r.slot.Definition is PowerComboRelic powerDef)
         {
-            bool armed = warrior != null && warrior.TryUseRelicAttack2(
-                powerDef.attack2UseDuration,
-                powerDef.attack2Cooldown,
-                powerDef.triggerAttackImmediately);
-
-            if (!armed)
+            bool consumed = relicManager.TryConsumeById(relicId, consume);
+            if (!consumed)
             {
                 RefreshButton(r);
                 return;
             }
 
-            relicManager.TryConsumeById(relicId, consume);
+            bool armed = warrior != null && warrior.TryUseRelicAttack2(
+                powerDef.attack2UseDuration,
+                powerDef.attack2Cooldown,
+                triggerNow: false);
+
+            if (!armed)
+            {
+                RefundStacks(powerDef, consume);
+                RefreshButton(r);
+                return;
+            }
+
             r.onUsed?.Invoke();
             RefreshButton(r);
             return;
@@ -345,6 +379,47 @@ public class RelicUIController : MonoBehaviour
         r.onUsed?.Invoke();
         RefreshButton(r);
     }
+    private bool TryDisarmAlreadyArmedRelic(RelicButtonRule r)
+    {
+        if (r == null || r.slot == null || r.slot.Definition == null || warrior == null || relicManager == null)
+            return false;
+
+        RelicDefinition def = r.slot.Definition;
+        int refundStacks = Mathf.Max(1, r.consumeStacks);
+
+        if (def is IceBallRelic && warrior.IsIceBallArmed)
+        {
+            bool disarmed = warrior.DisarmIceBallRelic();
+            if (disarmed)
+                RefundStacks(def, refundStacks);
+
+            RefreshButton(r);
+            return true;
+        }
+
+        if (def is PowerComboRelic && warrior.IsPowerComboArmed)
+        {
+            bool disarmed = warrior.DisarmPowerComboRelic();
+            if (disarmed)
+                RefundStacks(def, refundStacks);
+
+            RefreshButton(r);
+            return true;
+        }
+
+        return false;
+    }
+
+    private void RefundStacks(RelicDefinition def, int amount)
+    {
+        if (def == null || relicManager == null)
+            return;
+
+        int safeAmount = Mathf.Max(1, amount);
+        for (int i = 0; i < safeAmount; i++)
+            relicManager.Collect(def, bypassFrameCap: true);
+    }
+
     private float ResolveShieldCooldown(RelicButtonRule r)
     {
         if (r.slot != null && r.slot.Definition is ShieldRelic shieldDef)
@@ -521,16 +596,44 @@ public class RelicUIController : MonoBehaviour
         int count = relicManager.GetCountById(relicId);
         bool hasCount = count > 0;
 
-        // NEW: block interactable if mutually exclusive state is active
-        bool blocked = IsBlockedByMutualExclusion(r);
+        bool armedThisRelic = IsThisRelicAlreadyArmed(r);
 
-        bool blockedByIceArmed =
-    r.slot != null &&
-    r.slot.Definition is IceBallRelic &&
-    warrior != null &&
-    warrior.IsIceBallArmed;
+        // Block interactable if mutually exclusive state is active, except when this
+        // exact button is the armed relic; then it must stay clickable so it can cancel.
+        bool blocked = !armedThisRelic && IsBlockedByMutualExclusion(r);
 
-        r.button.interactable = hasCount && !blocked && !blockedByIceArmed;
+        r.button.interactable = (hasCount || armedThisRelic) && !blocked;
+        ApplyArmedVisual(r, armedThisRelic);
+    }
+
+    private bool IsThisRelicAlreadyArmed(RelicButtonRule r)
+    {
+        if (r == null || r.slot == null || r.slot.Definition == null || warrior == null)
+            return false;
+
+        if (r.slot.Definition is IceBallRelic)
+            return warrior.IsIceBallArmed;
+
+        if (r.slot.Definition is PowerComboRelic)
+            return warrior.IsPowerComboArmed;
+
+        return false;
+    }
+
+    private void ApplyArmedVisual(RelicButtonRule r, bool armed)
+    {
+        if (r == null || r.button == null || r.button.targetGraphic == null)
+            return;
+
+        // Do not fight timed shield visuals or KeyRelic blinking.
+        if (_fxActive.Contains(r.button) || _keyBlinkingButtons.Contains(r.button))
+            return;
+
+        Color defaultColor = _defaultGraphicColors.TryGetValue(r.button, out var dc)
+            ? dc
+            : r.button.colors.normalColor;
+
+        r.button.targetGraphic.color = armed ? r.activeColor : defaultColor;
     }
 
     private void StopAllRunningFx()

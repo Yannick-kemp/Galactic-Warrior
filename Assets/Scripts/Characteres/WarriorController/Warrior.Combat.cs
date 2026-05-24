@@ -609,11 +609,12 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (!CanMove || !CanAttackWarrior) return false;
             if (activesJumpCoroutine != null || IsFalling || IsFallingGrazesEdge) return false;
 
-            // If already armed/active, ignore (optional behavior)
+            // If already armed/active, ignore. The UI controller handles click-again cancel
+            // before calling this method.
             if (_attack2ArmedByRelic)
                 return false;
 
-            // DO NOT consume cooldown here anymore.
+            // DO NOT consume cooldown here.
             // We only arm Attack2 and will start cooldown on first attack button press.
             _attack2ArmedByRelic = true;
             _attack2CooldownStarted = false;
@@ -623,11 +624,24 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.20f));
 
-            // Optional immediate trigger still works:
-            // if triggerNow = true, the button-path logic below will consume cooldown there.
+            // Optional immediate trigger still works for old setups, but the new relic UI
+            // passes false so PowerCombo remains a reversible waiting stage.
             if (triggerNow)
                 RequestPrimaryAttackFromUIButton();
 
+            return true;
+        }
+
+        public bool DisarmPowerComboRelic()
+        {
+            // Cancellation is allowed only before the real Attack2 use starts.
+            // After _attack2CooldownStarted becomes true, the relic action has already begun
+            // and must not be refunded by the UI.
+            if (!_attack2ArmedByRelic || _attack2CooldownStarted)
+                return false;
+
+            RevertAttack2ToDefault();
+            NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.15f));
             return true;
         }
 

@@ -150,6 +150,25 @@ namespace Assets.Scripts.Characteres.WarriorController
             return true;
         }
 
+        public bool DisarmIceBallRelic()
+        {
+            // Cancellation is allowed only while Ice Ball is armed and still waiting
+            // for the world-touch action. Once a shot is pending / Attack3 is casting,
+            // the action has started and the UI must not refund it.
+            if (!_iceBallArmed || _iceBallShotPending || _attack3Casting)
+                return false;
+
+            HideIceChargeVfx();
+            ClearArmedIceBall();
+            ResetAttack3OrbitAim();
+
+            if (attackMode == AttackAnimMode.Attack3)
+                SetAttackMode(AttackAnimMode.Attack1);
+
+            NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, iceTouchGuardDuration));
+            return true;
+        }
+
         private bool TryHandleArmedIceBallTouch()
         {
             // Do not allow a stored/armed IceBall touch to turn into Attack3 while frozen or hit-locked.
