@@ -101,6 +101,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private readonly HashSet<int> attackPathPlatformCandidateIds = new HashSet<int>();
 
+        private bool _wasKilledByIceBulletProjectile;
+        public bool WasKilledByIceBulletProjectile => _wasKilledByIceBulletProjectile;
         protected override void Start()
         {
             // Scene-placed Arachnees should still have the correct type even if the
@@ -346,21 +348,65 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
                 yield return null;
             }
-
             attackJumpActive = false;
 
             if (!attackResolved && !IsDeadOrDying)
             {
+                Warrior nearbyWarrior = TryGetWarriorInExplosionRange();
+
+                bool blockedByShield = nearbyWarrior != null &&
+                                       IsWarriorShieldBlockingArachneeProximity(nearbyWarrior);
+
                 ResolveExplosion(
                     GetLandingExplosionPoint(),
-                    null,
-                    damageWarrior: false
+                    nearbyWarrior,
+                    damageWarrior: nearbyWarrior != null && !blockedByShield
                 );
             }
-
             FinishAttackAfterResolution();
         }
 
+        private bool IsWarriorShieldBlockingArachneeProximity(Warrior warrior)
+        {
+            if (warrior == null) return false;
+            if (!warrior.ShieldIsUp) return false;
+
+            // Shield is up — check if the shield hitbox is actually between
+            // Arachnee and Warrior (i.e. Arachnee is on the shield's side).
+            if (warrior.shieldHitbox == null || !warrior.shieldHitbox.enabled)
+            {
+                // No hitbox to test — fall back to: shield up = blocked.
+                return true;
+            }
+
+            Collider2D myCollider = GetMainCollider();
+            if (myCollider == null) return true; // shield up, can't verify → safe default
+
+            return warrior.shieldHitbox.IsTouching(myCollider) ||
+                   warrior.shieldHitbox.bounds.Intersects(myCollider.bounds);
+        }
+
+        private Warrior TryGetWarriorInExplosionRange()
+        {
+            var warrior = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
+            if (warrior == null || warrior.IsDeadOrDying) return null;
+
+            Collider2D myCollider = GetMainCollider();
+            if (myCollider == null || warrior.collider2 == null) return null;
+
+            float distance = Vector2.Distance(
+                myCollider.bounds.center,
+                warrior.collider2.bounds.center
+            );
+
+            float threshold = myCollider.bounds.extents.magnitude
+                            + warrior.collider2.bounds.extents.magnitude
+                            + 0.3f;
+
+            Debug.Log($"[Arachnee] distance={distance:F3}, threshold={threshold:F3}, hit={distance <= threshold}");
+
+            return distance <= threshold ? warrior : null;
+        }
         /// <summary>
         /// Private attack-only jump.
         /// The base CharacterController.JumpTowardPositionAction contains destination-platform
@@ -998,10 +1044,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             SpawnExplosion(hitPoint);
 
-            // IceBulletProjectile is Arachnee's dedicated weakness. It must kill in one shot
-            // even when generic damage is blocked by canOnlyBeKilledByIceBulletProjectile.
-            if (iceBulletKillsInOneShot)
+            bool killedByThisIceBullet = iceBulletKillsInOneShot;
+
+            if (killedByThisIceBullet)
             {
+                _wasKilledByIceBulletProjectile = true;
+
                 if (selfDestructRoutine == null)
                     selfDestructRoutine = StartCoroutine(SelfDestructAfterExplosionDelay());
             }
@@ -1010,7 +1058,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 WaitAnimationDisplay();
             }
 
-            return true;
+            return killedByThisIceBullet;
         }
 
         private void TryResolveWarriorJumpHit(Collision2D collision)
@@ -1037,14 +1085,20 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         }
 
         private bool TryGetWarriorHitOrShieldCollider(
-            Collider2D other,
-            out Warrior warrior,
-            out bool directShieldContact)
+      Collider2D other,
+      out Warrior warrior,
+      out bool directShieldContact)
         {
             warrior = null;
             directShieldContact = false;
 
             if (other == null)
+                return false;
+
+            // Get the actual Warrior from the singleton — reliable regardless of
+            // which child collider Unity reported the contact on.
+            warrior = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
+            if (warrior == null || warrior.IsDeadOrDying)
                 return false;
 
             int warriorLayer = LayerMask.NameToLayer("Hit Box");
@@ -1058,23 +1112,19 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 shieldLayer >= 0 &&
                 other.gameObject.layer == shieldLayer;
 
-            // Arachnee damage/block resolution must only be driven by Warrior's
-            // gameplay hitbox or the active shield collider. This prevents random
-            // Warrior child colliders from triggering the explosion.
+            // The collider must still belong to the Warrior hierarchy —
+            // prevents random same-layer colliders from triggering the explosion.
+            bool belongsToWarrior = other.GetComponentInParent<Warrior>() == warrior;
+
+            if (!belongsToWarrior)
+                return false;
+
             if (!isWarriorHitBoxLayer && !isShieldLayer)
-                return false;
-
-            warrior = other.GetComponentInParent<Warrior>();
-            if (warrior == null)
-                return false;
-
-            if (warrior.IsDeadOrDying)
                 return false;
 
             directShieldContact = isShieldLayer;
             return true;
         }
-
         private bool IsWarriorShieldBlockingArachnee(Warrior warrior, Collision2D collision)
         {
             if (warrior == null)
@@ -1100,8 +1150,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (arachneeCollider == null)
                 arachneeCollider = GetMainCollider();
 
-            // If the shield collider is configured and currently touches Arachnee,
-            // this is a definite shield block.
             if (warrior.shieldHitbox != null &&
                 warrior.shieldHitbox.enabled &&
                 arachneeCollider != null)
@@ -1118,10 +1166,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 }
             }
 
-            // Final rule requested for Arachnee: when Warrior's shield is up,
-            // Arachnee cannot damage him even if Unity reports the collision through
-            // the Hit Box layer first during the same physics step.
-            return true;
+            //Le "return true" final qui était ici causait le bug.
+            // Si on arrive ici, le shield est up mais ne touche pas l'Arachnee.
+            return false;
         }
 
         private void ResolveExplosion(Vector2 explosionPoint, Warrior warrior, bool damageWarrior)
@@ -1139,7 +1186,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             SpawnExplosion(explosionPoint);
 
             if (damageWarrior && warrior != null)
+            {
                 warrior.TakeDamage(attackDamage);
+                warrior.SpawnBloodshedEffectFromEnemy(this);
+            }
 
             if (destroySelfAfterExplosion && selfDestructRoutine == null && !IsDeadOrDying)
                 selfDestructRoutine = StartCoroutine(SelfDestructAfterExplosionDelay());

@@ -107,7 +107,10 @@ namespace Assets.Scripts.Relics.Core
             }
 
             // Only count kills credited to this Warrior.
-            if (e.killer != null && e.killer != gameObject)
+            // Only count kills explicitly credited to this Warrior.
+            // Null killer events can come from delayed enemy death/self-destruction,
+            // so they must not progress arachneeKillsPerKey.
+            if (e.killer != gameObject)
             {
                 if (debugLogs)
                     Debug.Log("[ArachneeKillKeyRelicReward] Ignored kill because killer is not this Warrior.", this);
@@ -123,7 +126,14 @@ namespace Assets.Scripts.Relics.Core
 
                 return;
             }
+            // Important: arachneeKillsPerKey only counts Arachnees killed by IceBulletProjectile.
+            if (!arachnee.WasKilledByIceBulletProjectile)
+            {
+                if (debugLogs)
+                    Debug.Log("[ArachneeKillKeyRelicReward] Ignored Arachnee kill because it was not killed by IceBulletProjectile.", this);
 
+                return;
+            }
             int victimId = arachnee.GetInstanceID();
 
             if (!_countedArachneeVictims.Add(victimId))
