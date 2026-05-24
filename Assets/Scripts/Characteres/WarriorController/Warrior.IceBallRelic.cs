@@ -127,7 +127,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (!CanDie && !_platformStoneRepulseActive && !_frozenByHivernox && _hivernoxHitLockRoutine == null)
                 CanMove = true;
         }
-
+        public event System.Action<bool> OnIceBallArmedStateChanged;
         public bool TryArmIceBallRelic(IceBallRelic def, bool consumeOnCast)
         {
             // Do not allow the UI button to arm Attack3 while Warrior is frozen or hit-locked.
@@ -145,7 +145,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             _iceBallRelicId = !string.IsNullOrEmpty(def.relicId) ? def.relicId : def.name;
             _iceBallConsumeOnCast = consumeOnCast;
             _iceBallArmed = true;
-
+            OnIceBallArmedStateChanged?.Invoke(true);
             NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, iceTouchGuardDuration));
             return true;
         }
@@ -480,10 +480,26 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void ClearArmedIceBall()
         {
+            bool wasArmed = _iceBallArmed;
+
             _iceBallArmed = false;
             _iceBallRelicId = null;
             _iceBallConsumeOnCast = false;
             _armedIceBallDef = null;
+
+            if (wasArmed)
+                OnIceBallArmedStateChanged?.Invoke(false);
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+

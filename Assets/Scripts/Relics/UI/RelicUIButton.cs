@@ -1,7 +1,8 @@
-using Assets.Scripts.Characteres.WarriorController;
+﻿using Assets.Scripts.Characteres.WarriorController;
 using Assets.Scripts.Relics.Core;
 using Assets.Scripts.Relics.Definitions;
 using Assets.Scripts.Relics.World;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -41,6 +42,8 @@ namespace Assets.Scripts.Relics.UI
         private RelicManager _relicManager;
         private string _relicId;
         private bool _controlledByRelicUIController;
+        private Image[] _cachedImages;
+        private readonly Dictionary<Image, Color> _defaultImageColors = new Dictionary<Image, Color>();
 
         private void Awake()
         {
@@ -48,6 +51,7 @@ namespace Assets.Scripts.Relics.UI
 
             ResolveRelicId();
             AutoBindIcon();
+            CacheDefaultImageColors();
 
             _button.onClick.RemoveListener(OnClicked);
 
@@ -89,11 +93,118 @@ namespace Assets.Scripts.Relics.UI
 
         private void OnEnable()
         {
-            RefreshInteractable();
+            if (_controlledByRelicUIController)
+                RefreshCountOnly();
+            else
+                RefreshInteractable();
+        }
+
+        public void RefreshFromRelicManager()
+        {
+            ResolveRefs();
+            ResolveRelicId();
+            RefreshCountOnly();
+
+            // When RelicUIController owns the button, do not let this component
+            // recompute interactable/visual state. The controller has extra rules
+            // for armed/cancel states, mutual exclusion, key locks, and active FX.
+            if (!_controlledByRelicUIController)
+                RefreshInteractable();
+
+            Canvas.ForceUpdateCanvases();
+        }
+
+        /// <summary>
+        /// Called by RelicUIController after it has computed the real state for this rule.
+        /// This avoids split ownership where RelicUIButton.Update() overwrites the
+        /// controller's state and leaves IceBallRelic visually/count-stale until another click.
+        /// </summary>
+        public void ApplyControllerState(int count, bool interactable, bool armed, Color normalColor, Color armedColor, bool applyVisual)
+        {
+            ResolveRefs();
+            ResolveRelicId();
+
+            if (definition is IceBallRelic)
+                Debug.Log($"[IceBall][ApplyControllerState] frame={Time.frameCount} armed={armed} count={count} applyVisual={applyVisual} caller={new System.Diagnostics.StackTrace().ToString().Substring(0, Mathf.Min(300, new System.Diagnostics.StackTrace().ToString().Length))}");
+
+            SetCount(count);
+
+            if (_button == null)
+                _button = GetComponent<Button>();
+
+            bool controllerOwnedArmable =
+                _controlledByRelicUIController &&
+                (definition is IceBallRelic || definition is PowerComboRelic);
+
+            // Flush any pending CanvasRenderer tweens BEFORE writing new colors.
+            // CrossFadeColor (called in older code paths or by Unity internally) submits
+            // tweens that Canvas.ForceUpdateCanvases() flushes. If we flush after writing,
+            // the old tween overwrites our direct color write � causing the green re-flash.
+            Canvas.ForceUpdateCanvases();
+
+            if (_button != null)
+            {
+                _button.interactable = interactable;
+
+                if (controllerOwnedArmable)
+                {
+                    // Keep transition=None so Unity's ColorTint never fights us.
+                    _button.transition = Selectable.Transition.None;
+
+                    // Set all ColorBlock slots to the current state color so Unity's
+                    // Button cannot re-apply a different tint on pointer events.
+                    Color stateColor = armed ? armedColor : normalColor;
+                    ColorBlock cb = _button.colors;
+                    cb.normalColor = stateColor;
+                    cb.highlightedColor = stateColor;
+                    cb.pressedColor = stateColor;
+                    cb.selectedColor = stateColor;
+                    cb.disabledColor = stateColor;
+                    _button.colors = cb;
+
+                    // When disarming, also force the targetGraphic directly.
+                    // The ColorBlock write alone is not enough because Unity may not
+                    // re-evaluate it until the next pointer event.
+                    if (!armed && _button.targetGraphic != null)
+                    {
+                        _button.targetGraphic.canvasRenderer.SetColor(normalColor);
+                        _button.targetGraphic.color = normalColor;
+                    }
+                }
+            }
+
+            if (applyVisual)
+            {
+                if (controllerOwnedArmable)
+                {
+                    if (armed)
+                        TintAllImages(armedColor);
+                    else
+                        RestoreDefaultImageColors();
+                }
+                else if (_button != null && _button.targetGraphic != null)
+                {
+                    Color c = armed ? armedColor : normalColor;
+                    _button.targetGraphic.canvasRenderer.SetColor(c);
+                    _button.targetGraphic.color = c;
+                }
+            }
+        }
+
+        private void RefreshCountOnly()
+        {
+            if (_relicManager != null && definition != null)
+                SetCount(_relicManager.GetCount(definition));
         }
 
         private void Update()
         {
+            if (_controlledByRelicUIController)
+            {
+                RefreshCountOnly();
+                return;
+            }
+
             RefreshInteractable();
         }
 
@@ -139,6 +250,75 @@ namespace Assets.Scripts.Relics.UI
                 iconImage.sprite = definition.icon;
         }
 
+        private void CacheDefaultImageColors()
+        {
+            _cachedImages = GetComponentsInChildren<Image>(true);
+            _defaultImageColors.Clear();
+
+            if (_cachedImages == null)
+                return;
+
+            for (int i = 0; i < _cachedImages.Length; i++)
+            {
+                Image img = _cachedImages[i];
+                if (img == null)
+                    continue;
+
+                _defaultImageColors[img] = img.color;
+            }
+        }
+
+        private void RestoreDefaultImageColors()
+        {
+            if (_cachedImages == null || _cachedImages.Length == 0)
+                CacheDefaultImageColors();
+
+            if (_cachedImages == null)
+                return;
+
+            // Flush any pending CanvasRenderer tweens (e.g. from a previous TintAllImages
+            // CrossFadeColor call) BEFORE writing our color. If we flush after, the old
+            // tween overwrites the direct write.
+            Canvas.ForceUpdateCanvases();
+
+            for (int i = 0; i < _cachedImages.Length; i++)
+            {
+                Image img = _cachedImages[i];
+                if (img == null)
+                    continue;
+
+                Color c = _defaultImageColors.TryGetValue(img, out var cached)
+                    ? cached
+                    : Color.white;
+
+                // Direct assignment only � no CrossFadeColor. CrossFadeColor submits a
+                // tween that Canvas.ForceUpdateCanvases() can flush back over us.
+                img.canvasRenderer.SetColor(c);
+                img.color = c;
+            }
+        }
+
+        private void TintAllImages(Color color)
+        {
+            if (_cachedImages == null || _cachedImages.Length == 0)
+                CacheDefaultImageColors();
+
+            if (_cachedImages == null)
+                return;
+
+            Canvas.ForceUpdateCanvases();
+
+            for (int i = 0; i < _cachedImages.Length; i++)
+            {
+                Image img = _cachedImages[i];
+                if (img == null)
+                    continue;
+
+                img.canvasRenderer.SetColor(color);
+                img.color = color;
+            }
+        }
+
         private void HandleCountChanged(RelicDefinition changedDefinition, int newCount)
         {
             if (changedDefinition == null)
@@ -152,13 +332,19 @@ namespace Assets.Scripts.Relics.UI
                 return;
 
             SetCount(newCount);
-            RefreshInteractable();
+
+            if (!_controlledByRelicUIController)
+                RefreshInteractable();
         }
 
         private void SetCount(int count)
         {
-            if (countText != null)
-                countText.text = "x" + Mathf.Max(0, count);
+            if (countText == null)
+                return;
+
+            int safeCount = Mathf.Max(0, count);
+            countText.SetText("x{0}", safeCount);
+            countText.ForceMeshUpdate();
         }
 
         private void RefreshInteractable()
@@ -181,6 +367,12 @@ namespace Assets.Scripts.Relics.UI
             }
 
             int count = _relicManager.GetCount(definition);
+
+            // Keep the visible count synchronized with the manager every time the
+            // button state is evaluated. This makes the UI resilient even if the
+            // count-change event happens during the same click frame as a disarm/refund.
+            SetCount(count);
+
             bool hasResource = count > 0;
 
             // KeyRelic is contextual.
