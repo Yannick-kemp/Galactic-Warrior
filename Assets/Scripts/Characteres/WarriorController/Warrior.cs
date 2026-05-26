@@ -272,6 +272,11 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         public bool IsAttack2Ready => Time.time >= _nextAttack2ReadyTime;
         public float Attack2CooldownRemaining => Mathf.Max(0f, _nextAttack2ReadyTime - Time.time);
+
+        // True only while PowerComboRelic is armed and still waiting for the real Attack2 use.
+        // Once Attack2 has started / cooldown has been consumed, this is no longer cancelable.
+        public bool IsPowerComboArmed => _attack2ArmedByRelic && !_attack2CooldownStarted;
+
         private bool IsRelicAttack2Active =>
     _attack2ArmedByRelic &&
     (

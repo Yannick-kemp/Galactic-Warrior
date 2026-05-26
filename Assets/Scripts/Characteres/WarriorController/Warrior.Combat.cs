@@ -210,7 +210,8 @@ namespace Assets.Scripts.Characteres.WarriorController
                 if (ps != null)
                 {
                     var renderer = ps.GetComponent<ParticleSystemRenderer>();
-                    if (renderer != null) renderer.flip = new Vector3(1, 0, 0);
+                    if (renderer != null)
+                        renderer.flip = new Vector3(1, 0, 0);
                 }
             }
 
@@ -219,10 +220,6 @@ namespace Assets.Scripts.Characteres.WarriorController
             Enemy[] enemiesInRange = GetEnemiesInAttackRange();
             if (enemiesInRange.Length > 0)
             {
-                // Only play this sound when Attack2 hits at least one enemy
-                //if (attackMode == AttackAnimMode.Attack2)
-                //    PlayAttack2HitSfx();
-
                 SpawnNovaForCollidingEnemies(enemiesInRange);
 
                 int valid = 0;
@@ -231,11 +228,18 @@ namespace Assets.Scripts.Characteres.WarriorController
                 foreach (Enemy enemy in enemiesInRange)
                 {
                     if (enemy == null) continue;
+                    if (enemy.IsDeadOrDying) continue;
+
                     valid++;
 
                     Vector3 hp3 = GetNovaPosition(enemy);
                     sumHp += new Vector2(hp3.x, hp3.y);
 
+                    // This is the important part.
+                    // It blocks the enemy attack and calls OnStunStarted().
+                    enemy.ApplyStun(0.3f);
+
+                    // Damage + physical step back.
                     KnockbackEnemiesInRange(0.35f, enemy, 10);
                 }
 
@@ -506,7 +510,9 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         public void RequestPrimaryAttackFromUIButton()
         {
-            if (IsHardActionLocked)
+            bool forceAttack2Counter = CanForceAttack2CounterWhileLocked();
+
+            if (IsHardActionLocked && !forceAttack2Counter)
                 return;
 
             NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.15f));
@@ -515,8 +521,40 @@ namespace Assets.Scripts.Characteres.WarriorController
                 return;
 
             if (CanDie) return;
-            if (!CanMove || !CanAttackWarrior) return;
-            if (activesJumpCoroutine != null || IsFalling || IsFallingGrazesEdge) return;
+
+            // Normal attacks still obey CanMove / CanAttackWarrior.
+            // But armed Attack2 can be used as a counter against P39.
+            if ((!CanMove || !CanAttackWarrior) && !forceAttack2Counter)
+                return;
+
+            if (activesJumpCoroutine != null || IsFalling || IsFallingGrazesEdge)
+                return;
+
+            if (forceAttack2Counter)
+            {
+                CanMove = true;
+                CanAttackWarrior = true;
+                CanAttack = true;
+                _blockAction = false;
+
+                StopMoveTowardCoroutine();
+                StopJumpTowardCoroutine();
+
+                if (rigidbody2 != null)
+                {
+                    Vector2 v = rigidbody2.linearVelocity;
+                    v.x = 0f;
+                    rigidbody2.linearVelocity = v;
+                    rigidbody2.angularVelocity = 0f;
+                }
+
+                if (animator != null)
+                {
+                    animator.SetBool("IsLosingCtrl", false);
+                    animator.SetBool("isRunning", false);
+                    animator.SetBool("isWalking", false);
+                }
+            }
 
             if (animator != null && animator.GetBool("IsLosingCtrl"))
                 animator.SetBool("IsLosingCtrl", false);
@@ -527,7 +565,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             {
                 if (!_attack2CooldownStarted)
                 {
-                    if (!TryConsumeAttack2Cooldown())
+                    if (!IsAttack2CooldownReady())
                     {
                         if (_attack2ArmedByRelic)
                             RevertAttack2ToDefault();
@@ -539,8 +577,6 @@ namespace Assets.Scripts.Characteres.WarriorController
                     }
                     else
                     {
-                        _attack2CooldownStarted = true;
-
                         if (IsAnyAttackPlaying())
                             ForceCancelCurrentAttack();
 
@@ -569,8 +605,58 @@ namespace Assets.Scripts.Characteres.WarriorController
             _attack1HitEventConsumed = false;
             GuardIdleAfterAttackRequest();
             PlayCurrentAttackAnimation();
+
+            // IMPORTANT:
+            // Commit cooldown only after Attack2 animation was really requested.
+            if (attackMode == AttackAnimMode.Attack2 && animator != null && animator.GetBool("isAttacking2"))
+            {
+                if (!_attack2CooldownStarted)
+                {
+                    _attack2CooldownStarted = true;
+                    CommitAttack2Cooldown();
+                }
+            }
+
+            _attack1HitEventConsumed = false;
+            GuardIdleAfterAttackRequest();
+            PlayCurrentAttackAnimation();
         }
 
+
+
+        private bool CanForceAttack2CounterWhileLocked()
+        {
+            if (!_attack2ArmedByRelic)
+                return false;
+
+            if (_attack2CooldownStarted)
+                return false;
+
+            if (CanDie || IsDeadOrDying)
+                return false;
+
+            if (_frozenByHivernox || _hivernoxHitLockRoutine != null)
+                return false;
+
+            if (activesJumpCoroutine != null || IsFalling || IsFallingGrazesEdge)
+                return false;
+
+            Enemy[] enemies = GetEnemiesInAttackRange();
+            if (enemies == null || enemies.Length == 0)
+                return false;
+
+            for (int i = 0; i < enemies.Length; i++)
+            {
+                Enemy enemy = enemies[i];
+                if (enemy == null || enemy.IsDeadOrDying)
+                    continue;
+
+                if (enemy is P39Monster_WithHealthBar)
+                    return true;
+            }
+
+            return false;
+        }
         /// <summary>
         /// Called by UI controls to prevent world touch handling for a short time.
         /// </summary>
@@ -609,11 +695,12 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (!CanMove || !CanAttackWarrior) return false;
             if (activesJumpCoroutine != null || IsFalling || IsFallingGrazesEdge) return false;
 
-            // If already armed/active, ignore (optional behavior)
+            // If already armed/active, ignore. The UI controller handles click-again cancel
+            // before calling this method.
             if (_attack2ArmedByRelic)
                 return false;
 
-            // DO NOT consume cooldown here anymore.
+            // DO NOT consume cooldown here.
             // We only arm Attack2 and will start cooldown on first attack button press.
             _attack2ArmedByRelic = true;
             _attack2CooldownStarted = false;
@@ -623,23 +710,36 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.20f));
 
-            // Optional immediate trigger still works:
-            // if triggerNow = true, the button-path logic below will consume cooldown there.
+            // Optional immediate trigger still works for old setups, but the new relic UI
+            // passes false so PowerCombo remains a reversible waiting stage.
             if (triggerNow)
                 RequestPrimaryAttackFromUIButton();
 
             return true;
         }
 
-        private bool TryConsumeAttack2Cooldown(float cooldownOverride = -1f)
+        public bool DisarmPowerComboRelic()
         {
-            float cd = (cooldownOverride > 0f) ? cooldownOverride : attack2Cooldown;
-
-            if (Time.time < _nextAttack2ReadyTime)
+            // Cancellation is allowed only before the real Attack2 use starts.
+            // After _attack2CooldownStarted becomes true, the relic action has already begun
+            // and must not be refunded by the UI.
+            if (!_attack2ArmedByRelic || _attack2CooldownStarted)
                 return false;
 
-            _nextAttack2ReadyTime = Time.time + cd;
+            RevertAttack2ToDefault();
+            NotifyUIConsumedInput(Mathf.Max(uiInputGuardDuration, 0.15f));
             return true;
+        }
+
+        private bool IsAttack2CooldownReady(float cooldownOverride = -1f)
+        {
+            return Time.time >= _nextAttack2ReadyTime;
+        }
+
+        private void CommitAttack2Cooldown(float cooldownOverride = -1f)
+        {
+            float cd = (cooldownOverride > 0f) ? cooldownOverride : attack2Cooldown;
+            _nextAttack2ReadyTime = Time.time + cd;
         }
 
         private void RefreshRelicAttack2State()
@@ -1394,5 +1494,37 @@ namespace Assets.Scripts.Characteres.WarriorController
         }
 
         #endregion
+        /// <summary>
+        /// True from the instant the player's Attack2 button press is accepted
+        /// (cooldown consumed, mode set to Attack2) through the entire 6-second window.
+        /// Unlike IsAttack2CounterActive(), this does NOT require the animation to
+        /// already be playing — it fires one full animation-event delay earlier.
+        /// </summary>
+        public bool IsAttack2CounterActive()
+        {
+            if (animator == null)
+                return false;
+
+            if (attackMode != AttackAnimMode.Attack2)
+                return false;
+
+            // ── Original animation-state check ──────────────────────────────────
+            if (animator.GetBool("isAttacking2"))
+                return true;
+
+            AnimatorStateInfo current = animator.GetCurrentAnimatorStateInfo(0);
+            AnimatorStateInfo next = animator.GetNextAnimatorStateInfo(0);
+            if (current.IsTag("Attack") || next.IsTag("Attack"))
+                return true;
+
+            // ── NEW: cooldown window started = button press was accepted this window.
+            // Catches the gap between PlayCurrentAttackAnimation() and the first
+            // animation event frame, which is where P39 can still land a hit.
+            if (_attack2ArmedByRelic && _attack2CooldownStarted && Time.time < _nextAttack2ReadyTime)
+                return true;
+
+            return false;
+        }
+
     }
 }

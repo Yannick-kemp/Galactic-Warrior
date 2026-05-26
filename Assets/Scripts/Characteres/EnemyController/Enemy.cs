@@ -413,7 +413,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         public virtual void OnAttackPerformed(IAttacker attacker, Transform attackedTarget)
         {
-            if (IsWarriorInFront(target))
+            if (!CanStartAttackNow())
+                return;
+
+            Transform t = attackedTarget != null ? attackedTarget : target;
+
+            if (IsWarriorInFront(t))
                 AttackAnimationDisplay();
         }
 
@@ -1348,6 +1353,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (!canBeStunned) return;
             if (seconds <= 0f) return;
             if (currentHealth <= 0) return;
+            if (IsDeadOrDying) return;
+
+            DisableAttackTemporarily(seconds);
 
             if (_stunRoutine != null)
                 StopCoroutine(_stunRoutine);
@@ -1359,23 +1367,29 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             _isStunned = true;
             CanMove = false;
+            IsAttacked = false;
 
             StopMoveTowardCoroutine();
 
             if (rigidbody2 != null)
+            {
                 rigidbody2.linearVelocity = Vector2.zero;
+                rigidbody2.angularVelocity = 0f;
+            }
+
+            OnStunStarted();
 
             yield return new WaitForSeconds(seconds);
 
-            if (this != null)
+            if (this != null && !IsDeadOrDying)
             {
                 _isStunned = false;
                 CanMove = true;
+                OnStunEnded();
             }
 
             _stunRoutine = null;
         }
-
         protected virtual void OnDamaged(float damage, bool killed)
         {
         }
@@ -1726,6 +1740,25 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             // Optional extension point.
             // Most enemies do nothing.
             // A special enemy can override this to step aside, stop attacking, etc.
+        }
+
+        protected bool CanStartAttackNow()
+        {
+            if (currentHealth <= 0f) return false;
+            if (_deathStarted) return false;
+            if (_isDead) return false;
+            if (_isStunned) return false;
+            if (IsAttackTemporarilyDisabled) return false;
+            return true;
+        }
+        protected virtual void OnStunStarted()
+        {
+            if (animator != null && animator.enabled)
+                WaitAnimationDisplay();
+        }
+
+        protected virtual void OnStunEnded()
+        {
         }
     }
 

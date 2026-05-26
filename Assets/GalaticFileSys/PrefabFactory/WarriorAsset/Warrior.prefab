@@ -190,6 +190,7 @@ GameObject:
   - component: {fileID: 2203530668904469852}
   - component: {fileID: 8301747116142928273}
   - component: {fileID: 7468573880501422439}
+  - component: {fileID: 2915362853751619885}
   m_Layer: 8
   m_Name: Warrior
   m_TagString: Warrior
@@ -442,6 +443,19 @@ MonoBehaviour:
   edgeFallAntiTunnelPredictionMultiplier: 1.35
   edgeFallAntiTunnelMinDownSpeed: 0.01
   physicsFallAntiTunnelExtraLookAhead: 0.03
+  enableEnemyTopPingPongEscape: 1
+  enemyTopTrapMinStuckTime: 0.28
+  enemyTopTrapWindow: 1.2
+  enemyTopTrapBounceThreshold: 2
+  enemyTopTrapBounceEachEnemyOnceBeforeLanding: 1
+  enemyTopTrapIgnoreAllEnemiesDuringFinalLanding: 1
+  enemyTopTrapNearbyRadiusX: 4
+  enemyTopTrapNearbyRadiusY: 2.5
+  enemyTopTrapIgnoreCollisionTime: 0.65
+  enemyTopTrapRestoreClearance: 0.03
+  enemyTopTrapFallGravity: 3.5
+  enemyTopTrapMinDownVelocity: 1.25
+  notifyEnemiesToSideStepOnTopTrap: 1
   sparkImpulse: 1.2
   sparkUpBias: 0.15
   hitReactMinInterval: 0.12
@@ -869,6 +883,27 @@ MonoBehaviour:
   iceMaterial: {fileID: 0}
   iceTint: {r: 0.47, g: 0.9, b: 1, a: 0.66}
   sortingOrderOffset: 20
+--- !u!114 &2915362853751619885
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2119685233829817584}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2c94565ef3314934bbf5abf2277dc9fc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  keyRelicPickupPrefab: {fileID: 5624782962912211176, guid: 68565800d1826814f9bcab0c4ef2e046, type: 3}
+  keyRelicDefinition: {fileID: 11400000, guid: 10be32f63ed74764585e8bd4137849cb, type: 2}
+  arachneeKillsPerKey: 5
+  keyRelicsPerReward: 1
+  spawnOffset: {x: 0, y: 0.25, z: 0}
+  multiRewardHorizontalSpacing: 0.35
+  fallbackToDirectCollectIfPrefabMissing: 1
+  resetProgressOnSceneLoad: 0
+  debugLogs: 0
 --- !u!1 &2894118238035918133
 GameObject:
   m_ObjectHideFlags: 0

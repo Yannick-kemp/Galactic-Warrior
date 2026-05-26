@@ -151,10 +151,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   platformCollider: {fileID: 1887360091195283119}
   platformTrigger: {fileID: 1582777672770621207}
+  platformMotionEnabled: 1
   defaultRenderer: {fileID: 0}
   mainRenderer: {fileID: 6350657475409537425}
   overlayRenderer: {fileID: 4202088781100607704}
-  initialTheme: {fileID: 11400000, guid: 50569dccf28ffad4eafa997addf5caa8, type: 2}
+  initialTheme: {fileID: 11400000, guid: 19de7e06d9e0f734ca0d3144d5ba4dcf, type: 2}
   applyInitialThemeOnStart: 1
   hideDefaultRendererWhenThemeApplied: 1
   autoBindDefaultRenderer: 1
@@ -244,7 +245,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 2.27, y: 1.18, z: 1}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 6448849036138582744}
