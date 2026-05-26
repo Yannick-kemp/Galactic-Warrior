@@ -42,7 +42,7 @@ public class CharacterController : Character, ICharacterController
     public bool DescendentPhase;
     public bool _isJumping;
     public bool _isMoving;
-    public bool IsJumping => _isJumping; 
+    public bool IsJumping => _isJumping;
 
     private static readonly ProfilerMarker WarriorJumpTowardPositionMarker =
         new ProfilerMarker("Warrior.JumpTowardPositionAction");
@@ -465,7 +465,7 @@ public class CharacterController : Character, ICharacterController
         _isJumping = true;
 
 
-       
+
 
         Vector2 startPosition = transform.position;
         float elapsedTime = 0f;
