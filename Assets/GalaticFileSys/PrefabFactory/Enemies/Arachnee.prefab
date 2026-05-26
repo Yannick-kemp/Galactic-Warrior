@@ -408,10 +408,13 @@ MonoBehaviour:
   explosionPrefab: {fileID: 70640184695839022, guid: b0a69e49a4aa490408ce562145c46d3d, type: 3}
   destroySelfAfterExplosion: 1
   explosionDestroyDelay: 0.1
+  canOnlyBeKilledByIceBulletProjectile: 1
+  iceBulletKillsInOneShot: 1
   platformObstacleMask:
     serializedVersion: 2
     m_Bits: 0
-  obstacleRayHeightOffset: 0.4
+  platformRelationVerticalTolerance: 0.12
+  attackPathProbeSegments: 18
   platformClearSafetyTimeout: 1.5
   obstacleProbeHeight: 0.12
   obstacleProbeWidthMultiplier: 0.65

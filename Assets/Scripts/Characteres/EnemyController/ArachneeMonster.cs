@@ -445,6 +445,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 desiredPosition.y += height * Mathf.Sin(Mathf.PI * t);
 
                 MoveCharacterTo(desiredPosition);
+                // Prevent the implicit velocity Unity derives from consecutive MovePosition
+                // calls from being transferred as a physics impulse onto Warrior on contact.
+                if (rigidbody2 != null)
+                    rigidbody2.linearVelocity = Vector2.zero;
                 Physics2D.SyncTransforms();
 
                 DescendentPhase = desiredPosition.y < previousY;
@@ -1181,6 +1185,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             StopMoveTowardCoroutine();
             StopJumpTowardCoroutine();
+            // Kill any residual velocity so the contact impulse cannot reach Warrior
+            // even if the collision callback fires before this frame's MovePosition zeroing.
+            if (rigidbody2 != null)
+                rigidbody2.linearVelocity = Vector2.zero;
             RestoreAllIgnoredAttackPlatformCollisions();
 
             SpawnExplosion(explosionPoint);

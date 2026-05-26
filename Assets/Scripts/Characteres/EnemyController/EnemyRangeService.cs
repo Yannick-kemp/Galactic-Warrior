@@ -1,3 +1,4 @@
+using Assets.Scripts.Characteres.EnemyContoller;
 using System;
 using UnityEngine;
 
@@ -37,23 +38,45 @@ namespace Assets.Scripts.Services
         }
 
         public bool TryAction(
-        Transform target,
-        float Range,
-        Action<IAttacker, Transform> onPerformCallback = null,
-        float? threshold = null)
+           Transform target,
+           float Range,
+           Action<IAttacker, Transform> onPerformCallback = null,
+           float? threshold = null)
         {
             _range = Range;
 
-            if (target == null || owner == null) return false;
+            if (target == null || owner == null)
+                return false;
 
             float distance = Mathf.Abs(owner.Transform.position.x - target.position.x);
-            IsInRange = threshold != null ? (threshold.Value < distance && distance <= Range) : (distance <= Range);
+            IsInRange = threshold != null
+                ? (threshold.Value < distance && distance <= Range)
+                : (distance <= Range);
 
-            // Only attack if in range AND cooldown ready
-            if (!IsInRange) return false;
-            if (!CanPerformRangeDetection()) return true; // still in range, just not ready yet
+            if (!IsInRange)
+                return false;
+
+            // IMPORTANT:
+            // Still in range, but stunned/disabled enemies must not execute callbacks.
+            if (!OwnerCanPerformAttackNow())
+                return true;
+
+            if (!CanPerformRangeDetection())
+                return true;
 
             PerformAction(target, onPerformCallback);
+            return true;
+        }
+
+        private bool OwnerCanPerformAttackNow()
+        {
+            if (owner is Enemy enemy)
+            {
+                return !enemy.IsDeadOrDying
+                    && !enemy.IsStunned
+                    && !enemy.IsAttackTemporarilyDisabled;
+            }
+
             return true;
         }
 
