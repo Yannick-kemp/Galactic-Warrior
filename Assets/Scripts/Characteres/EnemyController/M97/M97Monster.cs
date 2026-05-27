@@ -1602,11 +1602,11 @@ public class M97Monster : Enemy
             // Seat the monster exactly on the surface using MovePosition (not raw position)
             float targetY = pb.max.y + eb.extents.y + platformSurfaceSeatOffset;
 
-            // Only apply if we're moving (coroutine not running) or platform is descending
-            if (activesMoveCoroutine == null || !movingPlatform.IsMovingUpNow)
-            {
-                rigidbody2.MovePosition(new Vector2(rigidbody2.position.x, targetY));
-            }
+            //// Only apply if we're moving (coroutine not running) or platform is descending
+            //if (activesMoveCoroutine == null || !movingPlatform.IsMovingUpNow)
+            //{
+            //    rigidbody2.MovePosition(new Vector2(rigidbody2.position.x, targetY));
+            //}
 
             // Always cancel any upward velocity when platform descends
             if (!movingPlatform.IsMovingUpNow)

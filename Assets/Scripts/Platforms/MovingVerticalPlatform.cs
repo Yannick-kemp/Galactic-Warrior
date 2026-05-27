@@ -87,6 +87,7 @@ namespace Assets.Scripts.Platforms
 
             if (_platformBody != null)
             {
+                _platformBody.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
                 _platformBody.gravityScale = 0f;
                 _platformBody.interpolation = RigidbodyInterpolation2D.Interpolate;
                 _platformBody.constraints |= RigidbodyConstraints2D.FreezeRotation;

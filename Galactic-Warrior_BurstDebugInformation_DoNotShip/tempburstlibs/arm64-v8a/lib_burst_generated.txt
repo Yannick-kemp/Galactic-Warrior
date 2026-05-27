@@ -9,7 +9,7 @@ Library: C:\Users\yannk\Documents\Galactic-Warrior\Temp\BurstOutput\tempburstlib
 --target-framework=NetFramework
 --generate-link-xml=Temp\burst.link.xml
 --temp-folder=C:\Users\yannk\Documents\Galactic-Warrior\Temp\Burst
---key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.27f1/Editor/Data/PlaybackEngines/AndroidPlayer
+--key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.27f1-x86_64/Editor/Data/PlaybackEngines/AndroidPlayer
 --decode-folder=C:\Users\yannk\Documents\Galactic-Warrior\Library\Burst
 --output=C:\Users\yannk\Documents\Galactic-Warrior\Temp\BurstOutput\tempburstlibs\arm64-v8a\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
@@ -124,7 +124,7 @@ Library: C:\Users\yannk\Documents\Galactic-Warrior\Temp\BurstOutput\tempburstlib
 --target-framework=NetFramework
 --generate-link-xml=Temp\burst.link.xml
 --temp-folder=C:\Users\yannk\Documents\Galactic-Warrior\Temp\Burst
---key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.27f1/Editor/Data/PlaybackEngines/AndroidPlayer
+--key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.27f1-x86_64/Editor/Data/PlaybackEngines/AndroidPlayer
 --decode-folder=C:\Users\yannk\Documents\Galactic-Warrior\Library\Burst
 --output=C:\Users\yannk\Documents\Galactic-Warrior\Temp\BurstOutput\tempburstlibs\arm64-v8a\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
@@ -147,7 +147,7 @@ Library: C:\Users\yannk\Documents\Galactic-Warrior\Temp\BurstOutput\tempburstlib
 --float-mode=Fast
 --generate-link-xml=Temp\burst.link.xml
 --temp-folder=C:\Users\yannk\Documents\Galactic-Warrior\Temp\Burst
---key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.27f1/Editor/Data/PlaybackEngines/AndroidPlayer
+--key-folder=C:/Program Files/Unity/Hub/Editor/6000.0.27f1-x86_64/Editor/Data/PlaybackEngines/AndroidPlayer
 --decode-folder=C:\Users\yannk\Documents\Galactic-Warrior\Library\Burst
 --output=C:\Users\yannk\Documents\Galactic-Warrior\Temp\BurstOutput\tempburstlibs\arm64-v8a\lib_burst_generated
 --pdb-search-paths=Temp/ManagedSymbols/
