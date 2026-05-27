@@ -124,8 +124,8 @@ namespace Assets.Scripts.Relics.UI
             ResolveRefs();
             ResolveRelicId();
 
-            if (definition is IceBallRelic)
-                Debug.Log($"[IceBall][ApplyControllerState] frame={Time.frameCount} armed={armed} count={count} applyVisual={applyVisual} caller={new System.Diagnostics.StackTrace().ToString().Substring(0, Mathf.Min(300, new System.Diagnostics.StackTrace().ToString().Length))}");
+            //if (definition is IceBallRelic)
+            //    Debug.Log($"[IceBall][ApplyControllerState] frame={Time.frameCount} armed={armed} count={count} applyVisual={applyVisual} caller={new System.Diagnostics.StackTrace().ToString().Substring(0, Mathf.Min(300, new System.Diagnostics.StackTrace().ToString().Length))}");
 
             SetCount(count);
 

@@ -23,7 +23,7 @@ namespace Assets.Scripts.Relics.Definitions
                 relicId = DefaultRelicId;
 
             if (string.IsNullOrWhiteSpace(relicName))
-                relicName = "";
+                relicName = "Key";
 
             if (string.IsNullOrWhiteSpace(description))
                 description = "A key relic used to unlock keyed gates, doors, chests, or level blockers.";
