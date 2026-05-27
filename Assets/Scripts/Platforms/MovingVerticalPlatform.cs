@@ -70,6 +70,15 @@ namespace Assets.Scripts.Platforms
         public bool IsMovingDownNow => !_isMovingUp;
         public Vector2 LastLiftDelta => _lastLiftDelta;
 
+        private void Awake()
+        {
+#if UNITY_ANDROID
+            Time.fixedDeltaTime = 0.01667f;
+            Application.targetFrameRate = 60;
+#endif
+        }
+
+
         protected override void Start()
         {
             base.Start();
@@ -210,6 +219,7 @@ namespace Assets.Scripts.Platforms
 
             if (!IsTopSurfaceContact(collision, character))
                 return;
+
             // If the enemy is intentionally a child of this platform,
             // do not also add it to the lift rider list.
             // Otherwise it would be moved twice: once by the parent transform,
@@ -218,9 +228,12 @@ namespace Assets.Scripts.Platforms
             {
                 character.CurrentplatForm = this;
                 StopDownwardVelocity(character);
+
+                if (character is Warrior hierarchyWarrior)
+                    ConfirmWarriorLiftLandingState(hierarchyWarrior);
+
                 return;
             }
-
 
             AddRider(character);
             character.CurrentplatForm = this;
@@ -228,15 +241,7 @@ namespace Assets.Scripts.Platforms
 
             if (character is Warrior warrior)
             {
-                warrior.CanMove = true;
-                warrior.CanAttackWarrior = true;
-                warrior.IsFallingEdge = false;
-                warrior.IsFallingPlfExit = false;
-                warrior.IsFallingHitEnemy = false;
-                warrior.IsFallingGrazesEdge = false;
-                warrior._blockAction = false;
-                warrior.LastSafePlatform = this;
-                warrior.LastSafePosition = GetSafeRespawnPositionFor(warrior, warrior.transform.position.x);
+                ConfirmWarriorLiftLandingState(warrior);
             }
             else if (character is ZalaytyMonster zalayty)
             {
@@ -248,6 +253,58 @@ namespace Assets.Scripts.Platforms
             if (snapImmediately && keepRidersSeatedOnSurface)
                 MoveRiderToSurface(character, Vector2.zero);
         }
+        private void ConfirmWarriorLiftLandingState(Warrior warrior)
+        {
+            if (warrior == null)
+                return;
+
+            // The lift already confirmed a real top-surface contact.
+            // So do not use CountGroundPoints() as the main landing proof here.
+            warrior.StopJumpTowardCoroutine();
+
+            warrior.CanMove = true;
+            warrior.CanAttackWarrior = true;
+
+            warrior.IsFallingEdge = false;
+            warrior.IsFallingPlfExit = false;
+            warrior.IsFallingHitEnemy = false;
+            warrior.IsFallingGrazesEdge = false;
+
+            warrior._blockAction = false;
+            warrior.LastSafePlatform = this;
+            warrior.LastSafePosition =
+                GetSafeRespawnPositionFor(warrior, warrior.transform.position.x);
+
+            bool warriorIsMoving =
+                warrior.activesMoveCoroutine != null ||
+                (warrior.rigidbody2 != null &&
+                 Mathf.Abs(warrior.rigidbody2.linearVelocity.x) > 0.05f);
+
+            bool warriorIsAttacking =
+                warrior.animator != null &&
+                (
+                    warrior.animator.GetBool("isAttacking") ||
+                    warrior.animator.GetBool("isAttacking2") ||
+                    warrior.animator.GetBool("isAttacking3")
+                );
+
+            bool warriorIsDying =
+                warrior.animator != null &&
+                warrior.animator.GetBool("isDying");
+
+            bool warriorIsLosingControl =
+                warrior.animator != null &&
+                warrior.animator.GetBool("IsLosingCtrl");
+
+            if (warriorIsAttacking || warriorIsDying || warriorIsLosingControl)
+                return;
+
+            if (warriorIsMoving)
+                warrior.RunAnimationDisplay();
+            else
+                warrior.WaitAnimationDisplay();
+        }
+
 
         public Vector3 GetSafeRespawnPositionFor(CharacterController character, float preferredWorldX)
         {

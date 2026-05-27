@@ -85,18 +85,11 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             if (!CanMove) return;
 
-            // Do not start movement or run animation when the warrior is not actually
-            // standing on the platform top surface (e.g. touching a side/bottom edge,
-            // or a stale ground-point from a one-way platform).
-            if (!IsStandingOnPlatformSurface())
-            {
-                // Treat identically to the losing-balance edge case.
-                bool movingNow = activesMoveCoroutine != null ||
-                                 (rigidbody2 != null && Mathf.Abs(rigidbody2.linearVelocity.x) > 0.05f);
-                if (!movingNow)
-                    ShowLosingBalance();
+            // Warrior-only movement authorization:
+            // do not start MoveTowardPostionAction unless the Warrior body bottom
+            // is aligned with the current platform's solid platformCollider top.
+            if (!IsWarriorBodyBottomAlignedWithCurrentPlatformTop())
                 return;
-            }
 
             if (animator.GetBool("IsLosingCtrl"))
                 animator.SetBool("IsLosingCtrl", false);
@@ -367,6 +360,27 @@ namespace Assets.Scripts.Characteres.WarriorController
             const float tolerance = 0.06f;
 
             return warriorBottom >= platformTop - tolerance;
+        }
+
+        protected override bool CanContinueMoveTowardPositionAction()
+        {
+            return IsWarriorBodyBottomAlignedWithCurrentPlatformTop();
+        }
+
+        private bool IsWarriorBodyBottomAlignedWithCurrentPlatformTop()
+        {
+            if (CurrentplatForm == null || CurrentplatForm.platformCollider == null)
+                return false;
+
+            if (collider2 == null)
+                return false;
+
+            float warriorBottom = collider2.bounds.min.y;
+            float platformTop = CurrentplatForm.platformCollider.bounds.max.y;
+
+            const float tolerance = 0.06f;
+
+            return Mathf.Abs(warriorBottom - platformTop) <= tolerance;
         }
 
         private void ForceCancelCurrentAttackInternal(bool restoreMovementAfterAttack3Cancel)
