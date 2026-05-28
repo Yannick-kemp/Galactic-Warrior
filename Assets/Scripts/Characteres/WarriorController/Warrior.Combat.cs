@@ -122,7 +122,7 @@ namespace Assets.Scripts.Characteres.WarriorController
                     ?.NotifyCrowdHit(valid, avgHp);
             }
         }
-
+      
         private Vector3 GetHitFxPosition(Enemy enemy, HitFxPoint point)
         {
             switch (point)
@@ -237,6 +237,7 @@ namespace Assets.Scripts.Characteres.WarriorController
 
                     // This is the important part.
                     // It blocks the enemy attack and calls OnStunStarted().
+                   
                     enemy.ApplyStun(0.3f);
 
                     // Damage + physical step back.
@@ -379,8 +380,10 @@ namespace Assets.Scripts.Characteres.WarriorController
 
                 Enemy enemy = hit.GetComponent<Enemy>() ?? hit.GetComponentInParent<Enemy>();
 
-                if (enemy != null && !enemy.IsDeadOrDying && !enemies.Contains(enemy))
+                if (enemy != null && !enemy.IsDeadOrDying && !enemies.Contains(enemy)) { 
+                 
                     enemies.Add(enemy);
+                }
             }
 
             return enemies.ToArray();
@@ -429,6 +432,7 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             if (attackMode == AttackAnimMode.Attack2)
             {
+                DoAttack2Repultion();
                 AttackAnimation2Display();
                 return;
             }
@@ -603,6 +607,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             }
 
             _attack1HitEventConsumed = false;
+           
             GuardIdleAfterAttackRequest();
             PlayCurrentAttackAnimation();
 
@@ -622,7 +627,39 @@ namespace Assets.Scripts.Characteres.WarriorController
             PlayCurrentAttackAnimation();
         }
 
+        private void DoAttack2Repultion()
+        {
+            Enemy[] enemies = GetEnemiesInAttackRange();
 
+            foreach (var enemy in enemies)
+            {
+                enemy.IsAttacked = true;
+                // 5. Determine individual enemy knockback and damage values
+                float KnockBack = enemy switch
+                {
+                    P39Monster_WithHealthBar => 1f,
+                    M97Monster => 0.134f,
+                    CrawlingMonster => 0.4f,
+                    RakaMonster => 0.2f,
+                    _ => attack1KnockbackForce
+                };
+
+                int damage = enemy switch
+                {
+                    M97Monster => 6,
+                    CrawlingMonster => 8,
+                    P39Monster_WithHealthBar => 3,
+                    RakaMonster => 4,
+                    ZalaytyMonster => 5,
+                    HashagarMonster => 2,
+                    _ => attack1Damage
+                };
+                enemy.ApplyStun(KnockBack);
+                KnockbackEnemiesInRange(KnockBack, enemy, damage);
+                
+               
+            }
+        }
 
         private bool CanForceAttack2CounterWhileLocked()
         {
