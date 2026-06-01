@@ -122,7 +122,7 @@ namespace Assets.Scripts.Characteres.WarriorController
                     ?.NotifyCrowdHit(valid, avgHp);
             }
         }
-      
+
         private Vector3 GetHitFxPosition(Enemy enemy, HitFxPoint point)
         {
             switch (point)
@@ -235,9 +235,22 @@ namespace Assets.Scripts.Characteres.WarriorController
                     Vector3 hp3 = GetNovaPosition(enemy);
                     sumHp += new Vector2(hp3.x, hp3.y);
 
+                    // Zalayty is not allowed to go through the generic enemy stun/step-back path.
+                    // That generic path can interrupt his independent platform movement and create a
+                    // bad CurrentplatForm / ignored-collision state. Route him through the Zalayty-only guard.
+                    if (TryApplyZalaytyWarriorSafeHit(
+                            enemy,
+                            WarriorZalaytyHitKind.GenericWarriorConstraint,
+                            knockbackForce: 0.35f,
+                            damage: 10,
+                            stunSeconds: 0.3f,
+                            applyStun: true))
+                    {
+                        continue;
+                    }
+
                     // This is the important part.
                     // It blocks the enemy attack and calls OnStunStarted().
-                   
                     enemy.ApplyStun(0.3f);
 
                     // Damage + physical step back.
@@ -293,6 +306,21 @@ namespace Assets.Scripts.Characteres.WarriorController
         {
             if (enemy == null) return;
 
+            WarriorZalaytyHitKind hitKind = attackMode == AttackAnimMode.Attack2
+                ? WarriorZalaytyHitKind.Attack2
+                : WarriorZalaytyHitKind.Attack1;
+
+            if (TryApplyZalaytyWarriorSafeHit(
+                    enemy,
+                    hitKind,
+                    knockbackForce,
+                    damage,
+                    stunSeconds: 0f,
+                    applyStun: false))
+            {
+                return;
+            }
+
             enemy.DisableAttackTemporarily();
 
             Vector2 knockbackDir = (enemy.transform.position - transform.position).normalized;
@@ -301,6 +329,57 @@ namespace Assets.Scripts.Characteres.WarriorController
             enemy.stepBackDistance = enemy.ComputeStepBackDistance(knockbackForce);
 
             bool killed = enemy.TakeDamageAndReturnKilled(damage);
+
+            NotifyEnemyHit(enemy, damage);
+
+            StartCoroutine(knockbackDir.x > 0f ? enemy.SmoothStepBack(true) : enemy.SmoothStepBack(false));
+        }
+
+        private bool TryApplyZalaytyWarriorSafeHit(
+            Enemy enemy,
+            WarriorZalaytyHitKind kind,
+            float knockbackForce,
+            int damage,
+            float stunSeconds,
+            bool applyStun)
+        {
+            if (enemy is not ZalaytyMonster zalayty)
+                return false;
+
+            Vector2 direction = enemy.transform.position - transform.position;
+            if (direction.sqrMagnitude < 0.0001f)
+                direction = rightFacing ? Vector2.right : Vector2.left;
+            else
+                direction.Normalize();
+
+            WarriorZalaytyHitContext context = new WarriorZalaytyHitContext
+            {
+                Kind = kind,
+                RequestedDamage = damage,
+                RequestedKnockback = knockbackForce,
+                RequestedStunSeconds = stunSeconds,
+                ApplyStun = applyStun,
+                ForceDirection = direction,
+
+                // The important safety choices:
+                // - no Warrior-origin vertical force is allowed on Zalayty;
+                // - no generic coroutine interruption is allowed while Zalayty is platform-supported;
+                // - physical step-back is cancelled/reduced by Zalayty's own support snapshot.
+                AllowVerticalForce = false,
+                AllowCoroutineInterrupt = false,
+                AllowPhysicalStepBackWhenSupported = false
+            };
+
+            bool killed = zalayty.ApplyWarriorSafeHit(this, context);
+
+            NotifyEnemyHit(enemy, damage);
+            return true;
+        }
+
+        private void NotifyEnemyHit(Enemy enemy, int damage)
+        {
+            if (enemy == null)
+                return;
 
             // Play hit sfx for every damage dealt (Attack2 only)
             if (damage > 0 && attackMode == AttackAnimMode.Attack2)
@@ -317,8 +396,6 @@ namespace Assets.Scripts.Characteres.WarriorController
                     hitPoint = new Vector2(hp.x, hp.y)
                 });
             }
-
-            StartCoroutine(knockbackDir.x > 0f ? enemy.SmoothStepBack(true) : enemy.SmoothStepBack(false));
         }
 
         private void CheckEnemiesLeavingRange()
@@ -380,8 +457,9 @@ namespace Assets.Scripts.Characteres.WarriorController
 
                 Enemy enemy = hit.GetComponent<Enemy>() ?? hit.GetComponentInParent<Enemy>();
 
-                if (enemy != null && !enemy.IsDeadOrDying && !enemies.Contains(enemy)) { 
-                 
+                if (enemy != null && !enemy.IsDeadOrDying && !enemies.Contains(enemy))
+                {
+
                     enemies.Add(enemy);
                 }
             }
@@ -607,7 +685,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             }
 
             _attack1HitEventConsumed = false;
-           
+
             GuardIdleAfterAttackRequest();
             PlayCurrentAttackAnimation();
 
@@ -654,10 +732,21 @@ namespace Assets.Scripts.Characteres.WarriorController
                     HashagarMonster => 2,
                     _ => attack1Damage
                 };
+                if (TryApplyZalaytyWarriorSafeHit(
+                        enemy,
+                        WarriorZalaytyHitKind.Attack2,
+                        knockbackForce: KnockBack,
+                        damage: damage,
+                        stunSeconds: KnockBack,
+                        applyStun: true))
+                {
+                    continue;
+                }
+
                 enemy.ApplyStun(KnockBack);
                 KnockbackEnemiesInRange(KnockBack, enemy, damage);
-                
-               
+
+
             }
         }
 

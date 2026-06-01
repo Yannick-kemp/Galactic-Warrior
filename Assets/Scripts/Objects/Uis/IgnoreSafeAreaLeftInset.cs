@@ -12,6 +12,10 @@ public class IgnoreSafeAreaLeftInset : MonoBehaviour
     Vector2 _baseAnchoredPos;
     bool _captured;
 
+    Rect _lastSafeArea;
+    Vector2Int _lastScreenSize;
+    ScreenOrientation _lastOrientation;
+
     void OnEnable()
     {
         _rt = GetComponent<RectTransform>();
@@ -28,12 +32,25 @@ public class IgnoreSafeAreaLeftInset : MonoBehaviour
 
     void OnRectTransformDimensionsChange() => Apply();
 
-#if UNITY_EDITOR
     void Update()
     {
-        if (!Application.isPlaying) Apply();
-    }
+#if UNITY_EDITOR
+        if (!Application.isPlaying)
+        {
+            Apply();
+            return;
+        }
 #endif
+        // Re-snap on orientation / size / safe-area changes (e.g. 180° flip),
+        // in case the parent resize callback doesn't propagate down to us.
+        if (Screen.safeArea != _lastSafeArea ||
+            _lastScreenSize.x != Screen.width ||
+            _lastScreenSize.y != Screen.height ||
+            _lastOrientation != Screen.orientation)
+        {
+            Apply();
+        }
+    }
 
     void CaptureBase()
     {
@@ -47,6 +64,10 @@ public class IgnoreSafeAreaLeftInset : MonoBehaviour
     {
         if (_rt == null) return;
         if (_canvas == null) _canvas = GetComponentInParent<Canvas>();
+
+        _lastSafeArea = Screen.safeArea;
+        _lastScreenSize = new Vector2Int(Screen.width, Screen.height);
+        _lastOrientation = Screen.orientation;
 
         float scale = (_canvas != null) ? _canvas.scaleFactor : 1f;
         float leftInsetUiUnits = Screen.safeArea.xMin / Mathf.Max(0.0001f, scale);

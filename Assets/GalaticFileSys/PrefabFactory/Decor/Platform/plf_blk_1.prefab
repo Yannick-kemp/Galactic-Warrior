@@ -155,7 +155,7 @@ MonoBehaviour:
   defaultRenderer: {fileID: 0}
   mainRenderer: {fileID: 6350657475409537425}
   overlayRenderer: {fileID: 4202088781100607704}
-  initialTheme: {fileID: 11400000, guid: 19de7e06d9e0f734ca0d3144d5ba4dcf, type: 2}
+  initialTheme: {fileID: 11400000, guid: 7f5d572c05da9d34a938158ed0446adb, type: 2}
   applyInitialThemeOnStart: 1
   hideDefaultRendererWhenThemeApplied: 1
   autoBindDefaultRenderer: 1
