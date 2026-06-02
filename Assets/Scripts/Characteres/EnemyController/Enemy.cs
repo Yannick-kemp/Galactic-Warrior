@@ -104,6 +104,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         public bool IsBoss => isBoss;
         public string BossDisplayName => string.IsNullOrWhiteSpace(bossDisplayName) ? gameObject.name : bossDisplayName;
 
+        /// <summary>Read-only access to current health (used by projectiles for half-health hits).</summary>
+        public float CurrentHealth => currentHealth;
+
         public bool CountsForLevelClear
         {
             get

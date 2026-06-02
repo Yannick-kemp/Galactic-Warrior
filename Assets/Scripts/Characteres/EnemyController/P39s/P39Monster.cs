@@ -13,7 +13,7 @@ public class P39Monster_WithHealthBar : Enemy
 {
     [Header("Edge patrol (moving platform safe)")]
     [SerializeField] private float edgeSafeMargin = 0.45f; // keep consistent with platform clamp
-    [SerializeField] private float edgeTolerance = 0.05f;  // 0.03–0.08 usually
+    [SerializeField] private float edgeTolerance = 0.05f;  // 
 
     // Direction instead of caching xEdge as an absolute X
     private bool _goRight;
@@ -55,124 +55,103 @@ public class P39Monster_WithHealthBar : Enemy
         if (StopMovingWhenWarriorDie)
             return;
 
+        // Base updates (target acquisition, frame index, edge clamp, etc.)
         base.Update();
 
         if (IsDeadOrDying)
             return;
 
-        // If Warrior hit P39 with Attack2 / slash, P39 must not continue
-        // attacking or immediately restart patrol during the stun window.
-        if (IsStunned || IsAttackTemporarilyDisabled)
+        if (IsAttacked || IsStunned || IsAttackTemporarilyDisabled)
         {
-            StopMoveTowardCoroutine();
-            activesMoveCoroutine = null;
-
-            if (animator != null && animator.enabled)
-                WaitAnimationDisplay();
-
+            StopP39BecauseAttacked();
             return;
         }
 
-        // ---------------------------------------------------------------
-        // ATTACK2 MID-ANIMATION CANCEL
-        // If the Warrior activates Attack2 while P39 is already mid-attack,
-        // interrupt P39 immediately — don't wait for OnAttackPerformed.
-        // ---------------------------------------------------------------
-        if (IsAttacked)
-        {
-            var warrior = GameMgr.Instance?.WarriorInstance;
-            if (warrior != null && !warrior.IsDeadOrDying && warrior.IsAttack2CounterActive())
-            {
-                IsAttacked = false;
-                WaitAnimationDisplay();
-                DisableAttackTemporarily(0.55f);
-                ApplyStun(0.35f);
-                return;
-            }
-        }
-
         // Attack logic
-        if (EnemyRangeService != null
-            && target != null
-            && !IsAttacked
-            && CanStartAttackNow())
+        if (EnemyRangeService != null && target != null)
         {
             EnemyRangeService.TryAction(target, Range, OnAttackPerformed);
         }
 
-        // ... rest unchanged
+        // No platform => nothing to patrol
+        if (CurrentplatForm == null || collider2 == null || CurrentplatForm.platformCollider == null)
+            return;
 
-        // If another system disabled movement, do not restart patrol.
-        if (!CanMove)
-        return;
+        // Decide direction based on CURRENT platform bounds + CURRENT collider bounds
+        UpdateEdgeTargetSide();
 
-    // No platform => nothing to patrol
-    if (CurrentplatForm == null || collider2 == null || CurrentplatForm.platformCollider == null)
-        return;
+        // Recompute edge X every frame (moving platform safe)
+        xEdge = GetCurrentEdgeX();
 
-    // Decide direction based on CURRENT platform bounds + CURRENT collider bounds
-    UpdateEdgeTargetSide();
+        // Keep facing correct
+        SetDirectionVariables(xEdge);
 
-    // Recompute edge X every frame: moving-platform safe
-    xEdge = GetCurrentEdgeX();
+        if (IsAttacked)
+        {
+            StopP39BecauseAttacked();
+            return;
+        }
 
-    // Keep facing correct
-    SetDirectionVariables(xEdge);
+        // Start movement if none, or restart only when direction flips
+        if (activesMoveCoroutine == null || _goRight != _lastGoRight)
+        {
+            StopMoveTowardCoroutine();
+            activesMoveCoroutine = null;
 
-    // Start movement if none, or restart only when direction flips
-    if (activesMoveCoroutine == null || _goRight != _lastGoRight)
-    {
-        StopMoveTowardCoroutine();
-        activesMoveCoroutine = null;
+            RunAnimationDisplay();
+            activesMoveCoroutine = MoveTowardPostionAction(xEdge);
+            StartCoroutine(activesMoveCoroutine);
+        }
 
-        RunAnimationDisplay();
-        activesMoveCoroutine = MoveTowardPostionAction(xEdge);
-        StartCoroutine(activesMoveCoroutine);
+        _lastGoRight = _goRight;
     }
+    private void StopP39BecauseAttacked()
+    {
+        // Stop patrol / chase movement immediately.
+        if (activesMoveCoroutine != null)
+        {
+            StopMoveTowardCoroutine();
+            activesMoveCoroutine = null;
+        }
 
-    _lastGoRight = _goRight;
-}
+        // Stop horizontal drift if Rigidbody2D exists.
+        if (rigidbody2 != null)
+        {
+            Vector2 v = rigidbody2.linearVelocity;
+            v.x = 0f;
+            rigidbody2.linearVelocity = v;
+        }
 
+        // Do not keep run animation while blocked.
+        WaitAnimationDisplay();
+    }
     public override void OnAttackPerformed(IAttacker attacker, Transform attackedTarget)
     {
-        if (!CanStartAttackNow())
+
+        if (IsAttacked || IsDeadOrDying)
             return;
 
         var warrior = GameMgr.Instance?.WarriorInstance;
         if (warrior == null || warrior.collider2 == null)
             return;
 
-        if (warrior.IsDeadOrDying)
-            return;
-
+        // Same platform + physical touch rule
         if (warrior.CurrentplatForm?.GetHashCode() != CurrentplatForm?.GetHashCode())
             return;
 
         if (NormalCollider == null || !warrior.collider2.IsTouching(NormalCollider))
             return;
 
+        // Must be in front at the moment of the hit
         if (!IsWarriorInFront(warrior.transform))
             return;
 
-        // IMPORTANT:
-        // If Warrior has successfully started Attack2, P39 must not win this frame.
-        // Let the Attack2 slash animation event stun/knockback P39.
-        if (warrior.IsAttack2CounterActive())
-        {
-            DisableAttackTemporarily(0.55f);
-            ApplyStun(0.35f);
-            return;
-        }
-
+        // Play animation (base also checks front)
         base.OnAttackPerformed(attacker, attackedTarget);
 
-        if (!CanStartAttackNow())
+        if (IsAttacked || IsDeadOrDying)
             return;
-
         if (warrior.TryBlockEnemyHit(this))
-            return;
-
-        if (!CanStartAttackNow())
             return;
 
         const int HIT_FRAME = 10;
@@ -181,24 +160,6 @@ public class P39Monster_WithHealthBar : Enemy
 
         warrior.TakeDamage(attackDamage);
         warrior.SpawnBloodshedEffectFromEnemy(this);
-    }
-
-    protected override void OnStunStarted()
-    {
-        base.OnStunStarted();
-
-        StopMoveTowardCoroutine();
-        activesMoveCoroutine = null;
-        IsAttacked = false;
-
-        if (rigidbody2 != null)
-        {
-            rigidbody2.linearVelocity = Vector2.zero;
-            rigidbody2.angularVelocity = 0f;
-        }
-
-        if (animator != null && animator.enabled)
-            RunAnimationDisplay();
     }
 
     protected override void OnDeath()

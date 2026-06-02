@@ -42,7 +42,7 @@ public class CharacterController : Character, ICharacterController
     public bool DescendentPhase;
     public bool _isJumping;
     public bool _isMoving;
-    public bool IsJumping => _isJumping; 
+    public bool IsJumping => _isJumping;
 
     private static readonly ProfilerMarker WarriorJumpTowardPositionMarker =
         new ProfilerMarker("Warrior.JumpTowardPositionAction");
@@ -107,6 +107,12 @@ public class CharacterController : Character, ICharacterController
     [SerializeField, Min(0f)] private float antiTunnelTopStartTolerance = 0.04f;
 
     protected virtual bool ClampMoveToCurrentPlatform => true;
+
+    protected virtual bool CanContinueMoveTowardPositionAction()
+    {
+        return true;
+    }
+
     public virtual bool CanJump { get; set; }
     public virtual bool CanMove { get; set; }
     public virtual bool CanAttack { get; set; }
@@ -389,6 +395,13 @@ public class CharacterController : Character, ICharacterController
         if (_isMoving) yield break;
         _isMoving = true;
 
+        if (!CanContinueMoveTowardPositionAction())
+        {
+            _isMoving = false;
+            activesMoveCoroutine = null;
+            yield break;
+        }
+
         bool wantsBeyondEdge = IsTargetOutsideCurrentPlatformSafeRange(x);
         bool shouldClamp = ClampMoveToCurrentPlatform &&
                            !(AllowEdgeExitWhenTargetOutside && wantsBeyondEdge);
@@ -397,6 +410,13 @@ public class CharacterController : Character, ICharacterController
 
         while (Mathf.Abs(targetX - transform.position.x) > 0.1f)
         {
+            if (!CanContinueMoveTowardPositionAction())
+            {
+                _isMoving = false;
+                activesMoveCoroutine = null;
+                yield break;
+            }
+
             if (animator == null ||
                 (!animator.GetBool("isAttacking") &&
                  !animator.GetBool("isAttacking2") &&
@@ -426,6 +446,13 @@ public class CharacterController : Character, ICharacterController
             Physics2D.SyncTransforms();
 
             yield return null;
+        }
+
+        if (!CanContinueMoveTowardPositionAction())
+        {
+            _isMoving = false;
+            activesMoveCoroutine = null;
+            yield break;
         }
 
         // Final snap
@@ -465,7 +492,7 @@ public class CharacterController : Character, ICharacterController
         _isJumping = true;
 
 
-       
+
 
         Vector2 startPosition = transform.position;
         float elapsedTime = 0f;

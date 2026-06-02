@@ -1,6 +1,7 @@
 ﻿using Assets.Scripts.Relics.Core;
 using Assets.Scripts.Relics.Definitions;
 using Assets.Scripts.Relics.Projectiles;
+using System.Collections;
 using UnityEngine;
 
 namespace Assets.Scripts.Characteres.WarriorController
@@ -27,6 +28,11 @@ namespace Assets.Scripts.Characteres.WarriorController
         [Header("Ice Ball Cast")]
         [SerializeField] private float iceTouchGuardDuration = 0.12f;
         [SerializeField] private float minIceAimDistance = 0.12f;
+
+        [Header("Attack3 Safety")]
+        [SerializeField, Min(0.2f)] private float attack3FailsafeSeconds = 1.25f;
+
+        private Coroutine _attack3FailsafeRoutine;
 
         private bool _iceBallArmed;
         private string _iceBallRelicId;
@@ -127,7 +133,9 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (!CanDie && !_platformStoneRepulseActive && !_frozenByHivernox && _hivernoxHitLockRoutine == null)
                 CanMove = true;
         }
+
         public event System.Action<bool> OnIceBallArmedStateChanged;
+
         public bool TryArmIceBallRelic(IceBallRelic def, bool consumeOnCast)
         {
             // Do not allow the UI button to arm Attack3 while Warrior is frozen or hit-locked.
@@ -216,6 +224,86 @@ namespace Assets.Scripts.Characteres.WarriorController
             return !touchedInsideWarriorCollider;
         }
 
+        private void StartAttack3Failsafe()
+        {
+            if (_attack3FailsafeRoutine != null)
+                StopCoroutine(_attack3FailsafeRoutine);
+
+            _attack3FailsafeRoutine = StartCoroutine(Attack3FailsafeRoutine());
+        }
+
+        private void StopAttack3Failsafe()
+        {
+            if (_attack3FailsafeRoutine == null)
+                return;
+
+            Coroutine routine = _attack3FailsafeRoutine;
+            _attack3FailsafeRoutine = null;
+            StopCoroutine(routine);
+        }
+
+        private IEnumerator Attack3FailsafeRoutine()
+        {
+            float endTime = Time.unscaledTime + Mathf.Max(0.2f, attack3FailsafeSeconds);
+
+            while (Time.unscaledTime < endTime)
+            {
+                if (!_attack3Casting && !_iceBallShotPending)
+                {
+                    _attack3FailsafeRoutine = null;
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            _attack3FailsafeRoutine = null;
+
+            if (!HasAnyIceBallCastState())
+                yield break;
+
+            bool restoreMovement =
+                !IsHardActionLocked &&
+                !_frozenByHivernox &&
+                CanAttackWarrior &&
+                !CanDie &&
+                !IsDeadOrDying;
+
+            ForceFinishAttack3Cast("Attack3 failsafe timeout", restoreMovement);
+        }
+
+        private void ForceFinishAttack3Cast(string reason, bool restoreMovement)
+        {
+            StopAttack3Failsafe();
+
+            if (animator != null && HasBoolParam("isAttacking3"))
+                animator.SetBool("isAttacking3", false);
+
+            _iceBallShotPending = false;
+
+            HideIceChargeVfx();
+            HideAttack3Visuals();
+            HideAttack3Body();
+            ShowDefaultWarriorVisuals();
+
+            ClearArmedIceBall();
+            ResetAttack3OrbitAim();
+
+            SetAttackMode(AttackAnimMode.Attack1);
+
+            if (restoreMovement)
+            {
+                EndAttack3Lock();
+                ExitAttackToBestState();
+            }
+            else
+            {
+                _attack3Casting = false;
+            }
+
+            Debug.Log($"[Warrior] ForceFinishAttack3Cast: {reason}", this);
+        }
+
         private void BeginArmedIceBallCast(Vector2 touchWorld)
         {
             if (IsHardActionLocked || _frozenByHivernox || !CanAttackWarrior)
@@ -223,6 +311,7 @@ namespace Assets.Scripts.Characteres.WarriorController
                 CancelIceBallCastForExternalLock();
                 return;
             }
+
             if (_armedIceBallDef == null)
             {
                 ClearArmedIceBall();
@@ -252,7 +341,9 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             StopMoveTowardCoroutine();
             StopJumpTowardCoroutine();
+
             BeginAttack3Lock();
+            StartAttack3Failsafe();
 
             PlayAttack3CastSfx();
 
@@ -318,7 +409,9 @@ namespace Assets.Scripts.Characteres.WarriorController
                 CancelIceBallCastForExternalLock();
                 return;
             }
-            if (!_iceBallShotPending) return;
+
+            if (!_iceBallShotPending)
+                return;
 
             if (_armedIceBallDef == null || _armedIceBallDef.projectilePrefab == null)
             {
@@ -347,7 +440,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             }
             else
             {
-                // Fallback only if prefab was not set up correctly
+                // Fallback only if prefab was not set up correctly.
                 Rigidbody2D rb = go.GetComponent<Rigidbody2D>();
                 if (rb != null)
                 {
@@ -366,20 +459,7 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         public void AE_EndAttack3()
         {
-            if (animator != null)
-                animator.SetBool("isAttacking3", false);
-
-            _iceBallShotPending = false;
-            HideIceChargeVfx();
-            HideAttack3Visuals();
-            HideAttack3Body();
-            ShowDefaultWarriorVisuals();
-            ClearArmedIceBall();
-            ResetAttack3OrbitAim();
-            EndAttack3Lock();
-
-            SetAttackMode(AttackAnimMode.Attack1);
-            ExitAttackToBestState();
+            ForceFinishAttack3Cast("AE_EndAttack3", restoreMovement: true);
         }
 
         private Vector3 GetIceBallSpawnPosition(IceBallRelic def)
@@ -457,6 +537,8 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void CancelIceBallCastVisualState(bool restoreMovementAfterCancel)
         {
+            StopAttack3Failsafe();
+
             _iceBallShotPending = false;
 
             HideIceChargeVfx();
@@ -492,14 +574,3 @@ namespace Assets.Scripts.Characteres.WarriorController
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-

@@ -5003,12 +5003,12 @@ SpriteRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
-  m_Sprite: {fileID: 21300000, guid: df4a394cd7dea19488f7bd1ab6a0b9c3, type: 3}
+  m_Sprite: {fileID: 21300000, guid: ee692b0566a84484db550f24e7836f3d, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
-  m_Size: {x: 6, y: 8.76}
+  m_Size: {x: 2.78, y: 2.75}
   m_AdaptiveModeThreshold: 0.5
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
@@ -5053,7 +5053,7 @@ BoxCollider2D:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
     oldSize: {x: 2.78, y: 2.75}
-    newSize: {x: 6, y: 8.76}
+    newSize: {x: 2.78, y: 2.75}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
     adaptiveTiling: 0
@@ -5099,7 +5099,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5d8bdeb3ba5f4b44bb53c3c2ff71efb6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  definition: {fileID: 11400000, guid: 10be32f63ed74764585e8bd4137849cb, type: 2}
+  definition: {fileID: 11400000, guid: 4e0b2aabf6cb4bb41a9071c4327f0eb9, type: 2}
   pickupVfxPrefab: {fileID: 3478075088277106161, guid: 798123c9326b0bd41b6f60b8da33448c, type: 3}
   pickupVfxOffset: {x: 0, y: 0.2, z: 0}
   parentVfxToWarrior: 0

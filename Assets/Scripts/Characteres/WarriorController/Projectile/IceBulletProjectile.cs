@@ -159,7 +159,12 @@ namespace Assets.Scripts.Relics.Projectiles
 
             enemy.DisableAttackTemporarily();
 
-            bool killed = enemy.TakeDamageAndReturnKilled(_damage);
+            // Non-boss enemies lose half their current health on ice bullet impact.
+            float effectiveDamage = (!enemy.IsBoss)
+                ? Mathf.Max(1f, enemy.CurrentHealth * 0.5f)
+                : _damage;
+
+            bool killed = enemy.TakeDamageAndReturnKilled(effectiveDamage);
 
             if (!killed && _stunSeconds > 0f)
                 enemy.ApplyStun(_stunSeconds);

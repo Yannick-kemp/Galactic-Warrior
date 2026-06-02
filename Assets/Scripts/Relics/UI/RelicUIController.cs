@@ -1044,7 +1044,7 @@ public class RelicUIController : MonoBehaviour
             
             // LOG: see what LateUpdate is actually deciding every frame
             if (r.slot != null && r.slot.Definition is IceBallRelic)
-                Debug.Log($"[IceBall][LateUpdate] frame={Time.frameCount} armed={armed} count={count} interactable={interactable} targetGraphicColor={r.button.targetGraphic?.color}");
+                //Debug.Log($"[IceBall][LateUpdate] frame={Time.frameCount} armed={armed} count={count} interactable={interactable} targetGraphicColor={r.button.targetGraphic?.color}");
 
             r.button.interactable = interactable;
             r.button.transition = Selectable.Transition.None;

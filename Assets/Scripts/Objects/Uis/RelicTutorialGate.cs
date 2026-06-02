@@ -9,12 +9,15 @@ public class RelicTutorialGate : MonoBehaviour
     [SerializeField] private GameObject tutorialShield;
     [SerializeField] private GameObject tutorialSprint;
     [SerializeField] private GameObject tutorialIceBall;
+    [SerializeField] private GameObject TutorialKey;
+
 
     [Header("Relic IDs (must match RelicDefinition.relicId, or SO name if relicId empty)")]
     [SerializeField] private string powerComboId;
     [SerializeField] private string shieldId;
     [SerializeField] private string sprintId;
     [SerializeField] private string iceBallId = "relic-ice-evolve";
+    [SerializeField] private string keyId = "relic_key";
 
     [Header("Rule")]
     [SerializeField] private int showWhenCountAtLeast = 2;
@@ -49,6 +52,7 @@ public class RelicTutorialGate : MonoBehaviour
         if (id == shieldId) SetVisible(tutorialShield, newCount >= showWhenCountAtLeast);
         if (id == sprintId) SetVisible(tutorialSprint, newCount >= showWhenCountAtLeast);
         if (id == iceBallId) SetVisible(tutorialIceBall, newCount >= showWhenCountAtLeast);
+        if (id == keyId) SetVisible(TutorialKey, newCount >= showWhenCountAtLeast);
     }
 
     private void RefreshAll()
@@ -57,6 +61,7 @@ public class RelicTutorialGate : MonoBehaviour
         SetVisible(tutorialShield, _rm.GetCountById(shieldId) >= showWhenCountAtLeast);
         SetVisible(tutorialSprint, _rm.GetCountById(sprintId) >= showWhenCountAtLeast);
         SetVisible(tutorialIceBall, _rm.GetCountById(iceBallId) >= showWhenCountAtLeast);
+        SetVisible(TutorialKey, _rm.GetCountById(keyId) >= showWhenCountAtLeast);
     }
 
     private static void SetVisible(GameObject go, bool visible)

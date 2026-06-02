@@ -156,7 +156,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1689199374527633482}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0.03570825, w: -0.9993623}
+  m_LocalRotation: {x: -0, y: -0, z: -0.03570775, w: -0.99936235}
   m_LocalPosition: {x: -0.7, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -592,6 +592,7 @@ MonoBehaviour:
   resetAttack3AimOnEnd: 1
   iceTouchGuardDuration: 0.12
   minIceAimDistance: 0.12
+  attack3FailsafeSeconds: 1.25
   meteorDamageMinInterval: 0.12
   meteorShieldBlockCost: 5
   meteorHitStunSeconds: 0.08
@@ -1069,7 +1070,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3671824476123847177}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0.04636238, w: -0.99892473}
+  m_LocalRotation: {x: 0, y: 0, z: 0.04636095, w: -0.9989248}
   m_LocalPosition: {x: -0.43, y: 0.04, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -1667,7 +1668,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5745351334168150941}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0.010662962, w: 0.99994314}
+  m_LocalRotation: {x: 0, y: 0, z: 0.010662031, w: 0.9999432}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -2001,7 +2002,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &8010841646197958596
 Transform:
   m_ObjectHideFlags: 0

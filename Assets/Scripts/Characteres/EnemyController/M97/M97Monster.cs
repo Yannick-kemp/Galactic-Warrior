@@ -152,6 +152,46 @@ public class M97Monster : Enemy
     [SerializeField, Min(1)] private int laserMinWarriorGroundPoints = 1;
     [SerializeField] private bool stopLaserWhenWarriorJumps = true;
 
+    [Header("M97 Moving Lift Anti-Tunneling")]
+    [Tooltip("M97-only safety layer. It never changes MovingVerticalPlatform rules for Warrior, Zalayty, or other enemies.")]
+    [SerializeField] private bool enableM97MovingLiftAntiTunnel = true;
+
+    [Tooltip("For M97 only: force safer Rigidbody2D settings at runtime.")]
+    [SerializeField] private bool forceM97ContinuousCollision = true;
+
+    [Tooltip("Small offset between M97 bottom and MovingVerticalPlatform top after an emergency seat.")]
+    [SerializeField, Min(0f)] private float m97LiftSeatOffset = 0.025f;
+
+    [Tooltip("Horizontal overlap skin used only by M97 lift recovery.")]
+    [SerializeField, Min(0f)] private float m97LiftHorizontalSkin = 0.025f;
+
+    [Tooltip("Maximum normal gap above a moving lift that M97 may be recovered from.")]
+    [SerializeField, Min(0f)] private float m97LiftMaxRecoverGap = 0.65f;
+
+    [Tooltip("Maximum sink through the moving lift top that M97 may be recovered from.")]
+    [SerializeField, Min(0f)] private float m97LiftMaxRecoverSink = 0.35f;
+
+    [Tooltip("Extra dynamic tolerance added to lift/body step prediction. Increase only if your lift speed is extreme.")]
+    [SerializeField, Min(0f)] private float m97LiftDynamicPadding = 0.08f;
+
+    [Tooltip("How long M97 remembers the last valid moving lift after a one-frame solver/raycast gap.")]
+    [SerializeField, Min(0f)] private float m97LiftSupportGraceTime = 0.25f;
+
+    [Tooltip("Allows recovery when the M97 body center is still close to the platform bounds after a push/stepback.")]
+    [SerializeField, Min(0f)] private float m97LiftHorizontalSearchPadding = 0.20f;
+
+    [Tooltip("When seated by the anti-tunnel layer, cancel only vertical velocity. Horizontal patrol/chase is preserved.")]
+    [SerializeField] private bool m97LiftZeroVerticalVelocityOnSeat = true;
+
+    [Tooltip("If true, emergency recovery writes Rigidbody2D.position. If false, it uses MovePosition.")]
+    [SerializeField] private bool m97LiftHardSnapInEmergency = true;
+
+    private MovingVerticalPlatform _m97LastLiftPlatform;
+    private float _m97LastLiftSupportTime = -999f;
+    private float _m97LastFixedBodyBottomY;
+    private bool _m97HasLastFixedBody;
+    private bool _m97InLiftAntiTunnelCorrection;
+
     private bool _isDeadOrDying;
 
     private int _damageHitCount;
@@ -170,6 +210,8 @@ public class M97Monster : Enemy
 
         // IMPORTANT: per-spawn overrides win after defaults
         ApplySpawnOverridesNow();
+
+        ConfigureM97AntiTunnelRigidbody();
 
         if (NormalCollider != null && TriggerColliderLeft != null)
             Physics2D.IgnoreCollision(NormalCollider, TriggerColliderLeft, true);
@@ -191,6 +233,10 @@ public class M97Monster : Enemy
         initDirection();
 
         base.Update();
+
+        // M97-only: recover a one-frame CurrentplatForm loss caused by lift/raycast timing
+        // without moving the body from Update().
+        RefreshM97MovingLiftAntiTunnel("update-after-base", allowPositionCorrection: false);
 
         // Re-assert committed patrol target after base update
         CommitPatrolEdgeForMovingVerticalPlatform();
@@ -416,39 +462,73 @@ public class M97Monster : Enemy
     private IEnumerator MoveTowardPositionNoFlipAction(float x)
     {
         if (_isMoving) yield break;
+
         _isMoving = true;
+        WaitForFixedUpdate wait = new WaitForFixedUpdate();
 
-        bool wantsBeyondEdge = IsTargetOutsideCurrentPlatformSafeRange(x);
-
-        bool shouldClamp = ClampMoveToCurrentPlatform &&
-                           !(AllowEdgeExitWhenTargetOutside && wantsBeyondEdge);
-
-        float targetX = shouldClamp ? ClampToCurrentPlatform(x) : x;
-
-        // Inside MoveTowardPositionNoFlipAction
-        while (Mathf.Abs(targetX - transform.position.x) > 0.1f)
+        try
         {
-            Vector2 currentPosition = rigidbody2.position; // Use RB position
-            Vector2 targetPosition = new Vector2(targetX, currentPosition.y);
-            Vector2 newPosition = Vector2.MoveTowards(currentPosition, targetPosition, Speed * Time.deltaTime);
+            bool wantsBeyondEdge = IsTargetOutsideCurrentPlatformSafeRange(x);
 
-            // Use MovePosition for Dynamic RBs to keep physics happy
-            rigidbody2.MovePosition(new Vector2(newPosition.x, rigidbody2.position.y));
-            yield return null;
+            bool shouldClamp = ClampMoveToCurrentPlatform &&
+                               !(AllowEdgeExitWhenTargetOutside && wantsBeyondEdge);
+
+            float targetX = shouldClamp ? ClampToCurrentPlatform(x) : x;
+
+            while (Mathf.Abs(targetX - transform.position.x) > 0.1f)
+            {
+                RefreshM97MovingLiftAntiTunnel("no-flip-before-step", allowPositionCorrection: true);
+
+                Vector2 currentPosition = rigidbody2 != null
+                    ? rigidbody2.position
+                    : (Vector2)transform.position;
+
+                float nextX = Mathf.MoveTowards(
+                    currentPosition.x,
+                    targetX,
+                    Speed * Time.fixedDeltaTime
+                );
+
+                Vector2 nextPosition = new Vector2(nextX, currentPosition.y);
+                nextPosition = ConstrainM97PositionToMovingLiftSurface(nextPosition);
+
+                MarkIntentionalEnemyDisplacement(Time.fixedDeltaTime * 4f);
+
+                if (rigidbody2 != null)
+                    rigidbody2.MovePosition(nextPosition);
+                else
+                    transform.position = new Vector3(nextPosition.x, nextPosition.y, transform.position.z);
+
+                RefreshM97MovingLiftAntiTunnel("no-flip-after-step", allowPositionCorrection: true);
+
+                yield return wait;
+            }
+
+            Vector2 finalPosition = rigidbody2 != null
+                ? rigidbody2.position
+                : (Vector2)transform.position;
+
+            finalPosition.x = shouldClamp ? ClampToCurrentPlatform(targetX) : targetX;
+            finalPosition = ConstrainM97PositionToMovingLiftSurface(finalPosition);
+
+            MarkIntentionalEnemyDisplacement(Time.fixedDeltaTime * 4f);
+
+            if (rigidbody2 != null)
+                rigidbody2.MovePosition(finalPosition);
+            else
+                transform.position = new Vector3(finalPosition.x, finalPosition.y, transform.position.z);
+
+            RefreshM97MovingLiftAntiTunnel("no-flip-final", allowPositionCorrection: true);
         }
-
-        if (shouldClamp)
+        finally
         {
-            float finalX = ClampToCurrentPlatform(targetX);
-            transform.position = new Vector3(finalX, transform.position.y, transform.position.z);
-        }
-        else
-        {
-            transform.position = new Vector3(targetX, transform.position.y, transform.position.z);
-        }
+            _isMoving = false;
 
-        _isMoving = false;
-        activesMoveCoroutine = null;
+            if (activesMoveCoroutine != null)
+                activesMoveCoroutine = null;
+
+            RefreshM97MovingLiftAntiTunnel("no-flip-cleanup", allowPositionCorrection: true);
+        }
     }
 
 
@@ -468,24 +548,31 @@ public class M97Monster : Enemy
 
     // Inside M97Monster.cs
     // Inside M97Monster.cs
-    protected override void FixedUpdate() // Added 'override'
+    protected override void FixedUpdate()
     {
-        // 1. Run the Parent's ground check first
+        CaptureM97FixedBodyState();
+
+        // Parent ground/raycast and Warrior momentum guard stay intact.
         base.FixedUpdate();
 
-        // 2. Run M97 specific sticking logic
-        StickToDescendingMovingPlatformSurface();
+        // First pass: recover from fast lift motion or a one-frame solver/raycast gap.
+        RefreshM97MovingLiftAntiTunnel("fixed-after-base", allowPositionCorrection: true);
 
-        // 3. Run overlap resolution logic
-        if (!_resolveOverlapThisStep)
-            return;
-
-        if (_overlapWarrior != null)
+        if (_resolveOverlapThisStep && _overlapWarrior != null)
+        {
             ResolveOverlapPush(_overlapWarrior);
+
+            // Second pass: overlap push moves M97 horizontally. Re-seat immediately
+            // if the push happened while he was standing on a moving lift.
+            RefreshM97MovingLiftAntiTunnel("fixed-after-overlap-push", allowPositionCorrection: true);
+        }
 
         _resolveOverlapThisStep = false;
         _overlapWarrior = null;
+
+        CaptureM97FixedBodyState();
     }
+
     private bool ShouldPushOverlappingWarrior(Warrior w)
     {
         if (w == null) return false;
@@ -557,10 +644,17 @@ public class M97Monster : Enemy
             ? collider2.attachedRigidbody
             : GetComponent<Rigidbody2D>();
 
+        Vector2 m97TargetPosition = myRb != null
+            ? myRb.position + m97Delta
+            : (Vector2)transform.position + m97Delta;
+
+        m97TargetPosition = ConstrainM97PositionToMovingLiftSurface(m97TargetPosition);
+        MarkIntentionalEnemyDisplacement(Time.fixedDeltaTime * 4f);
+
         if (myRb != null)
-            myRb.MovePosition(myRb.position + m97Delta);
+            myRb.MovePosition(m97TargetPosition);
         else
-            transform.position += (Vector3)m97Delta;
+            transform.position = new Vector3(m97TargetPosition.x, m97TargetPosition.y, transform.position.z);
 
         Rigidbody2D warriorRb = w.collider2.attachedRigidbody != null
             ? w.collider2.attachedRigidbody
@@ -580,6 +674,16 @@ public class M97Monster : Enemy
         {
             w.transform.position += (Vector3)warriorDelta;
         }
+    }
+
+    public override void StopMoveTowardCoroutine()
+    {
+        base.StopMoveTowardCoroutine();
+
+        // Safety for coroutine interruptions: M97 custom coroutines also set _isMoving.
+        _isMoving = false;
+
+        RefreshM97MovingLiftAntiTunnel("stop-move", allowPositionCorrection: true);
     }
 
 
@@ -1550,6 +1654,10 @@ public class M97Monster : Enemy
     {
         base.OnDamaged(damage, killed);
 
+        // Hit stepback / stun can interrupt a movement coroutine while the lift moves.
+        // Re-seat immediately, but only for this M97 instance.
+        RefreshM97MovingLiftAntiTunnel("damaged", allowPositionCorrection: true);
+
         if (killed) return;
         if (damage <= 0f) return;
 
@@ -1576,48 +1684,306 @@ public class M97Monster : Enemy
 
     private void StickToDescendingMovingPlatformSurface()
     {
-        if (!stickToDescendingPlatformSurface || _isDeadOrDying) return;
-        if (CurrentplatForm is not MovingVerticalPlatform movingPlatform) return;
-
-        // If parented, don't double-move
-        if (transform.parent == movingPlatform.transform)
-        {
-            if (!movingPlatform.IsMovingUpNow && rigidbody2.linearVelocity.y > 0)
-                rigidbody2.linearVelocity = new Vector2(rigidbody2.linearVelocity.x, 0f);
+        if (!stickToDescendingPlatformSurface)
             return;
+
+        RefreshM97MovingLiftAntiTunnel("legacy-stick", allowPositionCorrection: true);
+    }
+
+    private void ConfigureM97AntiTunnelRigidbody()
+    {
+        if (!enableM97MovingLiftAntiTunnel || rigidbody2 == null)
+            return;
+
+        if (forceM97ContinuousCollision)
+            rigidbody2.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+
+        rigidbody2.interpolation = RigidbodyInterpolation2D.Interpolate;
+        rigidbody2.constraints |= RigidbodyConstraints2D.FreezeRotation;
+    }
+
+    private void CaptureM97FixedBodyState()
+    {
+        Collider2D support = GetM97SupportCollider();
+        if (support == null)
+            return;
+
+        Physics2D.SyncTransforms();
+
+        _m97LastFixedBodyBottomY = support.bounds.min.y;
+        _m97HasLastFixedBody = true;
+    }
+
+    private Collider2D GetM97SupportCollider()
+    {
+        if (NormalCollider != null && NormalCollider.enabled && !NormalCollider.isTrigger)
+            return NormalCollider;
+
+        if (collider2 != null && collider2.enabled && !collider2.isTrigger)
+            return collider2;
+
+        return null;
+    }
+
+    private bool RefreshM97MovingLiftAntiTunnel(string reason, bool allowPositionCorrection)
+    {
+        if (!enableM97MovingLiftAntiTunnel)
+            return false;
+
+        if (_isDeadOrDying || _m97InLiftAntiTunnelCorrection)
+            return false;
+
+        if (rigidbody2 == null)
+            return false;
+
+        Collider2D support = GetM97SupportCollider();
+        if (support == null)
+            return false;
+
+        Physics2D.SyncTransforms();
+
+        MovingVerticalPlatform lift = GetBestM97MovingLiftCandidate(support);
+        if (lift == null || lift.platformCollider == null)
+            return false;
+
+        if (!IsM97RecoverableOnMovingLift(lift, support, allowPredictiveRecovery: true))
+            return false;
+
+        _m97LastLiftPlatform = lift;
+        _m97LastLiftSupportTime = Time.time;
+
+        CurrentplatForm = lift;
+        CommitPatrolEdgeForMovingVerticalPlatform();
+
+        if (allowPositionCorrection)
+            SeatM97OnMovingLift(lift, support, reason);
+
+        return true;
+    }
+
+    private MovingVerticalPlatform GetBestM97MovingLiftCandidate(Collider2D support)
+    {
+        if (CurrentplatForm is MovingVerticalPlatform currentLift &&
+            IsUsableM97MovingLift(currentLift) &&
+            IsM97RecoverableOnMovingLift(currentLift, support, allowPredictiveRecovery: true))
+        {
+            return currentLift;
         }
 
-        if (rigidbody2 == null || movingPlatform.platformCollider == null) return;
-
-        Bounds pb = movingPlatform.platformCollider.bounds;
-        Collider2D myCol = (NormalCollider != null && NormalCollider.enabled)
-            ? (Collider2D)NormalCollider : collider2;
-        if (myCol == null) return;
-
-        Bounds eb = myCol.bounds;
-        float verticalGap = eb.min.y - pb.max.y;
-
-        if (verticalGap >= platformSurfaceBottomTolerance && verticalGap <= platformSurfaceTopTolerance)
+        if (IsUsableM97MovingLift(_m97LastLiftPlatform) &&
+            Time.time <= _m97LastLiftSupportTime + m97LiftSupportGraceTime &&
+            IsM97RecoverableOnMovingLift(_m97LastLiftPlatform, support, allowPredictiveRecovery: true))
         {
-            // Seat the monster exactly on the surface using MovePosition (not raw position)
-            float targetY = pb.max.y + eb.extents.y + platformSurfaceSeatOffset;
+            return _m97LastLiftPlatform;
+        }
 
-            // Only apply if we're moving (coroutine not running) or platform is descending
-            if (activesMoveCoroutine == null || !movingPlatform.IsMovingUpNow)
+        return FindNearestRecoverableM97MovingLift(support);
+    }
+
+    private bool IsUsableM97MovingLift(MovingVerticalPlatform lift)
+    {
+        return lift != null &&
+               lift.isActiveAndEnabled &&
+               lift.platformCollider != null &&
+               lift.platformCollider.enabled;
+    }
+
+    private MovingVerticalPlatform FindNearestRecoverableM97MovingLift(Collider2D support)
+    {
+        if (support == null)
+            return null;
+
+        MovingVerticalPlatform[] lifts = FindObjectsByType<MovingVerticalPlatform>(FindObjectsSortMode.None);
+        MovingVerticalPlatform best = null;
+        float bestScore = float.MaxValue;
+
+        for (int i = 0; i < lifts.Length; i++)
+        {
+            MovingVerticalPlatform lift = lifts[i];
+            if (!IsUsableM97MovingLift(lift))
+                continue;
+
+            if (!IsM97RecoverableOnMovingLift(lift, support, allowPredictiveRecovery: true))
+                continue;
+
+            float score = Mathf.Abs(support.bounds.min.y - lift.platformCollider.bounds.max.y);
+            if (score < bestScore)
             {
-                rigidbody2.MovePosition(new Vector2(rigidbody2.position.x, targetY));
+                bestScore = score;
+                best = lift;
             }
+        }
 
-            // Always cancel any upward velocity when platform descends
-            if (!movingPlatform.IsMovingUpNow)
+        return best;
+    }
+
+    private bool IsM97RecoverableOnMovingLift(
+        MovingVerticalPlatform lift,
+        Collider2D support,
+        bool allowPredictiveRecovery)
+    {
+        if (!IsUsableM97MovingLift(lift) || support == null)
+            return false;
+
+        Bounds platformBounds = lift.platformCollider.bounds;
+        Bounds bodyBounds = support.bounds;
+
+        bool horizontallyOverSurface =
+            bodyBounds.max.x > platformBounds.min.x + m97LiftHorizontalSkin &&
+            bodyBounds.min.x < platformBounds.max.x - m97LiftHorizontalSkin;
+
+        bool centerStillBelongsToSurface =
+            bodyBounds.center.x >= platformBounds.min.x - m97LiftHorizontalSearchPadding &&
+            bodyBounds.center.x <= platformBounds.max.x + m97LiftHorizontalSearchPadding;
+
+        if (!horizontallyOverSurface && !centerStillBelongsToSurface)
+            return false;
+
+        float dynamicTolerance = GetM97LiftDynamicTolerance(lift);
+        float desiredBottom = platformBounds.max.y + m97LiftSeatOffset;
+        float bottomDelta = bodyBounds.min.y - desiredBottom;
+
+        float maxGap = Mathf.Max(m97LiftMaxRecoverGap, platformSurfaceTopTolerance, dynamicTolerance);
+        float maxSink = Mathf.Max(m97LiftMaxRecoverSink, Mathf.Abs(platformSurfaceBottomTolerance), dynamicTolerance);
+
+        bool bodyStillMostlyAboveTop =
+            bodyBounds.center.y >= platformBounds.max.y - Mathf.Min(bodyBounds.extents.y * 0.35f, maxSink);
+
+        if (!bodyStillMostlyAboveTop)
+            return false;
+
+        bool closeToSurface = bottomDelta >= -maxSink && bottomDelta <= maxGap;
+        if (closeToSurface)
+            return true;
+
+        if (!allowPredictiveRecovery || !_m97HasLastFixedBody)
+            return false;
+
+        // Fast lift / solver gap fallback:
+        // Previous bottom was close/above top and the current bottom skipped past it.
+        bool crossedTopBetweenFixedSteps =
+            _m97LastFixedBodyBottomY >= platformBounds.max.y - maxSink &&
+            bodyBounds.min.y <= platformBounds.max.y + maxGap;
+
+        return crossedTopBetweenFixedSteps;
+    }
+
+    private float GetM97LiftDynamicTolerance(MovingVerticalPlatform lift)
+    {
+        float fixedStep = Time.fixedDeltaTime > 0f ? Time.fixedDeltaTime : 0.02f;
+
+        float liftStep = lift != null
+            ? Mathf.Abs(lift.LastLiftDelta.y) + m97LiftDynamicPadding
+            : m97LiftDynamicPadding;
+
+        float bodyStep = rigidbody2 != null
+            ? Mathf.Abs(rigidbody2.linearVelocity.y) * fixedStep + m97LiftDynamicPadding
+            : m97LiftDynamicPadding;
+
+        return Mathf.Max(liftStep, bodyStep, m97LiftDynamicPadding);
+    }
+
+    private Vector2 ConstrainM97PositionToMovingLiftSurface(Vector2 desiredPosition)
+    {
+        if (!enableM97MovingLiftAntiTunnel)
+            return desiredPosition;
+
+        Collider2D support = GetM97SupportCollider();
+        if (support == null)
+            return desiredPosition;
+
+        MovingVerticalPlatform lift = GetBestM97MovingLiftCandidate(support);
+        if (lift == null || lift.platformCollider == null)
+            return desiredPosition;
+
+        if (!IsM97RecoverableOnMovingLift(lift, support, allowPredictiveRecovery: true))
+            return desiredPosition;
+
+        Bounds platformBounds = lift.platformCollider.bounds;
+        Bounds bodyBounds = support.bounds;
+
+        float bottomOffsetFromRoot = bodyBounds.min.y - transform.position.y;
+        desiredPosition.y = platformBounds.max.y + m97LiftSeatOffset - bottomOffsetFromRoot;
+        desiredPosition.x = ClampM97XToLiftSurface(desiredPosition.x, platformBounds, bodyBounds);
+
+        _m97LastLiftPlatform = lift;
+        _m97LastLiftSupportTime = Time.time;
+        CurrentplatForm = lift;
+
+        return desiredPosition;
+    }
+
+    private void SeatM97OnMovingLift(MovingVerticalPlatform lift, Collider2D support, string reason)
+    {
+        if (!IsUsableM97MovingLift(lift) || support == null)
+            return;
+
+        _m97InLiftAntiTunnelCorrection = true;
+
+        try
+        {
+            Physics2D.SyncTransforms();
+
+            Bounds platformBounds = lift.platformCollider.bounds;
+            Bounds bodyBounds = support.bounds;
+
+            float bottomOffsetFromRoot = bodyBounds.min.y - transform.position.y;
+            float targetY = platformBounds.max.y + m97LiftSeatOffset - bottomOffsetFromRoot;
+
+            Vector2 targetPosition = rigidbody2 != null
+                ? rigidbody2.position
+                : (Vector2)transform.position;
+
+            targetPosition.y = targetY;
+            targetPosition.x = ClampM97XToLiftSurface(targetPosition.x, platformBounds, bodyBounds);
+
+            MarkIntentionalEnemyDisplacement(Time.fixedDeltaTime * 4f);
+
+            if (rigidbody2 != null)
             {
-                Vector2 v = rigidbody2.linearVelocity;
-                if (v.y > 0f)
+                if (m97LiftHardSnapInEmergency)
+                    rigidbody2.position = targetPosition;
+                else
+                    rigidbody2.MovePosition(targetPosition);
+
+                if (m97LiftZeroVerticalVelocityOnSeat)
                 {
-                    v.y = 0f;
-                    rigidbody2.linearVelocity = v;
+                    Vector2 velocity = rigidbody2.linearVelocity;
+                    velocity.y = 0f;
+                    rigidbody2.linearVelocity = velocity;
                 }
+
+                rigidbody2.angularVelocity = 0f;
+                rigidbody2.WakeUp();
             }
+            else
+            {
+                transform.position = new Vector3(targetPosition.x, targetPosition.y, transform.position.z);
+            }
+
+            Physics2D.SyncTransforms();
+
+            _m97LastLiftPlatform = lift;
+            _m97LastLiftSupportTime = Time.time;
+            CurrentplatForm = lift;
+            CommitPatrolEdgeForMovingVerticalPlatform();
+        }
+        finally
+        {
+            _m97InLiftAntiTunnelCorrection = false;
         }
     }
+
+    private float ClampM97XToLiftSurface(float worldX, Bounds platformBounds, Bounds bodyBounds)
+    {
+        float halfWidth = Mathf.Max(bodyBounds.extents.x, 0.01f);
+        float minX = platformBounds.min.x + halfWidth + m97LiftHorizontalSkin;
+        float maxX = platformBounds.max.x - halfWidth - m97LiftHorizontalSkin;
+
+        if (minX <= maxX)
+            return Mathf.Clamp(worldX, minX, maxX);
+
+        return platformBounds.center.x;
+    }
+
 }
