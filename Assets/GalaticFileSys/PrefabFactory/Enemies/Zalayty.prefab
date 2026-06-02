@@ -395,7 +395,7 @@ MonoBehaviour:
   useWorldYDeathFallback: 1
   worldDeathY: -30
   targetAnimationName: AttackAnimation
-  enemyType: 0
+  enemyType: 1
   isBoss: 0
   bossDisplayName: 
   totalFramesInAnimation: 16
@@ -403,10 +403,20 @@ MonoBehaviour:
   disableAttackWhenHitSeconds: 0.4
   hitReaction: {fileID: 11400000, guid: c91b8181546a7d74ab4764a943e51abc, type: 2}
   patrolEdgeArriveThreshold: 0.12
+  preventWarriorBodyMomentumPush: 1
+  warriorBodyPushRestoreStrength: 1
+  maxAllowedBodyPushDistance: 0.03
+  warriorBodyPushContactMemory: 0.1
+  warriorBodyPushMaxCorrectionPerStep: 0.2
+  preventWarriorBodyHorizontalPush: 1
+  preventWarriorBodyVerticalLift: 1
+  warriorBodyLiftAllowance: 0.04
+  cancelWarriorBodyPushVelocity: 1
   useGroundCheckPointForPatrolEdge: 1
   patrolEdgeAheadProbeDistance: 0.55
   patrolEdgeRayExtraLength: 0.2
   patrolEdgeBoundsSkin: 0.02
+  participatesInWarriorTopPingPongEscape: 1
   repathInterval: 0.25
   keepMotionDuringTemporaryPlatformLoss: 1
   temporaryPlatformLossGraceTime: 0.45
@@ -452,6 +462,9 @@ MonoBehaviour:
   unauthorizedLiftSnapBand: 0.25
   unauthorizedLiftPlatformXInset: 0.02
   inRangeOrAttacking: 0
+  warriorTopPressGraceTime: 0.12
+  enableGeometricWarriorTopPressGuard: 1
+  geometricWarriorTopPressBand: 0.14
   useIndependentMovement: 1
   independentMoveArriveDistance: 0.08
   independentLandingBand: 0.16
@@ -481,6 +494,7 @@ MonoBehaviour:
   differentPlatformImpactZalaytyLockSeconds: 0.1
   interruptZalaytyJumpOnDifferentPlatformImpact: 1
   requireKnownDifferentPlatformsForImpactAbsorption: 1
+  platformChangeArrivalImpactGrace: 0.12
   avoidWarriorTopLandingDuringPlatformJumps: 1
   platformJumpWarriorSideGap: 0.18
   platformJumpLandingPlatformInset: 0.3

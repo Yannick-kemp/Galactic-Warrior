@@ -433,6 +433,11 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             ApplyActiveZalaytyBodyImpactAbsorber();
 
+            // Guaranteed-separation backstop: runs every frame on the final resolved
+            // position (after anti-tunnel + absorber). Self-defers while a bounce is
+            // already active, so it must run before the post-bounce early-return below.
+           EnforceEnemyOverlapRecovery();
+
             if (!_postBounceActive)
                 return;
 

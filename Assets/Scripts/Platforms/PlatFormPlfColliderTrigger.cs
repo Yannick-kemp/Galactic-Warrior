@@ -738,6 +738,14 @@ namespace Assets.Scripts.Platforms
             if (ShouldKeepPredictedTopLandingSolid(zalayty))
                 return false;
 
+            // A Warrior pressing/landing on Zalayty's top bound can transiently push his
+            // ground points off this platform's probe radius. That must NOT be read as an
+            // edge loss, otherwise this source platform turns pass-through and Zalayty
+            // tunnels straight through it. Keep him solid while pressed; normal edge-fall
+            // resumes automatically once the press grace window expires.
+            if (zalayty.IsWarriorPressingOnTop)
+                return false;
+
             return zalayty.CountGroundPointsOnSpecificPlatform(this) <= 1;
         }
 
