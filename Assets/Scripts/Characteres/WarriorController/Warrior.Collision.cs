@@ -72,6 +72,254 @@ namespace Assets.Scripts.Characteres.WarriorController
         private bool _enemyTopTrapLatestRegisteredEnemyWasUnique;
         private Coroutine _enemyTopTrapIgnoreRoutine;
 
+        [Header("Single-Enemy Top Stuck Escape (includes Zalayty)")]
+        [Tooltip("ON = if the Warrior floats on a SINGLE enemy's top bound (no ground support) for too long, force one clean bounce-away. Complements the multi-enemy ping-pong rule.")]
+        [SerializeField] private bool enableSingleEnemyTopStuckEscape = true;
+
+        [Tooltip("Continuous time the Warrior may rest on a single enemy top (with zero ground points) before a forced bounce-away. Keep above the platform edge-fall timer (0.20s).")]
+        [SerializeField, Min(0.05f)] private float singleEnemyTopStuckTime = 0.30f;
+
+        private Enemy _singleEnemyTopContactEnemy;
+        private float _singleEnemyTopContactStartedAt = -999f;
+
+        #endregion
+
+        #region Enemy Overlap Recovery (Guaranteed Separation Backstop)
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // This is an independent, callback-free safety authority. Every FixedUpdate it
+        // verifies the physical invariant "the Warrior must not remain penetrated inside
+        // an enemy". It does NOT replace the existing event-driven bounces (Branch 6/7,
+        // Stay fallback, ping-pong, Morvex). It only acts when those missed the contact
+        // (fast falls, late/threshold-missed callbacks, fall flags cleared by anti-tunnel,
+        // null enemy platform, etc.) AND no other system is intentionally controlling the
+        // body (sprint dodge, post-bounce ignore window, hard action lock, hit-stun).
+        // ─────────────────────────────────────────────────────────────────────────────
+
+        [Header("Enemy Overlap Recovery (Anti-Stuck Backstop)")]
+        [Tooltip("Master switch. Continuously enforces separation from enemies when no other system handled the contact. Acts as a guaranteed rebound backstop.")]
+        [SerializeField] private bool enableEnemyOverlapRecovery = true;
+
+        [Tooltip("Penetration depth (meters) that must be exceeded before recovery treats the Warrior as genuinely overlapping an enemy. Filters out resting/surface contact such as standing on an enemy top.")]
+        [SerializeField, Min(0.001f)] private float overlapRecoveryPenetrationEpsilon = 0.04f;
+
+        [Tooltip("Extra padding (meters) added around the Warrior collider when searching for overlapping enemies via the physics broadphase.")]
+        [SerializeField, Min(0f)] private float overlapRecoveryScanPad = 0.05f;
+
+        [Tooltip("Consecutive physics frames of confirmed penetration on the same enemy before a rebound/nudge fires. Debounces one-frame solver transients to avoid false bounces.")]
+        [SerializeField, Min(1)] private int overlapRecoveryDebounceFrames = 2;
+
+        [Tooltip("Maximum per-frame depenetration nudge (meters) applied while a clean bounce cannot start yet (e.g. mid jump-arc) so the Warrior is never left visibly embedded. Capped to prevent launch/jitter.")]
+        [SerializeField, Min(0f)] private float overlapRecoveryMaxNudgePerFrame = 0.06f;
+
+        [Tooltip("ON = while the Zalayty different-platform arrival absorber is active (and for a short trailing window after) the overlap guardian stands down. The absorber intentionally PINS the Warrior, which prolongs the arrival overlap; without this the guardian would misread that as a stuck penetration and launch a grounded Warrior with a full bounce arc.")]
+        [SerializeField] private bool overlapRecoveryDeferToArrivalAbsorber = true;
+
+        [Tooltip("Extra time (seconds) after the arrival absorber ends during which the overlap guardian still stands down, letting Zalayty's body finish separating naturally before the guardian re-arms.")]
+        [SerializeField, Min(0f)] private float overlapRecoveryAbsorberTrailingWindow = 0.08f;
+
+        [Tooltip("ON = the full BounceAndLandAway jump arc is reserved for genuinely airborne / falling overlap cases (the situation it was designed for). When the Warrior is firmly grounded and an enemy merely overlaps him (e.g. an arriving Zalayty), the guardian uses the capped horizontal depenetration nudge instead of launching him into a jump arc.")]
+        [SerializeField] private bool overlapRecoveryGroundedAware = true;
+
+        [Tooltip("ON = the airborne full bounce only fires when the Warrior is genuinely DESCENDING onto an enemy (falling / past apex / negative vertical velocity). This prevents a fresh jump arc from launching in the brief window where a previous jump's coroutine has just ended while the Warrior is still airborne over an enemy — the 'double jump on ascent' case. Rising / just-peaked airborne overlaps fall through to the capped nudge instead.")]
+        [SerializeField] private bool overlapRecoveryAirborneBounceRequiresDescent = true;
+
+        [Tooltip("Vertical velocity (m/s) at or below which the Warrior is treated as descending for the airborne bounce gate. A small positive value tolerates a near-apex frame; keep close to zero so a clearly rising Warrior is never bounced.")]
+        [SerializeField] private float overlapRecoveryDownwardVyThreshold = 0.10f;
+
+        [Tooltip("OFF by default. When ON, re-enables the last-resort capped depenetration nudge for overlaps that the full bounce does not handle (grounded side overlap, or mid jump-arc). It uses a velocity-free rigidbody2.position teleport (NOT MovePosition) so it depenetrates without injecting the residual upward velocity that previously read as a 'double jump'. Turn this ON only if you observe the Warrior getting genuinely stuck embedded inside an enemy with no bounce.")]
+        [SerializeField] private bool overlapRecoveryUsePositionTeleportNudge = false;
+
+        private Enemy _overlapRecoveryEnemy;
+        private int _overlapRecoveryFrames;
+        private readonly Collider2D[] _overlapRecoveryBuffer = new Collider2D[12];
+        private ContactFilter2D _overlapRecoveryFilter;
+        private bool _overlapRecoveryFilterReady;
+
+        /// <summary>
+        /// Frame-driven separation guardian. Detects genuine penetration into an enemy via
+        /// a geometric query (independent of collision callbacks and of the WarriorOverlay
+        /// scalar threshold), debounces it, then resolves it through the existing
+        /// <see cref="BounceAndLandAway"/> path. If a scripted move currently owns the body,
+        /// it applies a capped depenetration nudge instead so overlap is never persistent.
+        /// </summary>
+        private void EnforceEnemyOverlapRecovery()
+        {
+            if (!enableEnemyOverlapRecovery) { ResetOverlapRecoveryTracking(); return; }
+            if (collider2 == null || rigidbody2 == null || enemyLayer.value == 0)
+            {
+                ResetOverlapRecoveryTracking();
+                return;
+            }
+
+            // Respect every window where another system intentionally owns the body or
+            // intentionally lets the Warrior pass through enemies. Touching these would
+            // break sprint dodge, knockback, stone-repulse, hivernox freeze, death, and
+            // the in-flight bounce arc.
+            if (_postBounceActive) { ResetOverlapRecoveryTracking(); return; }
+            if (_sprintActive) { ResetOverlapRecoveryTracking(); return; }
+            if (IsHardActionLocked) { ResetOverlapRecoveryTracking(); return; }
+            if (_hitReactRoutine != null) { ResetOverlapRecoveryTracking(); return; }
+
+            // Guard (1): stand down while the Zalayty different-platform arrival absorber owns
+            // the body. The absorber intentionally PINS the Warrior to his pre-impact X (and
+            // zeroes velocity), which keeps the arriving Zalayty overlapping for several frames.
+            // That sustained overlap would otherwise satisfy this guardian's debounce and fire a
+            // full bounce arc on an otherwise-grounded, intentionally-held Warrior. The trailing
+            // window lets Zalayty's body finish separating before the guardian re-arms.
+            if (overlapRecoveryDeferToArrivalAbsorber &&
+                (_zalaytyBodyImpactAbsorbActive ||
+                 Time.time <= _zalaytyBodyImpactAbsorbUntil + overlapRecoveryAbsorberTrailingWindow))
+            {
+                ResetOverlapRecoveryTracking();
+                return;
+            }
+
+            if (!_overlapRecoveryFilterReady)
+            {
+                _overlapRecoveryFilter = new ContactFilter2D
+                {
+                    useTriggers = false,
+                    useLayerMask = true
+                };
+                _overlapRecoveryFilter.SetLayerMask(enemyLayer);
+                _overlapRecoveryFilterReady = true;
+            }
+
+            Bounds b = collider2.bounds;
+            Vector2 size = (Vector2)b.size + new Vector2(overlapRecoveryScanPad, overlapRecoveryScanPad);
+
+            int count = Physics2D.OverlapBox(b.center, size, 0f, _overlapRecoveryFilter, _overlapRecoveryBuffer);
+            if (count <= 0) { ResetOverlapRecoveryTracking(); return; }
+
+            Enemy deepestEnemy = null;
+            float deepestDepth = 0f;
+            Vector2 deepestNormal = Vector2.up;
+
+            for (int i = 0; i < count; i++)
+            {
+                Collider2D hit = _overlapRecoveryBuffer[i];
+                if (hit == null || hit == collider2) continue;
+
+                Enemy enemy = hit.GetComponentInParent<Enemy>();
+                if (enemy == null) continue;
+
+                // Use the actual overlapping body collider for the depth measurement.
+                ColliderDistance2D cd = collider2.Distance(hit);
+                if (!cd.isValid || !cd.isOverlapped) continue;
+
+                // cd.distance is negative while overlapped; magnitude is penetration depth.
+                float depth = -cd.distance;
+                if (depth <= overlapRecoveryPenetrationEpsilon) continue;
+
+                if (depth > deepestDepth)
+                {
+                    deepestDepth = depth;
+                    deepestEnemy = enemy;
+                    // cd.normal points from this collider toward the other; pushing the
+                    // Warrior along -normal separates him from the enemy.
+                    deepestNormal = -cd.normal;
+                }
+            }
+
+            if (deepestEnemy == null) { ResetOverlapRecoveryTracking(); return; }
+
+            // Debounce: require N consecutive confirmed frames on the SAME enemy so a
+            // single-frame solver transient never forces a bounce.
+            if (_overlapRecoveryEnemy == deepestEnemy)
+            {
+                _overlapRecoveryFrames++;
+            }
+            else
+            {
+                _overlapRecoveryEnemy = deepestEnemy;
+                _overlapRecoveryFrames = 1;
+            }
+
+            if (_overlapRecoveryFrames < overlapRecoveryDebounceFrames)
+                return;
+
+            // Preferred resolution: the existing, fully-featured rebound. plfExitMode is
+            // derived from the live fall flags so an edge/platform-exit fall lands the same
+            // way Branch 7 would have. BounceAndLandAway is self-guarded against re-entry.
+            if (activesJumpCoroutine == null)
+            {
+                // Guard (2): the full BounceAndLandAway jump arc is reserved for the case it was
+                // designed for — the Warrior is genuinely airborne / falling onto (or stuck on)
+                // an enemy. When the Warrior is firmly grounded and an enemy merely overlaps him
+                // sideways (e.g. an arriving Zalayty pressing in on the same platform), launching
+                // him into a 2.2-height arc is the "unexpected takeoff" the user reported. In that
+                // grounded case fall through to the capped horizontal depenetration nudge instead.
+
+                bool fallingOrDescending = IsFallingEdge || IsFallingPlfExit || DescendentPhase;
+                bool grounded = CountGroundPoints() > 0;
+                bool allowFullBounce = !overlapRecoveryGroundedAware || fallingOrDescending || !grounded;
+
+                if (allowFullBounce)
+                {
+                    bool plfExitMode = IsFallingEdge || IsFallingPlfExit;
+
+                    BounceAndLandAway(deepestEnemy, plfExitMode);
+
+                    IsFallingEdge = false;
+                    IsFallingPlfExit = false;
+                    IsFallingHitEnemy = false;
+                    IsFallingGrazesEdge = false;
+
+                    ResetOverlapRecoveryTracking();
+                    return;
+                }
+
+                // Last-resort depenetration backstop (OFF by default). The full bounce above did
+                // not apply (grounded side overlap), so without this the Warrior could in theory
+                // stay embedded in an enemy. When the teleport nudge is enabled we separate with a
+                // capped step, biased to the horizontal axis so a resting/standing contact never
+                // pushes him upward.
+                //
+                // It uses a direct rigidbody2.position write (a teleport) instead of MovePosition:
+                // MovePosition on a Dynamic body reaches its target by synthesizing an implicit
+                // velocity (~nudge/fixedDeltaTime) that LINGERS afterward — an upward component
+                // there read as a "double jump". A position write moves the same distance with
+                // ZERO injected velocity. Default OFF because the other systems already separate
+                // this case; enable only if the Warrior is seen genuinely stuck inside an enemy.
+                if (overlapRecoveryUsePositionTeleportNudge)
+                {
+                    Vector2 groundedSep = deepestNormal;
+                    if (Mathf.Abs(groundedSep.x) > 0.0001f)
+                        groundedSep = new Vector2(Mathf.Sign(groundedSep.x), 0f);
+                    else
+                        groundedSep = groundedSep.sqrMagnitude > 0.0001f ? groundedSep.normalized : Vector2.right;
+
+                    float groundedNudge = Mathf.Min(deepestDepth, overlapRecoveryMaxNudgePerFrame);
+                    rigidbody2.position += groundedSep * groundedNudge;
+                    Physics2D.SyncTransforms();
+                }
+
+                return;
+            }
+
+            // A scripted move (jump/bounce arc) currently owns the position via MovePosition,
+            // so a fresh bounce cannot cleanly start this frame. Last-resort capped separation
+            // along the contact normal so the Warrior is never left visibly embedded (OFF by
+            // default). Uses a velocity-free rigidbody2.position teleport rather than MovePosition,
+            // so it cannot inject the residual upward velocity that previously read as a double
+            // jump during ascent, and it does not override the arc's own MovePosition target.
+            if (overlapRecoveryUsePositionTeleportNudge)
+            {
+                Vector2 sep = deepestNormal.sqrMagnitude > 0.0001f ? deepestNormal.normalized : Vector2.up;
+                float nudge = Mathf.Min(deepestDepth, overlapRecoveryMaxNudgePerFrame);
+                rigidbody2.position += sep * nudge;
+                Physics2D.SyncTransforms();
+            }
+        }
+
+
+        private void ResetOverlapRecoveryTracking()
+        {
+            _overlapRecoveryEnemy = null;
+            _overlapRecoveryFrames = 0;
+        }
+
         #endregion
 
         #region Collision / Bounce / Contact Blocking
@@ -96,6 +344,8 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             if (enemy != null)
             {
+                NotifyZalaytyIfWarriorPressingOnTop(enemy, collision);
+
                 if (TryBreakEnemyTopPingPongTrap(enemy, collision, registerBounceContact: true))
                     return;
 
@@ -153,6 +403,11 @@ namespace Assets.Scripts.Characteres.WarriorController
                     return;
                 }
             }
+
+            // Continuously refresh Zalayty's press grace while the Warrior rests on his top,
+            // so the one-way platform never reads the downward push as an edge loss.
+            if (enemy != null)
+                NotifyZalaytyIfWarriorPressingOnTop(enemy, collision);
 
             // Important:
             // The generic ping-pong guard must run BEFORE enemy.CurrentplatForm == null return.
@@ -218,6 +473,9 @@ namespace Assets.Scripts.Characteres.WarriorController
                 _blockAction = false;
                 ClearEnemyContactBlock(enemy);
 
+                if (enemy == _singleEnemyTopContactEnemy)
+                    ResetSingleEnemyTopStuckTracking();
+
                 // ── Morvex-top counter reset ──────────────────────────────────────────
                 if (enemy == _morvexTopContactEnemy)
                 {
@@ -254,10 +512,11 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             List<Enemy> nearbyEnemies = GetNearbyEnemiesForTopTrap(enemy);
 
-            // Keep normal behavior with only one nearby enemy.
-            // The special chain rule exists only for the multi-enemy top-bounce bridge.
+            // The multi-enemy chain rule below exists only for the top-bounce bridge.
+            // For a single enemy (including a single Zalayty), the Warrior can still get
+            // pinned/stuck on one enemy top — handle that with the single-enemy escape.
             if (nearbyEnemies.Count < 2)
-                return false;
+                return TryEscapeSingleEnemyTopStuck(enemy);
 
             RegisterEnemyTopTrapBounce(enemy, registerBounceContact);
 
@@ -331,6 +590,64 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             BreakEnemyTopPingPongTrap(nearbyEnemies);
             return true;
+        }
+
+        /// <summary>
+        /// Single-enemy counterpart to the multi-enemy ping-pong escape. If the Warrior
+        /// floats on ONE enemy's top bound (no ground support of his own) for longer than
+        /// <see cref="singleEnemyTopStuckTime"/>, force a single clean bounce-away so he
+        /// cannot stay pinned on top of that enemy (e.g. a single Zalayty whose
+        /// CurrentplatForm is momentarily null, or a stale post-bounce contact).
+        /// Returns true only when it actually performs the bounce.
+        /// Caller guarantees the Warrior is already on this enemy's top bound.
+        /// </summary>
+        private bool TryEscapeSingleEnemyTopStuck(Enemy enemy)
+        {
+            if (!enableSingleEnemyTopStuckEscape)
+                return false;
+
+            if (enemy == null || collider2 == null)
+                return false;
+
+            if (!CanEnemyParticipateInTopPingPong(enemy))
+            {
+                ResetSingleEnemyTopStuckTracking();
+                return false;
+            }
+
+            // With his own ground support the Warrior is not floating-stuck; he can walk off.
+            // Only treat a true no-ground rest on the enemy top as a stuck candidate.
+            if (CountGroundPoints() > 0)
+            {
+                ResetSingleEnemyTopStuckTracking();
+                return false;
+            }
+
+            // Begin / continue timing continuous top contact with THIS single enemy.
+            if (_singleEnemyTopContactEnemy != enemy)
+            {
+                _singleEnemyTopContactEnemy = enemy;
+                _singleEnemyTopContactStartedAt = Time.time;
+                return false;
+            }
+
+            if (Time.time < _singleEnemyTopContactStartedAt + singleEnemyTopStuckTime)
+                return false;
+
+            // Stuck on a single enemy top for too long → force one clean bounce-away.
+            ResetSingleEnemyTopStuckTracking();
+
+            if (_postBounceActive)
+                EndPostBounce();
+
+            BounceAndLandAway(enemy);
+            return true;
+        }
+
+        private void ResetSingleEnemyTopStuckTracking()
+        {
+            _singleEnemyTopContactEnemy = null;
+            _singleEnemyTopContactStartedAt = -999f;
         }
 
         private void RegisterEnemyTopTrapBounce(Enemy enemy, bool forceCountBounce)
@@ -484,6 +801,23 @@ namespace Assets.Scripts.Characteres.WarriorController
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// When the Warrior is bearing down on Zalayty's top bound, signal Zalayty so his
+        /// one-way platform does not misread the transient downward push as an edge loss
+        /// (which would turn the platform pass-through and tunnel him through it).
+        /// Purely a notification: never alters Warrior or collision control flow.
+        /// </summary>
+        private void NotifyZalaytyIfWarriorPressingOnTop(Enemy enemy, Collision2D collision)
+        {
+            if (enemy is not ZalaytyMonster zalayty)
+                return;
+
+            if (!IsWarriorLandingOnEnemyTopByCollision(collision))
+                return;
+
+            zalayty.NotifyWarriorPressingOnTop();
         }
 
         private void ContinueEnemyTopBounceChainFrom(Enemy enemy, List<Enemy> nearbyEnemies)
