@@ -1470,6 +1470,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
+      propertyPath: meteorDamage
+      value: 5
+      objectReference: {fileID: 0}
     - target: {fileID: 3081477084896002268, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: m_Name
       value: MeteorRain (1)
@@ -11885,7 +11889,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 10.77, y: -6}
+  m_AnchoredPosition: {x: 46.920044, y: -6}
   m_SizeDelta: {x: 140, y: 500}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &3992791478447061863
@@ -14095,7 +14099,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2bdb66e4f992df44394c1d0d8a82a282, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  extraLeftPadding: 10.77
+  extraLeftPadding: 10
 --- !u!1 &7408410988507135278
 GameObject:
   m_ObjectHideFlags: 0
