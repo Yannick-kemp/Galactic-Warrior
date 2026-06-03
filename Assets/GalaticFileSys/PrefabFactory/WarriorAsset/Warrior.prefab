@@ -156,7 +156,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1689199374527633482}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0.03570775, w: -0.99936235}
+  m_LocalRotation: {x: -0, y: -0, z: -0.03570825, w: -0.9993623}
   m_LocalPosition: {x: -0.7, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -456,6 +456,19 @@ MonoBehaviour:
   enemyTopTrapFallGravity: 3.5
   enemyTopTrapMinDownVelocity: 1.25
   notifyEnemiesToSideStepOnTopTrap: 1
+  enableSingleEnemyTopStuckEscape: 1
+  singleEnemyTopStuckTime: 0.3
+  enableEnemyOverlapRecovery: 1
+  overlapRecoveryPenetrationEpsilon: 0.04
+  overlapRecoveryScanPad: 0.05
+  overlapRecoveryDebounceFrames: 2
+  overlapRecoveryMaxNudgePerFrame: 0.06
+  overlapRecoveryDeferToArrivalAbsorber: 1
+  overlapRecoveryAbsorberTrailingWindow: 0.08
+  overlapRecoveryGroundedAware: 1
+  overlapRecoveryAirborneBounceRequiresDescent: 1
+  overlapRecoveryDownwardVyThreshold: 0.1
+  overlapRecoveryUsePositionTeleportNudge: 0
   sparkImpulse: 1.2
   sparkUpBias: 0.15
   hitReactMinInterval: 0.12
@@ -897,13 +910,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   keyRelicPickupPrefab: {fileID: 5624782962912211176, guid: 68565800d1826814f9bcab0c4ef2e046, type: 3}
-  keyRelicDefinition: {fileID: 11400000, guid: 10be32f63ed74764585e8bd4137849cb, type: 2}
+  keyRelicDefinition: {fileID: 11400000, guid: 4e0b2aabf6cb4bb41a9071c4327f0eb9, type: 2}
   arachneeKillsPerKey: 5
   keyRelicsPerReward: 1
   spawnOffset: {x: 0, y: 0.25, z: 0}
   multiRewardHorizontalSpacing: 0.35
   fallbackToDirectCollectIfPrefabMissing: 1
-  resetProgressOnSceneLoad: 0
+  resetProgressOnSceneLoad: 1
   debugLogs: 0
 --- !u!1 &2894118238035918133
 GameObject:
@@ -1070,7 +1083,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3671824476123847177}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0.04636095, w: -0.9989248}
+  m_LocalRotation: {x: 0, y: 0, z: 0.04636238, w: -0.99892473}
   m_LocalPosition: {x: -0.43, y: 0.04, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -1668,7 +1681,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5745351334168150941}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0.010662031, w: 0.9999432}
+  m_LocalRotation: {x: 0, y: 0, z: 0.010662962, w: 0.99994314}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
