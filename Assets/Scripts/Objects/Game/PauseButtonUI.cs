@@ -18,6 +18,7 @@ public class PauseButtonUI : MonoBehaviour, IPointerDownHandler
 
     private float _timeScaleBeforePause = 1f;
     private bool _inputLockedBeforePause;
+    private bool _audioPausedBeforePause;
 
     private void OnEnable()
     {
@@ -27,8 +28,12 @@ public class PauseButtonUI : MonoBehaviour, IPointerDownHandler
 
     private void OnDisable()
     {
-        // Scene unloads/reloads reset timeScale and input elsewhere (GameMgr);
-        // just clear our shared flag so a new scene starts unpaused.
+        // Scene unloads/reloads reset timeScale and input elsewhere (GameMgr), but not
+        // audio. If we get disabled/destroyed while paused, make sure we don't leave
+        // audio globally frozen for the next scene.
+        if (IsPaused)
+            AudioListener.pause = false;
+
         IsPaused = false;
     }
 
@@ -66,6 +71,12 @@ public class PauseButtonUI : MonoBehaviour, IPointerDownHandler
             InputMgr.Instance.InputLocked = true;
         }
 
+        // Pause all audio globally. Music, ambience and already-playing SFX freeze and
+        // later resume from the exact sample position. AudioSources flagged with
+        // ignoreListenerPause = true are intentionally left playing by Unity.
+        _audioPausedBeforePause = AudioListener.pause;
+        AudioListener.pause = true;
+
         if (pauseMenuRoot != null)
             pauseMenuRoot.SetActive(true);
 
@@ -81,6 +92,9 @@ public class PauseButtonUI : MonoBehaviour, IPointerDownHandler
 
         if (InputMgr.Instance != null)
             InputMgr.Instance.InputLocked = _inputLockedBeforePause;
+
+        // Resume all audio from where it was paused (restore prior listener state).
+        AudioListener.pause = _audioPausedBeforePause;
 
         if (pauseMenuRoot != null)
             pauseMenuRoot.SetActive(false);

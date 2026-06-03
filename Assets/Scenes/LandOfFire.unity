@@ -1472,7 +1472,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: meteorDamage
-      value: 5
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 3081477084896002268, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: m_Name
@@ -1913,7 +1913,7 @@ PrefabInstance:
     - target: {fileID: 5869419893293695851, guid: 5338305d53e58a840b87b919810058dd, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: fb3f7c4d151fc3a4897c32ea0f6402f9, type: 3}
+      objectReference: {fileID: 21300000, guid: 4b222127984c57a4b8e8267af7f10998, type: 3}
     - target: {fileID: 5869419893293695851, guid: 5338305d53e58a840b87b919810058dd, type: 3}
       propertyPath: m_SortingOrder
       value: -8
