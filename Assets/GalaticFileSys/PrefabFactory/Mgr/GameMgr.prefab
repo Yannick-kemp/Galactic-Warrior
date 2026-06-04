@@ -25,7 +25,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4315649855814584681}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: -17.977049, y: -0.90480757, z: -0.04292624}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -58,16 +58,23 @@ MonoBehaviour:
   level1Music: {fileID: 8300000, guid: c98c954867269c940aded1fb776d078d, type: 3}
   level2Music: {fileID: 8300000, guid: 32669b502f2c4bf43aa29cf4ba8c5823, type: 3}
   level2MusicResourcesPath: Music/IceOfAge
-  musicVolume: 0.132
+  level3Music: {fileID: 8300000, guid: 4bc61f531d58bc340b3bc470473efa82, type: 3}
+  level3MusicResourcesPath: Music/LandOfFire
+  level4Music: {fileID: 8300000, guid: 8aad6dfe9412ebb4990ed23177353541, type: 3}
+  level4MusicResourcesPath: Music/Redemption
+  musicVolume: 0.196
   restartMusicOnLevelRestart: 1
   enemyResetRadius: 12
   enemyResetHealthPercent: 1
   movingPlatformRespawnSeatOffset: 0.35
   mainMenuSceneName: MainMenu
   level2SceneName: AgeOfIce
+  level3SceneName: LandOfFire
+  level4SceneName: Redemption
   campaignSceneOrder:
   - WarriorScene
   - AgeOfIce
+  - LandOfFire
   levelCompleteSlowMoScale: 0.3
   levelCompleteSlowMoDuration: 0.45
   transitionBeforeLoadDelay: 0.65

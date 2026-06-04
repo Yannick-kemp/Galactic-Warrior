@@ -70,6 +70,17 @@ namespace Assets.Scripts.Platforms
         public bool IsMovingDownNow => !_isMovingUp;
         public Vector2 LastLiftDelta => _lastLiftDelta;
 
+        /// <summary>
+        /// True while this lift is actively carrying the given character as a registered rider.
+        /// This is the authoritative "grounded on the lift" signal: it stays valid even while the
+        /// platform descends and the rider's foot ground points momentarily float a hair above the
+        /// lift top (riderSurfaceOffset), where CountGroundPoints() would otherwise read 0.
+        /// </summary>
+        public bool IsCarrying(CharacterController character)
+        {
+            return character != null && _riders.Contains(character);
+        }
+
         private void Awake()
         {
 #if UNITY_ANDROID
@@ -271,6 +282,11 @@ namespace Assets.Scripts.Platforms
             warrior.IsFallingHitEnemy = false;
             warrior.IsFallingGrazesEdge = false;
 
+            // Confirmed top-surface landing on the lift: clear the descent flag too. Otherwise it
+            // stays stale-true through the platform's downward leg (where CountGroundPoints() reads
+            // 0) and an enemy touch would wrongly trigger the "descending onto enemy" bounce path.
+            warrior.DescendentPhase = false;
+
             warrior._blockAction = false;
             warrior.LastSafePlatform = this;
             warrior.LastSafePosition =
@@ -362,6 +378,7 @@ namespace Assets.Scripts.Platforms
                 warrior.IsFallingPlfExit = false;
                 warrior.IsFallingHitEnemy = false;
                 warrior.IsFallingGrazesEdge = false;
+                warrior.DescendentPhase = false;
 
                 warrior._blockAction = false;
                 warrior.LastSafePlatform = this;
@@ -444,6 +461,7 @@ namespace Assets.Scripts.Platforms
                     warrior.IsFallingPlfExit = false;
                     warrior.IsFallingHitEnemy = false;
                     warrior.IsFallingGrazesEdge = false;
+                    warrior.DescendentPhase = false;
                     warrior._blockAction = false;
                     warrior.LastSafePlatform = this;
                     warrior.LastSafePosition = GetSafeRespawnPositionFor(warrior, warrior.transform.position.x);

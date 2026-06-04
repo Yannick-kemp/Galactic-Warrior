@@ -49,6 +49,8 @@ public class GameMgr : MonoBehaviour, IGame
     [SerializeField] private string level2MusicResourcesPath = "Music/IceOfAge"; // optional fallback: Assets/Resources/Music/IceOfAge.mp3
     [SerializeField] private AudioClip level3Music; // assign LandOfFire.mp3 for LandOfFire
     [SerializeField] private string level3MusicResourcesPath = "Music/LandOfFire"; // optional fallback: Assets/Resources/Music/LandOfFire.mp3
+    [SerializeField] private AudioClip level4Music; // assign Redemption.mp3 for Redemption
+    [SerializeField] private string level4MusicResourcesPath = "Music/Redemption"; // optional fallback: Assets/Resources/Music/Redemption.mp3
     [SerializeField, Range(0f, 1f)] private float musicVolume = 0.35f;
     [SerializeField] private bool restartMusicOnLevelRestart = false;
 
@@ -63,7 +65,8 @@ public class GameMgr : MonoBehaviour, IGame
     [SerializeField] private string mainMenuSceneName = "menu";
     [SerializeField] private string level2SceneName = "AgeOfIce";
     [SerializeField] private string level3SceneName = "LandOfFire";
-    [SerializeField] private List<string> campaignSceneOrder = new List<string> { "WarriorScene", "AgeOfIce", "LandOfFire" };
+    [SerializeField] private string level4SceneName = "Redemption";
+    [SerializeField] private List<string> campaignSceneOrder = new List<string> { "WarriorScene", "AgeOfIce", "LandOfFire", "Redemption" };
 
     [Header("Scene Transition")]
     [SerializeField] private float levelCompleteSlowMoScale = 0.30f;
@@ -213,6 +216,7 @@ public class GameMgr : MonoBehaviour, IGame
         bool isLevel1 = scene.name == warriorSceneName;
         bool isLevel2 = scene.name == level2SceneName;
         bool isLevel3 = scene.name == level3SceneName;
+        bool isLevel4 = scene.name == level4SceneName;
 
         _levelCompletionHandledThisScene = false;
         _bossSlowMoPlaying = false;
@@ -246,6 +250,10 @@ public class GameMgr : MonoBehaviour, IGame
         else if (isLevel3)
         {
             StartLevel3Music();
+        }
+        else if (isLevel4)
+        {
+            StartLevel4Music();
         }
         else
         {
@@ -314,6 +322,19 @@ public class GameMgr : MonoBehaviour, IGame
         StartMusic(clip);
     }
 
+    private void StartLevel4Music()
+    {
+        AudioClip clip = level4Music;
+
+        // If no clip is assigned in the inspector, fall back to Resources.
+        // Put the file here: Assets/Resources/Music/Redemption.mp3
+        // Then Resources path must be: Music/Redemption  (no .mp3 extension)
+        if (clip == null && !string.IsNullOrEmpty(level4MusicResourcesPath))
+            clip = Resources.Load<AudioClip>(level4MusicResourcesPath);
+
+        StartMusic(clip);
+    }
+
     private void StartMusic(AudioClip clip)
     {
         if (_musicSource == null)
@@ -351,7 +372,8 @@ public class GameMgr : MonoBehaviour, IGame
         string activeSceneName = SceneManager.GetActiveScene().name;
         if (activeSceneName != warriorSceneName &&
             activeSceneName != level2SceneName &&
-            activeSceneName != level3SceneName)
+            activeSceneName != level3SceneName &&
+            activeSceneName != level4SceneName)
             return;
 
         if (_musicSource != null && _musicSource.clip != null)
@@ -1554,6 +1576,7 @@ public class GameMgr : MonoBehaviour, IGame
         EnsureCampaignSceneFirst(warriorSceneName);
         EnsureCampaignSceneAfter(level2SceneName, warriorSceneName);
         EnsureCampaignSceneAfter(level3SceneName, level2SceneName);
+        EnsureCampaignSceneAfter(level4SceneName, level3SceneName);
     }
 
     private void EnsureCampaignSceneFirst(string sceneName)

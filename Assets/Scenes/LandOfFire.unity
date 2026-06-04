@@ -1472,7 +1472,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: meteorDamage
-      value: 2
+      value: 8
+      objectReference: {fileID: 0}
+    - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
+      propertyPath: meteorHitStunSeconds
+      value: 0.08
       objectReference: {fileID: 0}
     - target: {fileID: 3081477084896002268, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: m_Name
@@ -1672,6 +1676,10 @@ PrefabInstance:
     - target: {fileID: 1026500769685928815, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
+      propertyPath: meteorDamage
+      value: 2.5
       objectReference: {fileID: 0}
     - target: {fileID: 3081477084896002268, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: m_Name
@@ -1913,7 +1921,7 @@ PrefabInstance:
     - target: {fileID: 5869419893293695851, guid: 5338305d53e58a840b87b919810058dd, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 4b222127984c57a4b8e8267af7f10998, type: 3}
+      objectReference: {fileID: 21300000, guid: 38c4f9da18b87e44787cc66d3eb7ab4a, type: 3}
     - target: {fileID: 5869419893293695851, guid: 5338305d53e58a840b87b919810058dd, type: 3}
       propertyPath: m_SortingOrder
       value: -8
@@ -1921,6 +1929,14 @@ PrefabInstance:
     - target: {fileID: 5869419893293695851, guid: 5338305d53e58a840b87b919810058dd, type: 3}
       propertyPath: m_WasSpriteAssigned
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7988630948001992916, guid: 5338305d53e58a840b87b919810058dd, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 7988630948001992916, guid: 5338305d53e58a840b87b919810058dd, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 7988630948001992916, guid: 5338305d53e58a840b87b919810058dd, type: 3}
       propertyPath: m_LocalPosition.x
@@ -5683,7 +5699,11 @@ PrefabInstance:
     - target: {fileID: 4013448604995502550, guid: 619a767c9bbe65d4da83c79b00617bf7, type: 3}
       propertyPath: level3Music
       value: 
-      objectReference: {fileID: 8300000, guid: 46205d8a1758bb24997b2d7c4615baf9, type: 3}
+      objectReference: {fileID: 8300000, guid: 4bc61f531d58bc340b3bc470473efa82, type: 3}
+    - target: {fileID: 4013448604995502550, guid: 619a767c9bbe65d4da83c79b00617bf7, type: 3}
+      propertyPath: musicVolume
+      value: 0.196
+      objectReference: {fileID: 0}
     - target: {fileID: 4013448604995502550, guid: 619a767c9bbe65d4da83c79b00617bf7, type: 3}
       propertyPath: campaignSceneOrder.Array.size
       value: 3
