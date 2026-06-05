@@ -159,12 +159,24 @@ namespace Assets.Scripts.Relics.Projectiles
 
             enemy.DisableAttackTemporarily();
 
-            // Non-boss enemies lose half their current health on ice bullet impact.
-            float effectiveDamage = (!enemy.IsBoss)
-                ? Mathf.Max(1f, enemy.CurrentHealth * 0.5f)
-                : _damage;
+            bool killed;
 
-            bool killed = enemy.TakeDamageAndReturnKilled(effectiveDamage);
+            if (enemy.IsBoss)
+            {
+                // Bosses are excluded from the two-step ice execution and take normal damage.
+                killed = enemy.TakeDamageAndReturnKilled(_damage);
+            }
+            else if (enemy.IsIceBulletMarked)
+            {
+                // Second ice bullet hit: instantly execute the enemy regardless of remaining health.
+                killed = enemy.TakeDamageAndReturnKilled(Mathf.Max(1f, enemy.CurrentHealth));
+            }
+            else
+            {
+                // First ice bullet hit: halve current health and mark for execution on the next hit.
+                enemy.MarkIceBulletHit();
+                killed = enemy.TakeDamageAndReturnKilled(Mathf.Max(1f, enemy.CurrentHealth * 0.5f));
+            }
 
             if (!killed && _stunSeconds > 0f)
                 enemy.ApplyStun(_stunSeconds);

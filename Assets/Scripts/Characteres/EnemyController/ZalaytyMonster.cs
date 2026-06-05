@@ -1,8 +1,9 @@
 ﻿using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Characteres.EnemyController;
 using Assets.Scripts.Characteres.WarriorController;
-using Assets.Scripts.Services;
 using Assets.Scripts.Platforms;
+using Assets.Scripts.Relics.Events;
+using Assets.Scripts.Services;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -372,6 +373,8 @@ public class ZalaytyMonster : Enemy
     private float _nextAllowedDifferentPlatformImpactTime = -999f;
     private float _differentPlatformImpactLockUntil = -999f;
     private float _recentPlatformChangeArrivalUntil = -999f;
+
+
 
     public bool TryGetIndependentMoveRequestForCurrentFixedStep(out Vector2 requestedPosition)
     {

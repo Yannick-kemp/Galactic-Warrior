@@ -107,6 +107,15 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         /// <summary>Read-only access to current health (used by projectiles for half-health hits).</summary>
         public float CurrentHealth => currentHealth;
 
+        /// <summary>
+        /// True once an IceBulletProjectile has landed its first (half-health) hit on this enemy.
+        /// The next IceBulletProjectile hit then executes the enemy outright. Bosses and Arachnee
+        /// never use this mechanic. See <see cref="MarkIceBulletHit"/>.
+        /// </summary>
+        private bool _iceBulletMarked;
+        public bool IsIceBulletMarked => _iceBulletMarked;
+        public void MarkIceBulletHit() => _iceBulletMarked = true;
+
         public bool CountsForLevelClear
         {
             get
@@ -1459,6 +1468,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             _isStunned = false;
             _isDead = false;
             _deathStarted = false;
+            _iceBulletMarked = false;
 
             DisableAttackTemporarily(1.5f);
 

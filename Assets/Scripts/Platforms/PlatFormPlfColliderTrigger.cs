@@ -683,9 +683,9 @@ namespace Assets.Scripts.Platforms
 
             while (zalayty != null && platformCollider != null)
             {
-                if (!IsAnyCharacterColliderTouchingOrOverlappingPlatformBody(zalayty, zalaytyJumpDownRestoreContactSkin))
+                if (!IsAnyCharacterColliderTouchingOrOverlappingPlatformBody(zalayty, zalaytyJumpDownRestoreContactSkin) &&
+                    !ShouldKeepZalaytyJumpDownPassThrough(zalayty))
                     break;
-                Debug.Log("Zalayty jump-down still unsafe because of body contact for " + zalayty.name);
                 SetIgnoreForCharacter(zalayty, true);
                 yield return wait;
             }

@@ -176,7 +176,18 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             int groundPoints = CountGroundPoints();
 
-            bool noGroundPoint = groundPoints == 0;
+            // A warrior carried by a moving vertical lift is genuinely grounded even when
+            // CountGroundPoints() momentarily reads 0: while the lift descends, his foot
+            // ground points float a hair above the lift top (riderSurfaceOffset) and the
+            // platform keeps sliding out from under them each FixedUpdate. Without this, the
+            // descent leg would get stuck replaying JumpAnimationDisplay() and StopMoveToward-
+            // Coroutine() every frame, blocking all interaction while the platform goes down.
+            bool carriedOnMovingLift =
+                activesJumpCoroutine == null &&
+                CurrentplatForm is Assets.Scripts.Platforms.MovingVerticalPlatform lift &&
+                lift.IsCarrying(this);
+
+            bool noGroundPoint = groundPoints == 0 && !carriedOnMovingLift;
 
             // Do not break Attack1/Attack2/Attack3.
             // If an attack ends while airborne, ExitAttackToBestState() already sends him to jump.

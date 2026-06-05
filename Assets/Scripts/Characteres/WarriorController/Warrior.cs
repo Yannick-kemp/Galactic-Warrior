@@ -954,16 +954,19 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (pos.y <= surfaceY + 0.001f)
                 return;
 
+            // Seat with MovePosition (not a direct position write + SyncTransforms). A teleport
+            // here would reset interpolation on the same body the lift carries with MovePosition,
+            // producing a one-frame render pop while descending. The lift's CarryRegisteredRiders
+            // runs later this frame (DefaultExecutionOrder 50) and is authoritative; this is only
+            // a consistent safety net if the warrior is briefly not yet a registered rider.
             pos.y = surfaceY;
-            rigidbody2.position = pos;
+            rigidbody2.MovePosition(pos);
 
             Vector2 v = rigidbody2.linearVelocity;
             if (v.y < 0f)
                 v.y = 0f;
 
             rigidbody2.linearVelocity = v;
-
-            Physics2D.SyncTransforms();
         }
     }
 }

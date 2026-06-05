@@ -390,7 +390,8 @@ public class PlatFormColliderTrigger : MonoBehaviour
 
         while (zalayty != null && platformCollider != null)
         {
-            if (!IsAnyCharacterColliderTouchingOrOverlappingPlatformBody(zalayty))
+            if (!IsAnyCharacterColliderTouchingOrOverlappingPlatformBody(zalayty) &&
+                !ShouldKeepZalaytyJumpDownPassThrough(zalayty))
                 break;
 
             SetPlatformCollisionForCharacter(zalayty, ignore: true);
@@ -440,6 +441,49 @@ public class PlatFormColliderTrigger : MonoBehaviour
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// While Zalayty performs a controlled jump-down THROUGH this source platform, the
+    /// pass-through (IgnoreCollision) must not be restored merely because his body stopped
+    /// touching this platform body for a frame. The downward jump arc has a brief upward
+    /// hump that lifts him above this platform top: at that instant his body is no longer
+    /// overlapping the platform body, the restore would fire, the platform turns solid
+    /// again, and the descending part of the arc re-collides with it — leaving Zalayty
+    /// stuck on the edge instead of dropping to the lower platform.
+    ///
+    /// Keep the pass-through alive while he is still in the air AND his body bottom is at
+    /// or above this platform's top within its horizontal span (i.e. a re-collision is
+    /// still geometrically possible). Once his body bottom has dropped below the top, or
+    /// he is horizontally clear, re-collision is impossible and the normal restore runs.
+    /// This is purely additive edge-safety: it never forces a fall and never holds past
+    /// the end of the controlled jump (IsJumping is cleared when the jump coroutine ends).
+    /// </summary>
+    protected bool ShouldKeepZalaytyJumpDownPassThrough(ZalaytyMonster zalayty, float verticalSkin = 0.05f)
+    {
+        if (zalayty == null || platformCollider == null)
+            return false;
+
+        if (!zalayty.IsJumping)
+            return false;
+
+        Collider2D body = GetStandingCollider(zalayty);
+        if (body == null)
+            return false;
+
+        Bounds pb = platformCollider.bounds;
+        Bounds cb = body.bounds;
+
+        bool horizontallyOverSource =
+            cb.max.x > pb.min.x &&
+            cb.min.x < pb.max.x;
+
+        if (!horizontallyOverSource)
+            return false;
+
+        // Body bottom still at/above this platform top => he could re-collide with it
+        // if collision were restored now. Keep ignoring until he is below it.
+        return cb.min.y >= pb.max.y - verticalSkin;
     }
 
     /// <summary>
