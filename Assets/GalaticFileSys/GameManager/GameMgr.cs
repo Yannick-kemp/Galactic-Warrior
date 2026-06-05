@@ -31,6 +31,23 @@ public class GameMgr : MonoBehaviour, IGame
     [SerializeField] private Transform currentCheckpoint;
     [SerializeField] private bool useCheckpointRespawn = true;
 
+    // Persistent checkpoint save point.
+    // Unlike the currentCheckpoint Transform (which is destroyed whenever the scene reloads),
+    // these fields survive scene reloads AND app restarts (mirrored to PlayerPrefs). They let
+    // Revive and Continue resume the player at the most recently reached checkpoint instead of
+    // the level start. _checkpointSceneName records which level the checkpoint belongs to.
+    private Vector3 _checkpointPosition;
+    private string _checkpointSceneName;
+    private bool _hasCheckpointPosition;
+
+    // Set right before a scene load when the warrior should be re-seated at the saved
+    // checkpoint once it registers (Revive reload, or Continue from the main menu).
+    private bool _pendingCheckpointRespawn;
+
+    // One-shot guard that forces a level to start at its DEFAULT spawn even if a saved
+    // checkpoint exists for it (used by New Game and Level Select "play from start").
+    private bool _suppressCheckpointRespawnOnce;
+
     [Header("Forced Retry Respawn Override")]
     [SerializeField] private bool useForcedRetryZoneRespawn = true;
 
@@ -87,6 +104,12 @@ public class GameMgr : MonoBehaviour, IGame
     [Header("Level 1 Entry Rewards")]
     [SerializeField] private int level2EntryCoinsReward = 50;
     [SerializeField] private int level2EntryUpgradeTokens = 1;
+
+    private const string CheckpointHasKey = "GW_HasCheckpoint";
+    private const string CheckpointSceneKey = "GW_CheckpointScene";
+    private const string CheckpointXKey = "GW_CheckpointX";
+    private const string CheckpointYKey = "GW_CheckpointY";
+    private const string CheckpointZKey = "GW_CheckpointZ";
 
     private const string CampaignPurchasedKey = "GW_CampaignPurchased";
     private const string HighestReachedSceneIndexKey = "GW_HighestReachedSceneIndex";
@@ -155,6 +178,7 @@ public class GameMgr : MonoBehaviour, IGame
         EnsureMusicSource();
         NormalizeCampaignSceneOrder();
         LoadProgression();
+        LoadCheckpointFromDisk();
 
         SceneManager.sceneLoaded += HandleSceneLoaded;
         HandleSceneLoaded(SceneManager.GetActiveScene(), LoadSceneMode.Single);
@@ -185,6 +209,7 @@ public class GameMgr : MonoBehaviour, IGame
         }
 
         TryApplyPendingReviveMovingPlatformRespawn(warrior);
+        TryApplyPendingCheckpointRespawn(warrior);
 
         var cam = Camera.main;
         if (cam != null)
@@ -619,6 +644,9 @@ public class GameMgr : MonoBehaviour, IGame
             return;
         }
 
+        // The level is finished: any checkpoint inside it is no longer a valid resume point.
+        ClearSavedCheckpoint();
+
         if (!HasNextCampaignScene(currentIndex))
         {
             Debug.Log("[GameMgr] No next campaign scene. Returning to menu.");
@@ -886,6 +914,10 @@ public class GameMgr : MonoBehaviour, IGame
 
         _shouldShowLevel2EntryFlowOnNextLoad = (targetSceneName == level2SceneName);
 
+        // Moving on to a different level: drop the previous level's transient checkpoint refs.
+        // (The saved checkpoint was already cleared in CompleteCurrentCampaignSceneInternal.)
+        ResetTransientCheckpoint();
+
         WarriorInstance = null;
         SceneManager.LoadScene(targetSceneName);
 
@@ -946,9 +978,14 @@ public class GameMgr : MonoBehaviour, IGame
         if (checkpoint == null) return;
 
         currentCheckpoint = checkpoint;
+        _checkpointPosition = checkpoint.position;
+        _checkpointSceneName = SceneManager.GetActiveScene().name;
+        _hasCheckpointPosition = true;
         _checkpointVersion++;
 
-        Debug.Log("[GameMgr] Checkpoint activated: " + checkpoint.name);
+        SaveCheckpointToDisk();
+
+        Debug.Log($"[GameMgr] Checkpoint activated: {checkpoint.name} in '{_checkpointSceneName}' at {_checkpointPosition}");
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -986,7 +1023,20 @@ public class GameMgr : MonoBehaviour, IGame
         if (WarriorInstance == null)
             return;
 
-        Debug.Log("[GameMgr] ReviveLevel() - Resetting to Default Spawn");
+        // If a checkpoint was reached in THIS level, Revive must restart from that checkpoint
+        // instead of the level start. The currentCheckpoint Transform does not survive the scene
+        // reload, so we rely on the persisted _checkpointPosition and re-seat the warrior once it
+        // re-registers (see TryApplyPendingCheckpointRespawn / RegisterHero).
+        _pendingCheckpointRespawn = HasCheckpointForActiveScene();
+
+        // Force RegisterHero to re-capture the fresh spawn position/parent of the reloaded scene
+        // (otherwise it would keep a stale parent reference from the previous scene instance).
+        _initialSpawnPosition = Vector3.zero;
+        _initialSpawnParent = null;
+
+        Debug.Log(_pendingCheckpointRespawn
+            ? "[GameMgr] ReviveLevel() - Restarting from last checkpoint"
+            : "[GameMgr] ReviveLevel() - Resetting to Default Spawn");
 
         Time.timeScale = 1f;
         IsRestarting = true;
@@ -1041,6 +1091,8 @@ public class GameMgr : MonoBehaviour, IGame
     public void StartNewGame()
     {
         ResetMenuLaunchState();
+        ClearSavedCheckpoint(); // New Game always restarts the campaign from the very beginning.
+        _suppressCheckpointRespawnOnce = true;
         ScoreManager.Instance?.StartNewRun();
         SceneManager.LoadScene(warriorSceneName);
     }
@@ -1049,7 +1101,16 @@ public class GameMgr : MonoBehaviour, IGame
     {
         ResetMenuLaunchState();
         ScoreManager.Instance?.StartNewRun();
-        SceneManager.LoadScene(GetContinueSceneName());
+
+        string target = GetContinueSceneName();
+
+        // Resume at the saved checkpoint when it belongs to the scene we are loading.
+        _pendingCheckpointRespawn =
+            _hasCheckpointPosition &&
+            !string.IsNullOrWhiteSpace(_checkpointSceneName) &&
+            target == _checkpointSceneName;
+
+        SceneManager.LoadScene(target);
     }
 
     public void LoadCampaignSceneFromMenu(int sceneIndex)
@@ -1061,6 +1122,7 @@ public class GameMgr : MonoBehaviour, IGame
         }
 
         ResetMenuLaunchState();
+        _suppressCheckpointRespawnOnce = true; // Level Select always plays the chosen level from its start.
         ScoreManager.Instance?.StartNewRun();
         SceneManager.LoadScene(campaignSceneOrder[sceneIndex]);
     }
@@ -1068,8 +1130,7 @@ public class GameMgr : MonoBehaviour, IGame
     private void ResetMenuLaunchState()
     {
         retryCount = 0;
-        currentCheckpoint = null;
-        _checkpointVersion = 0;
+        ResetTransientCheckpoint();
         _initialSpawnPosition = Vector3.zero;
         _initialSpawnParent = null;
 
@@ -1549,6 +1610,139 @@ public class GameMgr : MonoBehaviour, IGame
         _pendingReviveMovingPlatformId = null;
     }
 
+    // Clears only the per-scene-instance checkpoint references (the Transform + version + the
+    // armed pending flag). Does NOT touch the persisted save point, so a later Continue can still
+    // resume there. Used whenever a level scene is (re)launched from the menu.
+    private void ResetTransientCheckpoint()
+    {
+        currentCheckpoint = null;
+        _checkpointVersion = 0;
+        _pendingCheckpointRespawn = false;
+        _suppressCheckpointRespawnOnce = false;
+    }
+
+    // Fully wipes the checkpoint save point, in memory and on disk. Used when starting a brand
+    // new game and when a level is completed (its checkpoint must no longer be the resume point).
+    private void ClearSavedCheckpoint()
+    {
+        ResetTransientCheckpoint();
+
+        _checkpointPosition = Vector3.zero;
+        _checkpointSceneName = null;
+        _hasCheckpointPosition = false;
+
+        PlayerPrefs.DeleteKey(CheckpointHasKey);
+        PlayerPrefs.DeleteKey(CheckpointSceneKey);
+        PlayerPrefs.DeleteKey(CheckpointXKey);
+        PlayerPrefs.DeleteKey(CheckpointYKey);
+        PlayerPrefs.DeleteKey(CheckpointZKey);
+        PlayerPrefs.Save();
+    }
+
+    private void SaveCheckpointToDisk()
+    {
+        PlayerPrefs.SetInt(CheckpointHasKey, _hasCheckpointPosition ? 1 : 0);
+
+        if (_hasCheckpointPosition)
+        {
+            PlayerPrefs.SetString(CheckpointSceneKey, _checkpointSceneName ?? string.Empty);
+            PlayerPrefs.SetFloat(CheckpointXKey, _checkpointPosition.x);
+            PlayerPrefs.SetFloat(CheckpointYKey, _checkpointPosition.y);
+            PlayerPrefs.SetFloat(CheckpointZKey, _checkpointPosition.z);
+        }
+
+        PlayerPrefs.Save();
+    }
+
+    private void LoadCheckpointFromDisk()
+    {
+        _hasCheckpointPosition = PlayerPrefs.GetInt(CheckpointHasKey, 0) == 1;
+
+        if (!_hasCheckpointPosition)
+        {
+            _checkpointSceneName = null;
+            _checkpointPosition = Vector3.zero;
+            return;
+        }
+
+        _checkpointSceneName = PlayerPrefs.GetString(CheckpointSceneKey, string.Empty);
+
+        float x = PlayerPrefs.GetFloat(CheckpointXKey, 0f);
+        float y = PlayerPrefs.GetFloat(CheckpointYKey, 0f);
+        float z = PlayerPrefs.GetFloat(CheckpointZKey, 0f);
+        _checkpointPosition = new Vector3(x, y, z);
+
+        // A saved checkpoint is only usable if it names a known campaign scene.
+        if (string.IsNullOrWhiteSpace(_checkpointSceneName) ||
+            GetCampaignSceneIndex(_checkpointSceneName) < 0)
+        {
+            _hasCheckpointPosition = false;
+            _checkpointSceneName = null;
+            _checkpointPosition = Vector3.zero;
+            return;
+        }
+
+        Debug.Log($"[GameMgr] Loaded checkpoint save: '{_checkpointSceneName}' at {_checkpointPosition}");
+    }
+
+    // True when we hold a saved checkpoint that belongs to the currently active scene.
+    private bool HasCheckpointForActiveScene()
+    {
+        return _hasCheckpointPosition &&
+               !string.IsNullOrWhiteSpace(_checkpointSceneName) &&
+               _checkpointSceneName == SceneManager.GetActiveScene().name;
+    }
+
+    private void TryApplyPendingCheckpointRespawn(Warrior warrior)
+    {
+        // A fresh start (New Game / Level Select) was requested: ignore the saved checkpoint
+        // exactly once so the level begins at its default spawn.
+        if (_suppressCheckpointRespawnOnce)
+        {
+            _suppressCheckpointRespawnOnce = false;
+            _pendingCheckpointRespawn = false;
+            Debug.Log("[GameMgr] Checkpoint respawn suppressed for this launch (fresh start).");
+            return;
+        }
+
+        // Apply whenever we hold a saved checkpoint for the scene we just entered. This covers
+        // every entry path: Revive reload, Continue from the menu, AND launching directly into
+        // the level. The explicit _pendingCheckpointRespawn flag is kept as a fast-path signal.
+        bool shouldApply = _pendingCheckpointRespawn || HasCheckpointForActiveScene();
+
+        Debug.Log($"[GameMgr] Checkpoint respawn check: pending={_pendingCheckpointRespawn}, " +
+                  $"hasCheckpoint={_hasCheckpointPosition}, savedScene='{_checkpointSceneName}', " +
+                  $"activeScene='{SceneManager.GetActiveScene().name}', shouldApply={shouldApply}");
+
+        _pendingCheckpointRespawn = false;
+
+        if (!shouldApply)
+            return;
+
+        if (warrior == null || !_hasCheckpointPosition)
+        {
+            Debug.Log($"[GameMgr] Checkpoint respawn skipped (warrior null={warrior == null}, hasCheckpoint={_hasCheckpointPosition}).");
+            return;
+        }
+
+        // Only seat at the checkpoint if it belongs to the scene we actually loaded.
+        if (SceneManager.GetActiveScene().name != _checkpointSceneName)
+        {
+            Debug.Log($"[GameMgr] Checkpoint respawn skipped: saved scene '{_checkpointSceneName}' != active scene '{SceneManager.GetActiveScene().name}'.");
+            return;
+        }
+
+        // Re-seat the freshly spawned warrior at the last reached checkpoint.
+        // ApplyRespawnToWarrior resets falling/movement flags and syncs physics so the
+        // warrior is in a clean, playable state at the checkpoint position.
+        ApplyRespawnToWarrior(warrior, _checkpointPosition, null);
+
+        // Keep the in-scene checkpoint reference consistent with where we spawned.
+        currentCheckpoint = null;
+
+        Debug.Log($"[GameMgr] Respawned at saved checkpoint {_checkpointPosition} in '{_checkpointSceneName}'");
+    }
+
     private void NormalizeCampaignSceneOrder()
     {
         if (campaignSceneOrder == null)
@@ -1689,6 +1883,12 @@ public class GameMgr : MonoBehaviour, IGame
 
         if (campaignSceneOrder == null || campaignSceneOrder.Count == 0)
             return warriorSceneName;
+
+        // A saved checkpoint is the most precise resume point: continue in its level.
+        if (_hasCheckpointPosition &&
+            !string.IsNullOrWhiteSpace(_checkpointSceneName) &&
+            GetCampaignSceneIndex(_checkpointSceneName) >= 0)
+            return _checkpointSceneName;
 
         int sceneIndex = Mathf.Clamp(_highestReachedSceneIndex, 0, campaignSceneOrder.Count - 1);
         return campaignSceneOrder[sceneIndex];

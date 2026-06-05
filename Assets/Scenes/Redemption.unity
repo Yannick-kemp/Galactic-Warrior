@@ -1112,7 +1112,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b69556622272dc438d2397527a80af2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enemyType: 2
+  enemyType: 10
   overrides:
     overrideSpeed: 1
     speed: 3
@@ -1821,7 +1821,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b69556622272dc438d2397527a80af2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enemyType: 2
+  enemyType: 10
   overrides:
     overrideSpeed: 1
     speed: 3
@@ -1916,19 +1916,19 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5869419893293695851, guid: 5338305d53e58a840b87b919810058dd, type: 3}
       propertyPath: m_Size.x
-      value: 20.24
+      value: 15.36
       objectReference: {fileID: 0}
     - target: {fileID: 5869419893293695851, guid: 5338305d53e58a840b87b919810058dd, type: 3}
       propertyPath: m_Size.y
-      value: 7.77
+      value: 10.24
       objectReference: {fileID: 0}
     - target: {fileID: 5869419893293695851, guid: 5338305d53e58a840b87b919810058dd, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 38c4f9da18b87e44787cc66d3eb7ab4a, type: 3}
+      objectReference: {fileID: 21300000, guid: a184cd2f22688df4c83f31626290b8f9, type: 3}
     - target: {fileID: 5869419893293695851, guid: 5338305d53e58a840b87b919810058dd, type: 3}
       propertyPath: m_SortingOrder
-      value: -8
+      value: -6
       objectReference: {fileID: 0}
     - target: {fileID: 5869419893293695851, guid: 5338305d53e58a840b87b919810058dd, type: 3}
       propertyPath: m_WasSpriteAssigned
@@ -2207,16 +2207,24 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7528266128211236196, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
       propertyPath: enemyPrefabs.Array.size
-      value: 7
+      value: 8
       objectReference: {fileID: 0}
     - target: {fileID: 7528266128211236196, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
       propertyPath: enemyPrefabs.Array.data[6].type
       value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 7528266128211236196, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
+      propertyPath: enemyPrefabs.Array.data[7].type
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 7528266128211236196, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
       propertyPath: enemyPrefabs.Array.data[6].prefab
       value: 
       objectReference: {fileID: 9119618656924575448, guid: 7d25a9c4e2cb52f4faad48f2ab1ac46b, type: 3}
+    - target: {fileID: 7528266128211236196, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
+      propertyPath: enemyPrefabs.Array.data[7].prefab
+      value: 
+      objectReference: {fileID: 2894630463016601751, guid: 21d39eb5c7c76634fabca8cbcfb00e7b, type: 3}
     - target: {fileID: 7804710217422946067, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
       propertyPath: m_Name
       value: Spawn_M97
@@ -2234,12 +2242,13 @@ PrefabInstance:
     - {fileID: 9071392447447333664, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
     - {fileID: 493779039851289531, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
     - {fileID: 3690019013979549698, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
+    - {fileID: 7804710217422946067, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
     m_AddedGameObjects:
     - targetCorrespondingSourceObject: {fileID: 8181523265631124123, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
-      insertIndex: 5
+      insertIndex: 4
       addedObject: {fileID: 456779306}
     - targetCorrespondingSourceObject: {fileID: 8181523265631124123, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
-      insertIndex: 6
+      insertIndex: 5
       addedObject: {fileID: 1797747884}
     - targetCorrespondingSourceObject: {fileID: 8181523265631124123, guid: 053e935f8edfa5048a896d240f720ff0, type: 3}
       insertIndex: -1
@@ -2332,7 +2341,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b69556622272dc438d2397527a80af2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enemyType: 2
+  enemyType: 10
   overrides:
     overrideSpeed: 1
     speed: 3
@@ -2771,18 +2780,26 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   layers:
   - prefab: {fileID: 1528238701}
-    parallaxSpeed: 0.31
+    parallaxSpeed: 0.157
     zPosition: -7
-    patternType: 6
+    patternType: 0
+    randomDensity: 0
+    gridSpacing: 0
+    centerRadius: 0
+    randomSeed: 0
+  - prefab: {fileID: 1528238701}
+    parallaxSpeed: 0.157
+    zPosition: -7
+    patternType: 0
     randomDensity: 0
     gridSpacing: 0
     centerRadius: 0
     randomSeed: 0
   - prefab: {fileID: 715111880}
-    parallaxSpeed: 0.142
-    zPosition: -8
+    parallaxSpeed: 0.086
+    zPosition: 50
     patternType: 0
-    randomDensity: 0
+    randomDensity: 0.168
     gridSpacing: 0
     centerRadius: 0
     randomSeed: 0
@@ -3290,7 +3307,7 @@ PrefabInstance:
     - target: {fileID: 3065158025992763367, guid: 240a691cac7974b40ad353fc91deb939, type: 3}
       propertyPath: m_Sprite
       value: 
-      objectReference: {fileID: 21300000, guid: 525f05a653ebfea4196ccf70386d87c2, type: 3}
+      objectReference: {fileID: 21300000, guid: 4638311771f2027488136d002cd75e62, type: 3}
     - target: {fileID: 3065158025992763367, guid: 240a691cac7974b40ad353fc91deb939, type: 3}
       propertyPath: m_SortingOrder
       value: -5
@@ -4219,7 +4236,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b69556622272dc438d2397527a80af2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enemyType: 2
+  enemyType: 10
   overrides:
     overrideSpeed: 1
     speed: 3
@@ -4694,7 +4711,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b69556622272dc438d2397527a80af2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enemyType: 2
+  enemyType: 10
   overrides:
     overrideSpeed: 1
     speed: 3
@@ -5521,7 +5538,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b69556622272dc438d2397527a80af2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enemyType: 2
+  enemyType: 10
   overrides:
     overrideSpeed: 1
     speed: 3
@@ -5979,7 +5996,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b69556622272dc438d2397527a80af2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enemyType: 2
+  enemyType: 10
   overrides:
     overrideSpeed: 1
     speed: 3
@@ -6114,7 +6131,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b69556622272dc438d2397527a80af2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enemyType: 2
+  enemyType: 10
   overrides:
     overrideSpeed: 1
     speed: 3
@@ -7479,7 +7496,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b69556622272dc438d2397527a80af2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enemyType: 2
+  enemyType: 10
   overrides:
     overrideSpeed: 1
     speed: 3
@@ -7609,7 +7626,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b69556622272dc438d2397527a80af2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enemyType: 2
+  enemyType: 10
   overrides:
     overrideSpeed: 1
     speed: 3
@@ -8280,7 +8297,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b69556622272dc438d2397527a80af2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enemyType: 2
+  enemyType: 10
   overrides:
     overrideSpeed: 1
     speed: 3
@@ -8344,7 +8361,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1b69556622272dc438d2397527a80af2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enemyType: 2
+  enemyType: 10
   overrides:
     overrideSpeed: 1
     speed: 3
@@ -10436,6 +10453,14 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 6986745238549686898}
     m_Modifications:
+    - target: {fileID: 1928913765699674672, guid: 7f6241061ccd43346b13f6640d109246, type: 3}
+      propertyPath: campaignSceneOrder.Array.size
+      value: 4
+      objectReference: {fileID: 0}
+    - target: {fileID: 1928913765699674672, guid: 7f6241061ccd43346b13f6640d109246, type: 3}
+      propertyPath: 'campaignSceneOrder.Array.data[3]'
+      value: Redemption
+      objectReference: {fileID: 0}
     - target: {fileID: 4315649855814584681, guid: 7f6241061ccd43346b13f6640d109246, type: 3}
       propertyPath: m_Name
       value: GameMgr
