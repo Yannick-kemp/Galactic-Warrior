@@ -130,11 +130,17 @@ namespace Assets.Scripts.Characteres.WarriorController
         [Tooltip("OFF by default. When ON, re-enables the last-resort capped depenetration nudge for overlaps that the full bounce does not handle (grounded side overlap, or mid jump-arc). It uses a velocity-free rigidbody2.position teleport (NOT MovePosition) so it depenetrates without injecting the residual upward velocity that previously read as a 'double jump'. Turn this ON only if you observe the Warrior getting genuinely stuck embedded inside an enemy with no bounce.")]
         [SerializeField] private bool overlapRecoveryUsePositionTeleportNudge = false;
 
+        [Tooltip("After the Warrior's jump is canceled by hitting a boss (e.g. Zort), the overlap-recovery guardian stands down for this long so the Warrior falls under gravity instead of being launched into a scripted bounce arc while sliding off the boss.")]
+        [SerializeField, Min(0f)] private float bossJumpCancelOverlapSuppressSeconds = 0.5f;
+
         private Enemy _overlapRecoveryEnemy;
         private int _overlapRecoveryFrames;
         private readonly Collider2D[] _overlapRecoveryBuffer = new Collider2D[12];
         private ContactFilter2D _overlapRecoveryFilter;
         private bool _overlapRecoveryFilterReady;
+
+        // While Time.time <= this, the overlap-recovery bounce is suppressed (see CancelControlledJumpIntoFall).
+        private float _suppressEnemyOverlapBounceUntil = -999f;
 
         /// <summary>
         /// Frame-driven separation guardian. Detects genuine penetration into an enemy via
@@ -160,6 +166,10 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (_sprintActive) { ResetOverlapRecoveryTracking(); return; }
             if (IsHardActionLocked) { ResetOverlapRecoveryTracking(); return; }
             if (_hitReactRoutine != null) { ResetOverlapRecoveryTracking(); return; }
+
+            // Stand down while a boss-jump-cancel fall is in progress: the Warrior must drop under
+            // gravity (sliding off the boss via the physics solver), not be launched into a bounce.
+            if (Time.time <= _suppressEnemyOverlapBounceUntil) { ResetOverlapRecoveryTracking(); return; }
 
             // Guard (1): stand down while the Zalayty different-platform arrival absorber owns
             // the body. The absorber intentionally PINS the Warrior to his pre-impact X (and
@@ -348,6 +358,24 @@ namespace Assets.Scripts.Characteres.WarriorController
 
                 if (TryBreakEnemyTopPingPongTrap(enemy, collision, registerBounceContact: true))
                     return;
+
+                // Hitting a boss (e.g. Zort) while rising in a jump must immediately cancel the
+                // jump and drop the Warrior under gravity — never continue the upward arc, hover,
+                // or stay stuck in a jump state. Covers both the scripted jump arc and any residual
+                // upward velocity; descent (stomp/bounce) is intentionally left to the logic below.
+                if (enemy.IsBoss && CountGroundPoints() == 0)
+                {
+                    bool risingControlledJump =
+                        (activesJumpCoroutine != null || IsJumping) && !DescendentPhase;
+                    bool risingByVelocity =
+                        rigidbody2 != null && rigidbody2.linearVelocity.y > 0.01f;
+
+                    if (risingControlledJump || risingByVelocity)
+                    {
+                        CancelControlledJumpIntoFall(enemy);
+                        return;
+                    }
+                }
 
                 if (DescendentPhase && CountGroundPoints() == 0)
                 {
@@ -863,6 +891,66 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             NotifyNearbyEnemiesToSideStep(nearbyEnemies);
             ResetEnemyTopTrapTracking();
+        }
+
+        // When the Warrior collides with a boss (e.g. Zort) during the RISING phase of a
+        // controlled jump, the scripted jump arc — which is driven by Rigidbody2D.MovePosition
+        // and therefore overrides gravity every FixedUpdate — must stop instantly. We cancel any
+        // leftover upward momentum and hand the body back to gravity. From there the per-frame
+        // HandleFallingAndDeath() keeps JumpAnimationDisplay() playing and forces a falling
+        // gravityScale until the Warrior lands on a valid surface, where the normal landing
+        // handlers (ResolvePredictedPhysicsFallLanding / BounceAndLandAway / CheckIfStopRunDisplay)
+        // clear the fall state and restore the idle animation.
+        public void CancelControlledJumpIntoFall(Enemy enemy)
+        {
+            // Stop the scripted parabola (and any move arc) so MovePosition stops driving us.
+            StopJumpTowardCoroutine();
+            StopMoveTowardCoroutine();
+
+            // Keep the overlap-recovery guardian from launching a scripted bounce arc while the
+            // Warrior slides off the boss; we want a pure gravity fall.
+            _suppressEnemyOverlapBounceUntil = Time.time + bossJumpCancelOverlapSuppressSeconds;
+
+            // We are now descending under gravity, not rising.
+            DescendentPhase = true;
+
+            // Mark "fell after hitting an enemy" so IsFalling is immediately true; this makes
+            // HandleFallingAndDeath() drive the jump/fall animation this very frame.
+            IsFallingHitEnemy = true;
+            IsFallingEdge = false;
+            IsFallingPlfExit = false;
+            IsFallingGrazesEdge = false;
+
+            _blockAction = false;
+
+            if (rigidbody2 != null)
+            {
+                rigidbody2.simulated = true;
+
+                // Allow vertical motion and keep upright so gravity can pull the Warrior down.
+                RigidbodyConstraints2D constraints = rigidbody2.constraints;
+                constraints &= ~RigidbodyConstraints2D.FreezePositionY;
+                constraints |= RigidbodyConstraints2D.FreezeRotation;
+                rigidbody2.constraints = constraints;
+
+                rigidbody2.gravityScale = Mathf.Max(rigidbody2.gravityScale, normalGravityScale);
+
+                // Cancel remaining upward momentum (and the scripted horizontal carry): from the
+                // moment of impact the Warrior is affected only by gravity.
+                Vector2 velocity = rigidbody2.linearVelocity;
+                velocity.x = 0f;
+                if (velocity.y > 0f)
+                    velocity.y = 0f;
+                rigidbody2.linearVelocity = velocity;
+
+                rigidbody2.WakeUp();
+            }
+
+            // Immediate, smooth switch to the airborne (jump) animation. HandleFallingAndDeath()
+            // re-asserts this every frame while airborne, so there is no flicker before landing.
+            JumpAnimationDisplay();
+
+            Debug.Log($"[Warrior] Jump canceled into fall after hitting boss '{(enemy != null ? enemy.name : "?")}'.");
         }
 
         private void BreakEnemyTopPingPongTrap(List<Enemy> nearbyEnemies)

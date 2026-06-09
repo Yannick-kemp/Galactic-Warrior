@@ -121,7 +121,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             get
             {
                 return enemyType != EnemyType.Bee
-                    && enemyType != EnemyType.BeeEretic;
+                    && enemyType != EnemyType.BeeEretic
+                    && enemyType != EnemyType.Wraith;
             }
         }
 
