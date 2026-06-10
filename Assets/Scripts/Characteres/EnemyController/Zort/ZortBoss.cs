@@ -1,10 +1,14 @@
 using System.Collections;
 using Assets.Scripts.Characteres.WarriorController;
+using Assets.Scripts.Platforms;
 using Assets.Scripts.Tools;
 using UnityEngine;
 
 namespace Assets.Scripts.Characteres.EnemyContoller
 {
+    /// <summary>Coarse platform classification used by Zort's behaviour FSM.</summary>
+    public enum PlatformSize { Large, Small }
+
     /// <summary>
     /// Zort — The Void-Rendered. Final boss of the LandOfFire / Redemption campaign.
     /// Inherits <see cref="Enemy"/>, so it reuses the shared health bar, hit blink,
@@ -71,6 +75,78 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private float _damageReceivedDuringWell;
 
+        [Header("Range Zones")]
+        [Tooltip("Outer awareness range (documentation/tuning; the FSM boundary is crescentRange).")]
+        [SerializeField] private float levitationRange = 12f;
+        [SerializeField] private float crescentRange = 6f;
+        [SerializeField] private float meleeRange = 2.5f;
+
+        [Header("Movement — FSM")]
+        [SerializeField] private float levitationSpeed = 3f;
+        [SerializeField] private float hoverHeight = 1.5f;
+        [SerializeField] private float smallPlatformTeleportDelay = 2f;
+
+        [Header("Zone 2 — Crescent Behaviour")]
+        [Tooltip("Height above the platform surface when Zort fires from the edge.")]
+        [SerializeField] private float crescentHoverHeight = 2.5f;
+        [Tooltip("Inward margin from the platform edge so the vertical drop lands safely on the surface.")]
+        [SerializeField] private float crescentEdgeMargin = 0.3f;
+        [Tooltip("Delay between two consecutive crescent shots from the edge.")]
+        [SerializeField] private float crescentZoneCooldown = 1.5f;
+        [Tooltip("Speed at which Zort moves to the platform edge.")]
+        [SerializeField] private float crescentApproachSpeed = 1.2f;
+        [Tooltip("Arrival distance — Zort locks when within this of the target edge.")]
+        [SerializeField] private float crescentArrivalThreshold = 0.2f;
+        [Tooltip("Optional child Transform the crescent spawns from (blade/head). Null = Zort's position.")]
+        [SerializeField] private Transform crescentSpawnPoint;
+
+        [Header("Zone 3 — Contact Trigger")]
+        [Tooltip("Minimum delay between two contact-triggered Earth Slashes (anti-spam).")]
+        [SerializeField] private float contactSlashCooldown = 1f;
+        [Tooltip("Centre-to-centre distance at/under which the Warrior counts as 'in contact'. " +
+                 "Kept just above the ~1.2f where Zort parks (Earth Slash dash-stop / distance Zone 3), " +
+                 "because the BoxCollider2Ds rarely truly overlap there.")]
+        [SerializeField] private float contactSlashRange = 1.4f;
+
+        [Header("Zone 2 — Defensive Teleport")]
+        [Tooltip("Hits taken (within the window) before Zort defensively teleports to a Zone-2 spot.")]
+        [SerializeField] private int hitsToTriggerDefensive = 2;
+        [Tooltip("Sliding window: hits spaced more than this apart restart the count.")]
+        [SerializeField] private float defensiveHitWindow = 2.5f;
+        [Tooltip("Cooldown after a defensive teleport before it can trigger again.")]
+        [SerializeField] private float defensiveTeleportCooldown = 8f;
+
+        [Header("Platform Detection")]
+        [Tooltip("World-space BoxCollider2D width at or below which the Warrior's platform counts as 'small'.")]
+        [SerializeField] private float smallPlatformWidthThreshold = 4.7f;
+        [SerializeField] private LayerMask platformLayerMask;
+        [SerializeField] private float platformDetectDistance = 2f;
+
+        // FSM runtime state
+        private float _crescentZoneTimer;
+        private float _smallPlatformTimer;
+        private bool _warriorWasAttacking;
+        private bool _smallPlatformAttackResponded;
+
+        // Zone 2 sub-state machine: move to the platform's far edge, then fire from it repeatedly.
+        private enum CrescentZoneState { MovingToEdge, FiringFromEdge }
+        private CrescentZoneState _crescentState = CrescentZoneState.MovingToEdge;
+        private Vector3 _lockedFirePosition;
+        private Collider2D _lastKnownWarriorPlatform;
+        // Sticky Zone-2 engagement: once committed, Zort's own distance (he flies to the far edge)
+        // must NOT re-classify the zone, or he'd never reach the edge to fire.
+        private bool _crescentEngaged;
+
+        // Zone 3 contact trigger anti-spam.
+        private float _nextContactSlashTime;
+
+        // Defensive teleport (two hits within a window → reposition to Zone 2).
+        private int _hitsTakenCount;
+        private float _lastHitTime = -999f;
+        private float _nextDefensiveTeleportTime;
+        private bool _defensiveTeleportPending;
+        private bool _desperationNovaActive; // AttackDesperationNova is protected from defensive interrupt
+
         private float HealthRatio => maxHealth <= 0f ? 0f : currentHealth / maxHealth;
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -83,6 +159,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             SetBoss(true, "Zort");
             SetEnemyType(EnemyType.Zort);
+
+            // Zort is a levitating boss: no gravity (his position is FSM-driven) and he passes
+            // through platforms so he can freely reposition above the Warrior's platform.
+            if (rigidbody2 != null)
+                rigidbody2.gravityScale = 0f;
+            IgnorePlatformCollisions();
 
             CanMove = true;
             _nextAttackTime = Time.time + openingObservationSeconds; // opening observation window
@@ -119,6 +201,19 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (_inTransition)
                 return;
 
+            // Defensive teleport has top priority: it interrupts the running action (combo break),
+            // EXCEPT the desperation nova which is protected. If protected, the pending stays and
+            // fires once the nova ends.
+            if (_defensiveTeleportPending && !_desperationNovaActive)
+            {
+                _defensiveTeleportPending = false;
+                _hitsTakenCount = 0;
+                _nextDefensiveTeleportTime = Time.time + defensiveTeleportCooldown;
+                StopActionRoutine();
+                BeginAction(DefensiveTeleportToZone2(warrior));
+                return;
+            }
+
             if (_actionRoutine != null)
                 return;
 
@@ -135,10 +230,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (_actionRoutine != null)
                 return;
 
-            if (Time.time >= _nextAttackTime)
-                DispatchAttack(warrior);
-            else
-                WaitAnimationDisplay();
+            UpdateBehaviourFSM(warrior);
         }
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -158,6 +250,17 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             base.OnDamaged(damage, killed);
             _damageReceivedDuringWell += damage; // used by Gravity Well early-cancel
+
+            if (killed)
+                return;
+
+            // Sliding-window hit count (all damage that reaches here is Warrior-originated; during
+            // _invulnerable phases TakeDamageAndReturnKilled drops the hit before OnDamaged).
+            _hitsTakenCount = (Time.time - _lastHitTime > defensiveHitWindow) ? 1 : _hitsTakenCount + 1;
+            _lastHitTime = Time.time;
+
+            if (_hitsTakenCount >= hitsToTriggerDefensive && Time.time >= _nextDefensiveTeleportTime)
+                _defensiveTeleportPending = true; // consumed in Update (safe place to interrupt + teleport)
         }
 
         protected override void OnDeath()
@@ -346,6 +449,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             }
 
             _invulnerable = false; // never leave a cut-short Summon in its invulnerable state
+            _desperationNovaActive = false; // clear the protection flag if the nova was force-stopped
         }
 
         private float GetCooldownForPhase()
@@ -358,28 +462,397 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             };
         }
 
-        private void DispatchAttack(Warrior warrior)
+        // ─────────────────────────────────────────────────────────────────────────
+        // Behaviour FSM (replaces the old random DispatchAttack). Runs INSIDE each phase;
+        // it never touches HandlePhaseTransitions or HandleRepeatingTimers. Only invoked
+        // when no exclusive action is already running (gated in Update).
+        // ─────────────────────────────────────────────────────────────────────────
+
+        private void UpdateBehaviourFSM(Warrior warrior)
         {
-            int roll = currentPhase switch
+            // Contact trigger (independent of the distance-based Zone 3): if the Warrior is physically
+            // touching Zort, Earth Slash immediately — no teleport, since contact is already established.
+            // This is naturally gated (UpdateBehaviourFSM only runs when _actionRoutine == null, so it
+            // never cuts an action short or doubles with the distance melee) plus an anti-spam cooldown.
+            if (Time.time >= _nextContactSlashTime && IsTouchingWarrior(warrior))
             {
-                Phase.Three => Random.Range(0, 7),  // + Void Stare
-                Phase.Two => Random.Range(0, 6),    // + Aerial Dive, Twin Crescent
-                _ => Random.Range(0, 4)             // crescent, shadow step, barrage, summon
-            };
+                _nextContactSlashTime = Time.time + contactSlashCooldown;
+                ExitCrescentEngagement();
+                BeginAction(AttackEarthSlash(warrior));
+                return;
+            }
 
-            IEnumerator attack = roll switch
+            float dist = Vector2.Distance(transform.position, warrior.transform.position);
+            PlatformSize warriorPlatform = GetWarriorPlatformSize(warrior);
+
+            // Absolute priority: small-platform special behaviours.
+            if (warriorPlatform == PlatformSize.Small)
             {
-                0 => AttackVoidCrescent(false),
-                1 => AttackShadowStep(warrior),
-                2 => AttackRiftBarrage(),
-                3 => AttackSpectralSummon(),
-                4 => AttackAerialDive(warrior),
-                5 => AttackVoidCrescent(true),
-                6 => AttackVoidStare(warrior),
-                _ => AttackVoidCrescent(false)
-            };
+                ExitCrescentEngagement();
+                HandleSmallPlatformBehaviour(warrior);
+                return;
+            }
 
-            BeginAction(attack);
+            // Not on a small platform — reset its trackers.
+            _smallPlatformTimer = 0f;
+            _smallPlatformAttackResponded = false;
+            _warriorWasAttacking = IsWarriorAttacking(warrior);
+
+            // Melee always wins.
+            if (dist <= meleeRange)
+            {
+                ExitCrescentEngagement();
+                HandleMeleeZone(warrior);
+                return;
+            }
+
+            // Zone 2 is STICKY: while engaged, Zort flies to the platform's far edge, which inflates
+            // his own distance to the Warrior — so we must NOT re-classify by that distance. Stay
+            // engaged until the Warrior enters melee (above) or moves beyond the outer range.
+            if (_crescentEngaged)
+            {
+                if (dist > levitationRange)
+                {
+                    ExitCrescentEngagement();
+                    HandleLevitationZone(warrior);
+                }
+                else
+                {
+                    HandleCrescentZone(warrior);
+                }
+                return;
+            }
+
+            // Not engaged yet: commit to Zone 2 when the Warrior is within crescentRange, else levitate.
+            if (dist <= crescentRange)
+            {
+                _crescentEngaged = true;
+                HandleCrescentZone(warrior);
+            }
+            else
+            {
+                HandleLevitationZone(warrior);
+            }
+        }
+
+        // Leave Zone 2 and reset its sub-state so the next engagement restarts at MovingToEdge.
+        private void ExitCrescentEngagement()
+        {
+            _crescentEngaged = false;
+            _crescentState = CrescentZoneState.MovingToEdge;
+            _crescentZoneTimer = 0f;
+            _lastKnownWarriorPlatform = null;
+        }
+
+        // Zone 1 — free levitation toward the Warrior, no attack.
+        private void HandleLevitationZone(Warrior warrior)
+        {
+            Levitate(warrior, levitationSpeed);
+        }
+
+        // Zone 2 — two sub-states:
+        //   MovingToEdge   : slow-levitate to the FAR edge of the Warrior's platform, then lock.
+        //   FiringFromEdge : stay locked on that edge and drop a vertical crescent every cooldown.
+        private void HandleCrescentZone(Warrior warrior)
+        {
+            Collider2D currentWarriorPlatform = GetWarriorPlatformCollider(warrior);
+
+            // Warrior changed platform (e.g. jumped to another while staying in Zone 2) → go realign
+            // on the new platform's far edge. Recompute the locked edge once, here.
+            if (currentWarriorPlatform != _lastKnownWarriorPlatform)
+            {
+                _crescentState = CrescentZoneState.MovingToEdge;
+                if (currentWarriorPlatform != null)
+                    _lockedFirePosition = GetCrescentFirePosition(currentWarriorPlatform);
+                _lastKnownWarriorPlatform = currentWarriorPlatform;
+            }
+
+            // Warrior airborne / no platform below — hover over the Warrior until they land.
+            if (currentWarriorPlatform == null)
+            {
+                _crescentState = CrescentZoneState.MovingToEdge;
+                Levitate(warrior, crescentApproachSpeed);
+                return;
+            }
+
+            if (_crescentState == CrescentZoneState.MovingToEdge)
+            {
+                LevitateTo(_lockedFirePosition, crescentApproachSpeed, warrior);
+
+                if (Vector2.Distance(transform.position, _lockedFirePosition) < crescentArrivalThreshold)
+                {
+                    // Lock exactly on the edge and become a stationary firing post.
+                    transform.position = _lockedFirePosition;
+                    if (rigidbody2 != null)
+                        rigidbody2.linearVelocity = Vector2.zero;
+
+                    _crescentState = CrescentZoneState.FiringFromEdge;
+                    _crescentZoneTimer = 0f; // fire immediately on the first FiringFromEdge frame
+                }
+
+                return;
+            }
+
+            // FiringFromEdge — no movement at all; stay frozen on the locked edge.
+            transform.position = _lockedFirePosition;
+            if (rigidbody2 != null)
+                rigidbody2.linearVelocity = Vector2.zero;
+            FaceWarrior(warrior);
+            WaitAnimationDisplay();
+
+            _crescentZoneTimer -= Time.deltaTime;
+            if (_crescentZoneTimer <= 0f)
+            {
+                _crescentZoneTimer = crescentZoneCooldown;
+                if (IsCrescentDropSafe(currentWarriorPlatform))
+                    BeginAction(VerticalCrescentRoutine(warrior));
+            }
+        }
+
+        // Fire position above the platform edge FARTHER from Zort (evaluated once, when the
+        // MovingToEdge episode starts), so the dropped crescent slides the platform's full length.
+        private Vector3 GetCrescentFirePosition(Collider2D platformCollider)
+        {
+            Bounds b = platformCollider.bounds;
+
+            // Nudged inward by crescentEdgeMargin so the vertical drop lands on the surface, not past the lip.
+            bool useLeftEdge = transform.position.x > b.center.x; // Zort on the right → enter via left edge
+            float edgeX = useLeftEdge ? b.min.x + crescentEdgeMargin : b.max.x - crescentEdgeMargin;
+
+            return new Vector3(edgeX, b.max.y + crescentHoverHeight, transform.position.z);
+        }
+
+        // The crescent drops straight down from the spawn point — only fire when a vertical ray from
+        // there hits exactly the Warrior's platform (so it lands and slides across to the Warrior).
+        private bool IsCrescentDropSafe(Collider2D platformCollider)
+        {
+            if (platformCollider == null)
+                return false;
+
+            Vector2 spawnPos = GetCrescentSpawnPos();
+
+            if (platformLayerMask.value != 0)
+            {
+                float rayDistance = Mathf.Max(0.5f, spawnPos.y - platformCollider.bounds.max.y + 1f);
+                RaycastHit2D hit = Physics2D.Raycast(spawnPos, Vector2.down, rayDistance, platformLayerMask);
+                if (hit.collider == platformCollider)
+                    return true;
+            }
+
+            // Fallback (platformLayerMask unset): make sure the drop column is over the platform.
+            Bounds b = platformCollider.bounds;
+            return spawnPos.x >= b.min.x && spawnPos.x <= b.max.x && spawnPos.y >= b.max.y;
+        }
+
+        // Spawn point for the Zone-2 crescent: a child Transform if assigned, else Zort's position.
+        private Vector2 GetCrescentSpawnPos()
+        {
+            return crescentSpawnPoint != null
+                ? (Vector2)crescentSpawnPoint.position
+                : (Vector2)transform.position;
+        }
+
+        // Zone 3 — teleport next to the Warrior and Earth Slash.
+        private void HandleMeleeZone(Warrior warrior)
+        {
+            BeginAction(TeleportThenEarthSlash(warrior));
+        }
+
+        // Small platform — special cases take priority over the range zones.
+        private void HandleSmallPlatformBehaviour(Warrior warrior)
+        {
+            // Case B — the Warrior attacks from the small platform: respond once per attack.
+            bool attackingNow = IsWarriorAttacking(warrior);
+            bool attackedThisFrame = attackingNow && !_warriorWasAttacking;
+            _warriorWasAttacking = attackingNow;
+
+            if (!attackingNow)
+                _smallPlatformAttackResponded = false; // re-arm once the attack ends
+
+            if (attackedThisFrame && !_smallPlatformAttackResponded)
+            {
+                _smallPlatformAttackResponded = true;
+                _smallPlatformTimer = 0f;
+                BeginAction(GraceThenTeleportEarthSlash(warrior));
+                return;
+            }
+
+            // Case A — the Warrior stands still on the small platform for too long.
+            if (!warrior.IsMoving)
+            {
+                _smallPlatformTimer += Time.deltaTime;
+                if (_smallPlatformTimer >= smallPlatformTeleportDelay)
+                {
+                    _smallPlatformTimer = 0f;
+                    BeginAction(TeleportThenEarthSlash(warrior));
+                    return;
+                }
+            }
+            else
+            {
+                _smallPlatformTimer = 0f;
+            }
+
+            // While waiting, levitate normally (Movement 1).
+            Levitate(warrior, levitationSpeed);
+        }
+
+        // ─── FSM movement / detection helpers ───────────────────────────────────
+
+        // Hover above the Warrior (Zone 1 / small-platform waiting).
+        private void Levitate(Warrior warrior, float speed)
+        {
+            Vector3 target = new Vector3(
+                warrior.transform.position.x,
+                GetWarriorPlatformTopY(warrior) + hoverHeight,
+                transform.position.z);
+
+            LevitateTo(target, speed, warrior);
+        }
+
+        // Levitate toward an explicit world target (used by Zone 2 to sit over the platform centre).
+        private void LevitateTo(Vector3 target, float speed, Warrior warrior)
+        {
+            MarkIntentionalEnemyDisplacement(0.1f);
+
+            if (rigidbody2 != null)
+                rigidbody2.linearVelocity = Vector2.zero;
+
+            transform.position = Vector3.MoveTowards(transform.position, target, speed * Time.deltaTime);
+
+            FaceWarrior(warrior);
+            WaitAnimationDisplay();
+        }
+
+        private float GetWarriorPlatformTopY(Warrior warrior)
+        {
+            if (warrior.CurrentplatForm != null && warrior.CurrentplatForm.platformCollider != null)
+                return warrior.CurrentplatForm.platformCollider.bounds.max.y;
+
+            return warrior.transform.position.y;
+        }
+
+        private PlatformSize GetWarriorPlatformSize(Warrior warrior)
+        {
+            Collider2D platformCollider = GetWarriorPlatformCollider(warrior);
+            if (platformCollider == null)
+                return PlatformSize.Large; // nothing below — treat as large
+
+            BoxCollider2D box = platformCollider as BoxCollider2D;
+            if (box == null)
+                box = platformCollider.GetComponent<BoxCollider2D>();
+            if (box == null)
+                return PlatformSize.Large; // not a BoxCollider2D — treat as large
+
+            float worldWidth = box.size.x * Mathf.Abs(box.transform.lossyScale.x);
+            return worldWidth <= smallPlatformWidthThreshold
+                ? PlatformSize.Small
+                : PlatformSize.Large;
+        }
+
+        // Collider of the platform directly under the Warrior (downward raycast on platformLayerMask),
+        // or null if none. Shared by GetWarriorPlatformSize and the Zone-2 edge logic.
+        private Collider2D GetWarriorPlatformCollider(Warrior warrior)
+        {
+            RaycastHit2D hit = Physics2D.Raycast(
+                warrior.transform.position,
+                Vector2.down,
+                platformDetectDistance,
+                platformLayerMask);
+
+            if (hit.collider != null)
+                return hit.collider;
+
+            // Fallback: the platform the Warrior is tracked as standing on (works even if the
+            // raycast misses because platformLayerMask is unset or platformDetectDistance is short).
+            if (warrior != null && warrior.CurrentplatForm != null)
+                return warrior.CurrentplatForm.platformCollider;
+
+            return null;
+        }
+
+        private bool IsWarriorAttacking(Warrior warrior)
+        {
+            if (warrior == null || warrior.animator == null)
+                return false;
+
+            return warrior.animator.GetBool("isAttacking")
+                || warrior.animator.GetBool("isAttacking2")
+                || warrior.animator.GetBool("isAttacking3");
+        }
+
+        // True when the Warrior is close enough to count as body contact. Uses a PROXIMITY range, not
+        // exact collider overlap: Zort keeps ~1.2f (Earth Slash dash-stop / distance Zone 3 park), so
+        // the BoxCollider2Ds never actually intersect there and IsTouching() would always be false.
+        private bool IsTouchingWarrior(Warrior warrior)
+        {
+            if (warrior == null)
+                return false;
+
+            return Vector2.Distance(transform.position, warrior.transform.position) <= contactSlashRange;
+        }
+
+        // ─── FSM attack coroutines (each ends via EndAction) ─────────────────────
+
+        /// <summary>
+        /// Zone 2 vertical crescent: spawns above the Warrior and falls straight onto their platform
+        /// (GroundSlide). AttackVoidCrescent() itself is intentionally left untouched.
+        /// </summary>
+        private IEnumerator VerticalCrescentRoutine(Warrior warrior)
+        {
+            if (attackData == null || warrior == null) { EndAction(); yield break; }
+
+            AttackAnimationDisplay();
+            PlaySfx(attackData.crescentCharge);
+
+            yield return new WaitForSeconds(attackData.crescentTelegraphDuration);
+
+            // Spawn from the configurable point (blade/head child Transform) or Zort's position.
+            Vector2 spawnPos = GetCrescentSpawnPos();
+
+            FireVoidProjectileAt(spawnPos, attackData.crescentPrefab,
+                Vector2.down, attackData.crescentSpeed, attackData.crescentDamage,
+                ProjectileMode.GroundSlide);
+            PlaySfx(attackData.crescentFire);
+
+            yield return new WaitForSeconds(0.4f);
+            EndAction();
+        }
+
+        /// <summary>Teleport next to the Warrior (AttackShadowStep pattern) then chain Earth Slash.</summary>
+        private IEnumerator TeleportThenEarthSlash(Warrior warrior)
+        {
+            if (attackData == null || warrior == null) { EndAction(); yield break; }
+
+            AttackAnimationDisplay();
+            PlaySfx(attackData.teleportOut);
+            SetVisible(false);
+            yield return new WaitForSeconds(0.25f);
+
+            // Reappear 1.2 units from the Warrior, on the side Zort is approaching from.
+            float sideSign = transform.position.x <= warrior.transform.position.x ? -1f : 1f;
+            Vector3 target = warrior.transform.position + Vector3.right * (sideSign * 1.2f);
+            MarkIntentionalEnemyDisplacement(0.3f);
+            if (rigidbody2 != null)
+                rigidbody2.position = target;
+            else
+                transform.position = target;
+
+            SpawnFx(attackData.teleportVfxPrefab, target);
+            SetVisible(true);
+            PlaySfx(attackData.teleportIn);
+            FaceWarrior(warrior);
+            yield return new WaitForSeconds(0.15f);
+
+            // Chain into the existing Earth Slash (it calls EndAction at its end).
+            yield return AttackEarthSlash(warrior);
+        }
+
+        /// <summary>Case B helper: one frame of grace, then teleport + Earth Slash.</summary>
+        private IEnumerator GraceThenTeleportEarthSlash(Warrior warrior)
+        {
+            yield return null;
+            yield return TeleportThenEarthSlash(warrior);
         }
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -398,14 +871,16 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             Vector2 facing = GetFacingDirection();
             FireVoidProjectile(attackData.crescentPrefab,
-                new Vector2(facing.x, 0.12f), attackData.crescentSpeed, attackData.crescentDamage);
+                new Vector2(facing.x, 0.12f), attackData.crescentSpeed, attackData.crescentDamage,
+                ProjectileMode.GroundSlide);
             PlaySfx(attackData.crescentFire);
 
             if (twin)
             {
                 yield return new WaitForSeconds(attackData.twinCrescentDelay);
                 FireVoidProjectile(attackData.crescentPrefab,
-                    new Vector2(facing.x, -0.12f), attackData.crescentSpeed, attackData.crescentDamage);
+                    new Vector2(facing.x, -0.12f), attackData.crescentSpeed, attackData.crescentDamage,
+                    ProjectileMode.GroundSlide);
                 PlaySfx(attackData.crescentFire);
             }
 
@@ -456,33 +931,79 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             EndAction();
         }
 
-        /// <summary>Rift Barrage — 5 (P1) / 8 (P2+) spread projectiles after a tilt-back telegraph.</summary>
-        private IEnumerator AttackRiftBarrage()
+        /// <summary>
+        /// Earth Slash — Zort sprints into melee range, then delivers a single grounded slash.
+        /// Close-range only (DispatchAttack falls back to a crescent when the Warrior is far).
+        /// </summary>
+        private IEnumerator AttackEarthSlash(Warrior warrior)
         {
-            if (attackData == null) { EndAction(); yield break; }
+            if (attackData == null || warrior == null) { EndAction(); yield break; }
 
-            AttackAnimation2Display();
-            PlaySfx(attackData.barrageCharge);
+            FaceWarrior(warrior);
 
-            yield return new WaitForSeconds(attackData.barrageTelegraphDuration);
-
-            int count = currentPhase == Phase.One ? 5 : 8;
-            const float spreadAngle = 70f;
-            float stepAngle = spreadAngle / (count - 1);
-            float startAngle = -spreadAngle / 2f;
-            Vector2 facing = GetFacingDirection();
-
-            for (int i = 0; i < count; i++)
+            // 1. Charge horizontally toward the Warrior until within 1.2 units, after the max-distance
+            //    dash, OR after a time cap. The cap is essential: the Warrior's solid collider can stop
+            //    Zort before he reaches 1.2f (and the Warrior may keep fleeing), so without it neither
+            //    break condition is ever met and the loop spins forever — the slash never fires.
+            float startX = transform.position.x;
+            float dashElapsed = 0f;
+            float maxDashSeconds = attackData.earthSlashMaxDashDistance / Mathf.Max(0.01f, attackData.earthSlashDashSpeed) + 0.5f;
+            while (true)
             {
-                float angle = startAngle + stepAngle * i;
-                Vector2 dir = Quaternion.Euler(0f, 0f, angle) * (Vector3)facing;
-                FireVoidProjectile(attackData.riftProjectilePrefab, dir,
-                    attackData.barrageProjectileSpeed, attackData.riftDamage,
-                    ProjectileMode.GroundSlide);
-                yield return new WaitForSeconds(0.06f);
+                float toWarrior = warrior.transform.position.x - transform.position.x;
+                if (Mathf.Abs(toWarrior) <= 1.2f)
+                    break;
+                if (Mathf.Abs(transform.position.x - startX) >= attackData.earthSlashMaxDashDistance)
+                    break;
+                if (dashElapsed >= maxDashSeconds)
+                    break; // blocked by the Warrior's collider, or Warrior fleeing — slash anyway
+
+                RunAnimationDisplay();
+
+                float step = Mathf.Sign(toWarrior) * attackData.earthSlashDashSpeed * Time.deltaTime;
+                float nextX = transform.position.x + step;
+
+                // Never dash past the max-distance budget.
+                if (Mathf.Abs(nextX - startX) > attackData.earthSlashMaxDashDistance)
+                    nextX = startX + Mathf.Sign(nextX - startX) * attackData.earthSlashMaxDashDistance;
+
+                MarkIntentionalEnemyDisplacement(0.1f);
+                Vector3 next = new Vector3(nextX, transform.position.y, transform.position.z);
+                if (rigidbody2 != null)
+                    rigidbody2.MovePosition(next);
+                else
+                    transform.position = next;
+
+                FaceWarrior(warrior);
+                dashElapsed += Time.deltaTime;
+                yield return null;
             }
 
-            yield return new WaitForSeconds(0.6f);
+            // 2. Arrival telegraph: wind-up.
+            FaceWarrior(warrior);
+            AttackAnimationDisplay();
+            PlaySfx(attackData.meleeHit);
+            yield return new WaitForSeconds(0.3f);
+
+            // 3. Slash VFX. Oriented via transform.right (same as VoidProjectile) so it lies in the
+            //    2D plane facing the slash direction. Pure VFX prefab — no Rigidbody2D/collider added.
+            if (attackData.slashEarthVfxPrefab != null)
+            {
+                Vector3 spawnPos = projectileOrigin != null ? projectileOrigin.position : transform.position;
+                GameObject vfx = Instantiate(attackData.slashEarthVfxPrefab, spawnPos, Quaternion.identity);
+                vfx.transform.right = GetFacingDirection();
+                ParticleSystem ps = vfx.GetComponent<ParticleSystem>();
+                if (ps != null)
+                    ps.Play(true);
+                Destroy(vfx, 2f);
+            }
+
+            // 4. Proximity damage (no physics collider — direct range check, same pattern as VoidWraith).
+            if (Vector2.Distance(transform.position, warrior.transform.position) <= attackData.earthSlashContactRange)
+                DamageWarrior(warrior, attackData.shadowStepDamage, transform.position, HitKind.Spark);
+
+            // 5. Recovery.
+            yield return new WaitForSeconds(0.5f);
             EndAction();
         }
 
@@ -650,6 +1171,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             if (attackData == null) { EndAction(); yield break; }
 
+            _desperationNovaActive = true; // protected from the defensive-teleport interrupt
+
             AttackAnimation3Display();
             PlaySfx(attackData.novaCharge);
             yield return new WaitForSeconds(attackData.novaChargeDuration);
@@ -665,7 +1188,76 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             }
 
             yield return new WaitForSeconds(1.0f);
+            _desperationNovaActive = false;
             EndAction();
+        }
+
+        /// <summary>
+        /// Defensive teleport — after taking hitsToTriggerDefensive hits within defensiveHitWindow,
+        /// Zort blinks (i-frames) to a Zone-2 spot and resumes the edge-fire behaviour, breaking combos.
+        /// </summary>
+        private IEnumerator DefensiveTeleportToZone2(Warrior warrior)
+        {
+            if (warrior == null) { EndAction(); yield break; }
+
+            _invulnerable = true; // i-frames: the Warrior cannot combo through the blink
+
+            SetVisible(false);
+            PlaySfx(attackData != null ? attackData.teleportOut : null);
+            yield return new WaitForSeconds(0.25f);
+
+            // Target: far edge of the Warrior's platform (reuse Zone 2), else a Zone-1 fallback offset.
+            Collider2D platform = GetWarriorPlatformCollider(warrior);
+            Vector3 target = platform != null
+                ? GetCrescentFirePosition(platform)
+                : GetDefensiveFallbackPosition(warrior);
+
+            MarkIntentionalEnemyDisplacement(0.3f);
+            if (rigidbody2 != null)
+                rigidbody2.position = target;
+            else
+                transform.position = target;
+
+            SpawnFx(attackData != null ? attackData.teleportVfxPrefab : null, target);
+            SetVisible(true);
+            PlaySfx(attackData != null ? attackData.teleportIn : null);
+            FaceWarrior(warrior);
+            yield return new WaitForSeconds(0.15f);
+
+            // Resume Zone 2 ALREADY LOCKED on the edge we just teleported onto. We must set the locked
+            // state ourselves: if we left _crescentState = MovingToEdge, HandleCrescentZone would see
+            // _lastKnownWarriorPlatform == null (reset by the melee/contact ExitCrescentEngagement that
+            // ran while Zort was being hit) and recompute GetCrescentFirePosition from Zort's NEW
+            // far-edge position — which flips the chosen edge to the opposite side, sending Zort back
+            // across the platform so the arrival test never passes and he never fires.
+            _crescentEngaged = true;
+            if (platform != null)
+            {
+                _lockedFirePosition = target;
+                _lastKnownWarriorPlatform = platform;     // skip the recompute in HandleCrescentZone
+                _crescentState = CrescentZoneState.FiringFromEdge;
+                _crescentZoneTimer = 0f;                  // fire immediately next frame
+            }
+            else
+            {
+                // Zone-1 fallback target: let the FSM realign once the Warrior is on a platform again.
+                _crescentState = CrescentZoneState.MovingToEdge;
+                _lastKnownWarriorPlatform = null;
+            }
+
+            _invulnerable = false;
+            EndAction();
+        }
+
+        // Zone-1 fallback when the Warrior has no platform: a point within (meleeRange, crescentRange].
+        private Vector3 GetDefensiveFallbackPosition(Warrior warrior)
+        {
+            float side = transform.position.x <= warrior.transform.position.x ? -1f : 1f;
+            float offset = Mathf.Clamp(crescentRange * 0.9f, meleeRange + 1f, crescentRange);
+            return new Vector3(
+                warrior.transform.position.x + side * offset,
+                warrior.transform.position.y + hoverHeight,
+                transform.position.z);
         }
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -692,10 +1284,18 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         private void FireVoidProjectile(GameObject prefab, Vector2 dir, float speed, int damage,
             ProjectileMode mode = ProjectileMode.Aerial)
         {
+            Vector3 spawnPos = projectileOrigin != null ? projectileOrigin.position : transform.position;
+            FireVoidProjectileAt(spawnPos, prefab, dir, speed, damage, mode);
+        }
+
+        /// <summary>Same as <see cref="FireVoidProjectile"/> but the spawn position is explicit
+        /// (used by the Zone-2 vertical crescent, which spawns above the Warrior).</summary>
+        private void FireVoidProjectileAt(Vector2 spawnPos, GameObject prefab, Vector2 dir, float speed, int damage,
+            ProjectileMode mode = ProjectileMode.Aerial)
+        {
             if (prefab == null)
                 return;
 
-            Vector3 spawnPos = projectileOrigin != null ? projectileOrigin.position : transform.position;
             GameObject obj = Instantiate(prefab, spawnPos, Quaternion.identity);
 
             Rigidbody2D rb = obj.GetComponent<Rigidbody2D>();
@@ -733,6 +1333,61 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             ParticleSystem ps = obj.GetComponent<ParticleSystem>();
             if (ps != null)
                 ps.Play(true);
+        }
+
+        /// <summary>
+        /// Disable physical collision between Zort's colliders and every platform so the levitating
+        /// boss can pass through them. Platforms are detected by the "PlatformLayer" layer and the
+        /// <see cref="PlatFormColliderTrigger"/> component (inspector-mask independent). Per-collider,
+        /// so other enemies keep colliding with platforms normally. <see cref="OnCollisionEnter2D"/>
+        /// catches any platform that spawns (or is met) after Start.
+        /// </summary>
+        private void IgnorePlatformCollisions()
+        {
+            Collider2D[] myColliders = GetComponentsInChildren<Collider2D>(true);
+            if (myColliders == null || myColliders.Length == 0)
+                return;
+
+            Collider2D[] sceneColliders = FindObjectsByType<Collider2D>(FindObjectsSortMode.None);
+            for (int i = 0; i < sceneColliders.Length; i++)
+            {
+                Collider2D platformCollider = sceneColliders[i];
+                if (platformCollider == null || !IsPlatformCollider(platformCollider))
+                    continue;
+
+                for (int j = 0; j < myColliders.Length; j++)
+                {
+                    if (myColliders[j] != null)
+                        Physics2D.IgnoreCollision(myColliders[j], platformCollider, true);
+                }
+            }
+        }
+
+        // Catch platforms spawned (or first met) after Start: phase through them from contact on.
+        protected override void OnCollisionEnter2D(Collision2D collision)
+        {
+            base.OnCollisionEnter2D(collision);
+
+            if (collision == null || collision.collider == null || collision.otherCollider == null)
+                return;
+
+            if (IsPlatformCollider(collision.collider))
+                Physics2D.IgnoreCollision(collision.otherCollider, collision.collider, true);
+        }
+
+        private bool IsPlatformCollider(Collider2D col)
+        {
+            if (col == null)
+                return false;
+
+            int platformLayer = LayerMask.NameToLayer("PlatformLayer");
+            if (platformLayer >= 0 && col.gameObject.layer == platformLayer)
+                return true;
+
+            if (platformLayerMask.value != 0 && (platformLayerMask.value & (1 << col.gameObject.layer)) != 0)
+                return true;
+
+            return col.GetComponentInParent<PlatFormColliderTrigger>() != null;
         }
 
         private void IgnoreOwnerCollisions(GameObject projectileObject)

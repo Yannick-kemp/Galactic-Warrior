@@ -102,6 +102,21 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [Tooltip("Damage per rift projectile.")]
         public int riftDamage = 10;
 
+        // ─── Earth Slash (close range) ────────────────────────────────────────────
+
+        [Header("Earth Slash (close range)")]
+        [Tooltip("Pure-VFX slash prefab (no scripts). Assign Slash_Earth_VFX here.")]
+        public GameObject slashEarthVfxPrefab;
+
+        [Tooltip("Horizontal sprint speed while charging toward the Warrior.")]
+        public float earthSlashDashSpeed = 8f;
+
+        [Tooltip("Maximum horizontal distance Zort will dash before committing to the slash.")]
+        public float earthSlashMaxDashDistance = 4f;
+
+        [Tooltip("Warrior must be within this distance when the slash lands to take damage.")]
+        public float earthSlashContactRange = 1.5f;
+
         // ─── Gravity Well (Phase 2+) ──────────────────────────────────────────────
 
         [Header("Gravity Well (Phase 2+)")]
