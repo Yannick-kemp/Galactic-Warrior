@@ -1,8 +1,9 @@
 ﻿using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Characteres.EnemyController;
 using Assets.Scripts.Characteres.WarriorController;
-using Assets.Scripts.Services;
 using Assets.Scripts.Platforms;
+using Assets.Scripts.Relics.Events;
+using Assets.Scripts.Services;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -161,6 +162,84 @@ public class ZalaytyMonster : Enemy
 
     public bool inRangeOrAttacking;
 
+    [Header("Warrior-On-Top Press Guard - Zalayty Only")]
+    [Tooltip("Grace time after a Warrior contact on Zalayty's top bound during which the " +
+             "one-way platform must NOT treat the downward push as an edge loss / fall-through.")]
+    [SerializeField, Min(0f)] private float warriorTopPressGraceTime = 0.12f;
+
+    [Tooltip("When true, Zalayty independently detects (by collider bounds, every FixedUpdate) that the Warrior is resting/landing on his top bound and opens the press grace himself. This removes the dependency on the Warrior's collision-callback normal classification and frame ordering, which is the source of intermittent tunneling through his own one-way platform on fast landings. Set false to revert to callback-only behavior.")]
+    [SerializeField] private bool enableGeometricWarriorTopPressGuard = true;
+
+    [Tooltip("Proximity band (meters) used by the geometric top-press check. The Warrior counts as pressing on top while his body overlaps Zalayty's body (expanded by this band) from above. Generous enough to catch fast landings that already penetrated.")]
+    [SerializeField, Min(0.001f)] private float geometricWarriorTopPressBand = 0.14f;
+
+    private float _warriorPressingOnTopUntil = -999f;
+
+    /// <summary>True while a Warrior is (or just was) pressing down on Zalayty's top bound.</summary>
+    public bool IsWarriorPressingOnTop => Time.time <= _warriorPressingOnTopUntil;
+
+    /// <summary>
+    /// Called by the Warrior collision code while it rests/lands on Zalayty's top bound.
+    /// Opens a short grace window so the one-way platform's edge-fall heuristic does not
+    /// misread the transient downward push as Zalayty walking off the edge.
+    /// </summary>
+    public void NotifyWarriorPressingOnTop()
+    {
+        if (_deathStarted || currentHealth <= 0f)
+            return;
+
+        _warriorPressingOnTopUntil =
+            Time.time + Mathf.Max(warriorTopPressGraceTime, Time.fixedDeltaTime * 2f);
+    }
+
+    /// <summary>
+    /// Geometric backstop for the press grace. Runs every FixedUpdate (before the physics
+    /// step and therefore before the platform's collision callbacks read
+    /// <see cref="IsWarriorPressingOnTop"/>). It opens the press grace whenever the Warrior's
+    /// body is overlapping Zalayty's body from above — regardless of whether the Warrior's
+    /// own collision callback fired this frame or produced a clean upward contact normal.
+    /// This is purely additive: it can only EXTEND the grace (keep Zalayty solid on his own
+    /// one-way platform while pressed), never force a fall and never touch combat.
+    /// </summary>
+    private void RefreshWarriorTopPressGraceFromGeometry()
+    {
+        if (!enableGeometricWarriorTopPressGuard)
+            return;
+
+        if (_deathStarted || currentHealth <= 0f)
+            return;
+
+        Warrior warrior = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
+        if (warrior == null || warrior.IsDead)
+            return;
+
+        BoxCollider2D zBox = GetMainBoxColliderForPhysicalContact();
+        BoxCollider2D wBox = GetWarriorMainBoxCollider(warrior);
+        if (zBox == null || wBox == null)
+            return;
+
+        Bounds z = zBox.bounds;
+        Bounds w = wBox.bounds;
+
+        // Bodies overlapping (with band tolerance so a clean rest-on-top that is merely
+        // touching also counts). Using an expanded-bounds intersect makes this robust to
+        // both light contact and deep one-frame penetration on fast landings.
+        Bounds wExpanded = w;
+        wExpanded.Expand(geometricWarriorTopPressBand);
+        if (!z.Intersects(wExpanded))
+            return;
+
+        // Must be a TOP press, not a side touch (same height) or head-bonk (Warrior below).
+        bool warriorAbove = w.center.y > z.center.y;
+
+        // Warrior's collider bottom has reached Zalayty's top zone or gone below it
+        // (penetration). This rejects a Warrior standing on a higher platform well above.
+        bool bottomReachedTopZone = w.min.y <= z.max.y + geometricWarriorTopPressBand;
+
+        if (warriorAbove && bottomReachedTopZone)
+            NotifyWarriorPressingOnTop();
+    }
+
     [Header("Independent Movement - Zalayty Only")]
     [Tooltip("If true, Zalayty does not use CharacterController MoveToward/JumpToward and is not clamped by platform edges.")]
     [SerializeField] private bool useIndependentMovement = true;
@@ -285,11 +364,17 @@ public class ZalaytyMonster : Enemy
     [Tooltip("If true, the absorber requires both CurrentplatForm values to be known and different. This keeps same-platform combat untouched.")]
     [SerializeField] private bool requireKnownDifferentPlatformsForImpactAbsorption = true;
 
+    [Tooltip("Grace window (seconds) after a platform-change jump arrival during which a fast side body impact onto the Warrior is still routed through the controlled absorber, even if Zalayty's CurrentplatForm has already refreshed to the Warrior's platform. Closes the landing-frame gap where the raw solver impulse would otherwise violently shove a grounded Warrior. Set to 0 to disable.")]
+    [SerializeField, Min(0f)] private float platformChangeArrivalImpactGrace = 0.12f;
+
     private Vector2 _lastZalaytyBodyMoveVelocity;
     private float _lastZalaytyBodyMoveVelocityTime = -999f;
     private bool _lastZalaytyBodyMoveWasPlatformChangeJump;
     private float _nextAllowedDifferentPlatformImpactTime = -999f;
     private float _differentPlatformImpactLockUntil = -999f;
+    private float _recentPlatformChangeArrivalUntil = -999f;
+
+
 
     public bool TryGetIndependentMoveRequestForCurrentFixedStep(out Vector2 requestedPosition)
     {
@@ -606,6 +691,16 @@ public class ZalaytyMonster : Enemy
 
     private void FixedUpdate()
     {
+        // Sampled FIRST: measures the real body displacement produced by the PREVIOUS
+        // physics step (own move, platform carry, knockback, depenetration, anti-tunneling)
+        // and never lets Zalayty stay in Wait while he actually translated.
+        SyncAnimationToActualMovement();
+
+        // Open the Warrior-on-top press grace from geometry BEFORE the physics step so the
+        // one-way platform never misreads a fast top landing as an edge loss and goes
+        // pass-through (which is what lets Zalayty tunnel through his own platform).
+        RefreshWarriorTopPressGraceFromGeometry();
+
         PreventUnauthorizedTakeoffLift();
     }
 
@@ -2293,6 +2388,13 @@ public class ZalaytyMonster : Enemy
             activesJumpCoroutine != null ||
             _activeJumpTargetPlatform != null ||
             CurrentplatForm == null;
+
+        // While Zalayty is moving as a platform-change jump, keep refreshing the arrival
+        // grace window. This lets the absorber still recognize the impact for a couple of
+        // frames AFTER the jump flag clears and CurrentplatForm flips to the Warrior's
+        // platform on the landing frame.
+        if (_lastZalaytyBodyMoveWasPlatformChangeJump && platformChangeArrivalImpactGrace > 0f)
+            _recentPlatformChangeArrivalUntil = Time.time + platformChangeArrivalImpactGrace;
     }
 
     private void StopHorizontalVelocityIfNeeded()
@@ -2908,8 +3010,84 @@ public class ZalaytyMonster : Enemy
     }
     private bool _isWaitingAnimActive = false;
 
+    [Header("Movement / Animation Sync - Zalayty Only")]
+    [Tooltip("Per physics-step world distance above which Zalayty is considered to be really translating. " +
+             "Movement at/above this never displays Wait. Keep it just above physics-solver jitter.")]
+    [SerializeField, Min(0f)] private float movementAnimationSyncThreshold = 0.01f;
+
+    [Tooltip("After the last significant translation, Wait stays suppressed for this long. " +
+             "This hysteresis prevents Run/Wait flicker between movement steps.")]
+    [SerializeField, Min(0f)] private float waitSuppressionAfterMovement = 0.12f;
+
+    private Vector2 _lastAnimSyncBodyPosition;
+    private bool _hasLastAnimSyncBodyPosition;
+    private float _lastSignificantTranslationTime = -999f;
+
+    /// <summary>
+    /// Result-based animation guarantee. By comparing the rigidbody's actual position
+    /// between physics steps it captures EVERY displacement cause (AI navigation, platform
+    /// carry, combat knockback, collision/overlap recovery, repulsion, anti-tunneling
+    /// corrections, coroutines) without having to enumerate them. Whenever Zalayty really
+    /// moved but the animator is still in Wait, it switches him to the correct locomotion
+    /// animation (Jump while airborne, otherwise Run). Attack/death states are never touched.
+    /// </summary>
+    private void SyncAnimationToActualMovement()
+    {
+        Vector2 currentBodyPosition = rigidbody2 != null
+            ? rigidbody2.position
+            : (Vector2)transform.position;
+
+        if (!_hasLastAnimSyncBodyPosition)
+        {
+            _lastAnimSyncBodyPosition = currentBodyPosition;
+            _hasLastAnimSyncBodyPosition = true;
+            return;
+        }
+
+        float stepDistance = Vector2.Distance(currentBodyPosition, _lastAnimSyncBodyPosition);
+        _lastAnimSyncBodyPosition = currentBodyPosition;
+
+        if (stepDistance >= movementAnimationSyncThreshold)
+            _lastSignificantTranslationTime = Time.time;
+
+        // Dead / attacking states fully own the animator. Never override them.
+        if (_deathStarted || currentHealth <= 0f)
+            return;
+
+        if (IsAttackAnimationActive())
+            return;
+
+        bool movingNow = Time.time <= _lastSignificantTranslationTime + waitSuppressionAfterMovement;
+        if (!movingNow)
+            return;
+
+        // Only act to CORRECT a Wait state. Run / Jump / Walk are left untouched.
+        bool animatorInWait = _isWaitingAnimActive ||
+                              (animator != null && animator.GetBool("isWaiting"));
+        if (!animatorInWait)
+            return;
+
+        bool airborne = _isJumping || activesJumpCoroutine != null || _warriorTopReboundActive;
+        if (airborne)
+        {
+            ForceZalaytyAirborneAnimationOnly();
+        }
+        else
+        {
+            ExitWaitAnimation();
+            RunAnimationDisplay();
+        }
+    }
+
     private void EnterWaitAnimation()
     {
+        // Never display Wait while Zalayty is actually translating in the world. If the body
+        // moved within the suppression window, keep the locomotion animation instead. This is
+        // the second half of the movement/animation sync guarantee and prevents the A* / idle
+        // branch from re-asserting Wait over an ongoing physics displacement.
+        if (Time.time <= _lastSignificantTranslationTime + waitSuppressionAfterMovement)
+            return;
+
         if (_isWaitingAnimActive) return;
 
         _isWaitingAnimActive = true;
@@ -3111,7 +3289,15 @@ public class ZalaytyMonster : Enemy
         if (warrior == null || warrior.collider2 == null || warrior.IsDead)
             return false;
 
-        if (!IsKnownDifferentPlatformFromWarrior(warrior))
+        // Platform-change arrival grace: at the exact landing frame, Zalayty's
+        // CurrentplatForm may have already refreshed to the Warrior's platform, which
+        // would make IsKnownDifferentPlatformFromWarrior() report "same platform" and let
+        // the raw solver impulse violently shove a grounded Warrior. The grace window
+        // (refreshed every frame of the platform-change jump) keeps the controlled
+        // absorber eligible for a couple of frames after arrival.
+        bool arrivalGrace = Time.time <= _recentPlatformChangeArrivalUntil;
+
+        if (!IsKnownDifferentPlatformFromWarrior(warrior) && !arrivalGrace)
             return false;
 
         // Do not steal the special top-bound rule. Top contact is handled by
@@ -3124,7 +3310,8 @@ public class ZalaytyMonster : Enemy
             _isJumping ||
             activesJumpCoroutine != null ||
             _activeJumpTargetPlatform != null ||
-            _lastZalaytyBodyMoveWasPlatformChangeJump;
+            _lastZalaytyBodyMoveWasPlatformChangeJump ||
+            arrivalGrace;
 
         if (!platformChangeMotion)
             return false;

@@ -70,6 +70,17 @@ namespace Assets.Scripts.Platforms
         public bool IsMovingDownNow => !_isMovingUp;
         public Vector2 LastLiftDelta => _lastLiftDelta;
 
+        /// <summary>
+        /// True while this lift is actively carrying the given character as a registered rider.
+        /// This is the authoritative "grounded on the lift" signal: it stays valid even while the
+        /// platform descends and the rider's foot ground points momentarily float a hair above the
+        /// lift top (riderSurfaceOffset), where CountGroundPoints() would otherwise read 0.
+        /// </summary>
+        public bool IsCarrying(CharacterController character)
+        {
+            return character != null && _riders.Contains(character);
+        }
+
         private void Awake()
         {
 #if UNITY_ANDROID
@@ -87,6 +98,12 @@ namespace Assets.Scripts.Platforms
 
             if (_platformBody != null)
             {
+                // Match the proven MovingHorizontalPlatform setup: a Kinematic body moved
+                // with MovePosition under Interpolate. A directly-assigned Rigidbody2D.position
+                // is a non-interpolated teleport, which renders the platform one physics step
+                // ahead of an Interpolated rider carried with MovePosition. That offset is the
+                // micro-separation / jitter, most visible while descending.
+                _platformBody.bodyType = RigidbodyType2D.Kinematic;
                 _platformBody.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
                 _platformBody.gravityScale = 0f;
                 _platformBody.interpolation = RigidbodyInterpolation2D.Interpolate;
@@ -125,38 +142,37 @@ namespace Assets.Scripts.Platforms
                 return;
             }
 
-            _lastLiftDelta = MovePlatformStep();
-
-            if (carryCharactersLikeLift)
-                CarryRegisteredRiders(_lastLiftDelta);
-        }
-
-
-
-        private Vector2 MovePlatformStep()
-        {
+            // Compute this step's vertical delta but do NOT move the body yet.
             Vector2 current = transform.position;
             float targetY = _isMovingUp ? _worldMaxY : _worldMinY;
             float newY = Mathf.MoveTowards(current.y, targetY, moveSpeed * Time.fixedDeltaTime);
             Vector2 next = new Vector2(current.x, newY);
-            Vector2 delta = next - current;
+            _lastLiftDelta = next - current;
 
-            if (delta.sqrMagnitude > 0.0000001f)
+            // Carry the riders FIRST, using the predicted delta, then commit the platform
+            // body. Both the platform and its riders are moved with MovePosition in the same
+            // physics step, so their interpolated render poses stay locked together and no
+            // micro-gap can open between the rider's feet and the platform top.
+            if (carryCharactersLikeLift)
+                CarryRegisteredRiders(_lastLiftDelta);
+
+            if (_lastLiftDelta.sqrMagnitude > 0.0000001f)
                 MovePlatformTo(next);
 
             if (Mathf.Abs(newY - targetY) < 0.001f)
                 _isMovingUp = !_isMovingUp;
-
-            return delta;
         }
 
         private void MovePlatformTo(Vector2 position)
         {
+            // MovePosition (not a direct position/transform assignment) so the Interpolated
+            // kinematic body renders in lockstep with the riders, which are also carried with
+            // MovePosition. No mid-step transform write or SyncTransforms: those defeat
+            // interpolation and reintroduce the jitter.
             if (_platformBody != null)
-                _platformBody.position = position;
-
-            transform.position = new Vector3(position.x, position.y, transform.position.z);
-            Physics2D.SyncTransforms();
+                _platformBody.MovePosition(position);
+            else
+                transform.position = new Vector3(position.x, position.y, transform.position.z);
         }
 
         protected override void OnCollisionEnter2D(Collision2D collision)
@@ -271,6 +287,11 @@ namespace Assets.Scripts.Platforms
             warrior.IsFallingHitEnemy = false;
             warrior.IsFallingGrazesEdge = false;
 
+            // Confirmed top-surface landing on the lift: clear the descent flag too. Otherwise it
+            // stays stale-true through the platform's downward leg (where CountGroundPoints() reads
+            // 0) and an enemy touch would wrongly trigger the "descending onto enemy" bounce path.
+            warrior.DescendentPhase = false;
+
             warrior._blockAction = false;
             warrior.LastSafePlatform = this;
             warrior.LastSafePosition =
@@ -362,6 +383,7 @@ namespace Assets.Scripts.Platforms
                 warrior.IsFallingPlfExit = false;
                 warrior.IsFallingHitEnemy = false;
                 warrior.IsFallingGrazesEdge = false;
+                warrior.DescendentPhase = false;
 
                 warrior._blockAction = false;
                 warrior.LastSafePlatform = this;
@@ -444,6 +466,7 @@ namespace Assets.Scripts.Platforms
                     warrior.IsFallingPlfExit = false;
                     warrior.IsFallingHitEnemy = false;
                     warrior.IsFallingGrazesEdge = false;
+                    warrior.DescendentPhase = false;
                     warrior._blockAction = false;
                     warrior.LastSafePlatform = this;
                     warrior.LastSafePosition = GetSafeRespawnPositionFor(warrior, warrior.transform.position.x);
@@ -681,8 +704,14 @@ namespace Assets.Scripts.Platforms
             if (support == null || platformCollider == null)
                 return liftDelta;
 
+            // The platform body has not been committed yet this physics step (it is moved
+            // via MovePosition after the riders are carried), so its collider bounds still
+            // hold the pre-step top. Predict the post-step top by adding the lift delta, and
+            // seat the rider bottom exactly onto it. This makes the seat deterministic for
+            // ascending, descending, direction changes and the paused/zero-delta case.
+            float predictedTop = platformCollider.bounds.max.y + liftDelta.y;
             float bottomAfterLift = support.bounds.min.y + liftDelta.y;
-            float desiredBottom = platformCollider.bounds.max.y + riderSurfaceOffset;
+            float desiredBottom = predictedTop + riderSurfaceOffset;
             float correctionY = desiredBottom - bottomAfterLift;
 
             return new Vector2(liftDelta.x, liftDelta.y + correctionY);
@@ -728,31 +757,34 @@ namespace Assets.Scripts.Platforms
             Vector2 liftOnlyDelta = new Vector2(0f, delta.y);
 
             // Zalayty may have a special independent move request. Keep it first.
+            // ApplyMovingPlatformMergedIndependentMove routes through MovePosition; do not
+            // SyncTransforms afterwards, otherwise the rider is snapped to its target and
+            // loses interpolation against the platform (the jitter source).
             if (rider is ZalaytyMonster zalayty &&
                 zalayty.TryGetIndependentMoveRequestForCurrentFixedStep(out Vector2 zalaytyRequestedPosition))
             {
                 Vector2 mergedPosition = zalaytyRequestedPosition + liftOnlyDelta;
                 zalayty.ApplyMovingPlatformMergedIndependentMove(mergedPosition);
-                Physics2D.SyncTransforms();
                 return;
             }
 
             // Generic CharacterController merge: Warrior, M97, and other enemies.
-            // Preserve the character's requested X and add only the lift Y.
+            // Preserve the character's requested X and add only the lift Y. This also routes
+            // through MovePosition (RequestCoreMovePosition), so no SyncTransforms here.
             if (rider.TryGetCoreMoveRequestForRecentStep(out Vector2 requestedPosition))
             {
                 Vector2 mergedPosition = requestedPosition + liftOnlyDelta;
                 rider.ApplyMovingPlatformMergedCoreMove(mergedPosition);
-                Physics2D.SyncTransforms();
                 return;
             }
 
-            // No controller movement requested this step: lift the rider vertically only.
+            // No controller movement requested this step: lift the rider vertically only,
+            // with MovePosition so it interpolates in lockstep with the platform body.
             if (rider.rigidbody2 != null)
             {
                 Vector2 target = rider.rigidbody2.position;
                 target.y += liftOnlyDelta.y;
-                rider.rigidbody2.position = target;
+                rider.rigidbody2.MovePosition(target);
             }
             else
             {
@@ -760,8 +792,6 @@ namespace Assets.Scripts.Platforms
                 position.y += liftOnlyDelta.y;
                 rider.transform.position = position;
             }
-
-            Physics2D.SyncTransforms();
         }
 
         private void StopDownwardVelocity(CharacterController rider)

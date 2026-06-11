@@ -683,9 +683,9 @@ namespace Assets.Scripts.Platforms
 
             while (zalayty != null && platformCollider != null)
             {
-                if (!IsAnyCharacterColliderTouchingOrOverlappingPlatformBody(zalayty, zalaytyJumpDownRestoreContactSkin))
+                if (!IsAnyCharacterColliderTouchingOrOverlappingPlatformBody(zalayty, zalaytyJumpDownRestoreContactSkin) &&
+                    !ShouldKeepZalaytyJumpDownPassThrough(zalayty))
                     break;
-                Debug.Log("Zalayty jump-down still unsafe because of body contact for " + zalayty.name);
                 SetIgnoreForCharacter(zalayty, true);
                 yield return wait;
             }
@@ -736,6 +736,14 @@ namespace Assets.Scripts.Platforms
 
             // Do not turn a predicted destination landing into a fall-through.
             if (ShouldKeepPredictedTopLandingSolid(zalayty))
+                return false;
+
+            // A Warrior pressing/landing on Zalayty's top bound can transiently push his
+            // ground points off this platform's probe radius. That must NOT be read as an
+            // edge loss, otherwise this source platform turns pass-through and Zalayty
+            // tunnels straight through it. Keep him solid while pressed; normal edge-fall
+            // resumes automatically once the press grace window expires.
+            if (zalayty.IsWarriorPressingOnTop)
                 return false;
 
             return zalayty.CountGroundPointsOnSpecificPlatform(this) <= 1;
