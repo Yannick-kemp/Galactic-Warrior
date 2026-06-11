@@ -100,6 +100,11 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [Tooltip("Optional child Transform the crescent spawns from (blade/head). Null = Zort's position.")]
         [SerializeField] private Transform crescentSpawnPoint;
 
+        [Header("Zone 2 — Crescent Animation Sync")]
+        [Tooltip("Safety timeout (s) if the OnCrescentReleaseFrame AnimationEvent never fires (clip " +
+                 "changed, transition cut). The projectile spawns anyway after this delay so the FSM never blocks.")]
+        [SerializeField] private float crescentReleaseTimeout = 1.5f;
+
         [Header("Zone 3 — Contact Trigger")]
         [Tooltip("Minimum delay between two contact-triggered Earth Slashes (anti-spam).")]
         [SerializeField] private float contactSlashCooldown = 1f;
@@ -139,6 +144,11 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         // Zone 3 contact trigger anti-spam.
         private float _nextContactSlashTime;
+
+        // Zone 2 crescent animation-event sync: _awaitingCrescentRelease is true only while a
+        // VerticalCrescentRoutine is waiting; OnCrescentReleaseFrame then sets _crescentReleaseFired.
+        private bool _crescentReleaseFired;
+        private bool _awaitingCrescentRelease;
 
         // Defensive teleport (two hits within a window → reposition to Zone 2).
         private int _hitsTakenCount;
@@ -802,12 +812,18 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             if (attackData == null || warrior == null) { EndAction(); yield break; }
 
+            _crescentReleaseFired = false;     // reset before the slash animation plays
+            _awaitingCrescentRelease = true;   // arm OnCrescentReleaseFrame for THIS routine only
             AttackAnimationDisplay();
             PlaySfx(attackData.crescentCharge);
 
-            yield return new WaitForSeconds(attackData.crescentTelegraphDuration);
+            // Wait for the blade-release frame signalled by the AnimationEvent (OnCrescentReleaseFrame),
+            // with a safety timeout so the FSM never blocks if the event never arrives.
+            float releaseTimeout = Time.time + crescentReleaseTimeout;
+            yield return new WaitUntil(() => _crescentReleaseFired || Time.time >= releaseTimeout);
+            _awaitingCrescentRelease = false;
 
-            // Spawn from the configurable point (blade/head child Transform) or Zort's position.
+            // Spawn from the animated marker (crescentSpawnPoint follows the blade) or Zort's position.
             Vector2 spawnPos = GetCrescentSpawnPos();
 
             FireVoidProjectileAt(spawnPos, attackData.crescentPrefab,
@@ -817,6 +833,18 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             yield return new WaitForSeconds(0.4f);
             EndAction();
+        }
+
+        /// <summary>
+        /// Called by an AnimationEvent on the slash clip, at the exact frame Zort swings his blade.
+        /// Unblocks VerticalCrescentRoutine so the projectile spawns precisely then. Guarded by
+        /// _awaitingCrescentRelease, so the same shared "isAttacking" clip on other attacks (Shadow
+        /// Step, Void Stare, …) has no side effect — the flag is only honoured while the crescent waits.
+        /// </summary>
+        public void OnCrescentReleaseFrame()
+        {
+            if (_awaitingCrescentRelease)
+                _crescentReleaseFired = true;
         }
 
         /// <summary>Teleport next to the Warrior (AttackShadowStep pattern) then chain Earth Slash.</summary>
@@ -981,7 +1009,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             // 2. Arrival telegraph: wind-up.
             FaceWarrior(warrior);
-            AttackAnimationDisplay();
+            AttackAnimation2Display();
             PlaySfx(attackData.meleeHit);
             yield return new WaitForSeconds(0.3f);
 

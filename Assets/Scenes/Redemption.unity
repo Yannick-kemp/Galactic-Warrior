@@ -1618,6 +1618,7 @@ Transform:
   - {fileID: 556305289}
   - {fileID: 2091214021}
   - {fileID: 194302921}
+  - {fileID: 638520062}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &314623499
@@ -1929,8 +1930,19 @@ MonoBehaviour:
   meleeRange: 2.5
   levitationSpeed: 3
   hoverHeight: 1.5
-  crescentZoneCooldown: 2
   smallPlatformTeleportDelay: 2
+  crescentHoverHeight: 4
+  crescentEdgeMargin: 0.3
+  crescentZoneCooldown: 2
+  crescentApproachSpeed: 1.2
+  crescentArrivalThreshold: 0.2
+  crescentSpawnPoint: {fileID: 638520062}
+  crescentReleaseTimeout: 1.5
+  contactSlashCooldown: 1
+  contactSlashRange: 1.4
+  hitsToTriggerDefensive: 2
+  defensiveHitWindow: 2.5
+  defensiveTeleportCooldown: 8
   smallPlatformWidthThreshold: 4.7
   platformLayerMask:
     serializedVersion: 2
@@ -3875,6 +3887,37 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 240a691cac7974b40ad353fc91deb939, type: 3}
+--- !u!1 &638520061
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 638520062}
+  m_Layer: 7
+  m_Name: crescentSpawnPoint
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &638520062
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 638520061}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 314623498}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!4 &701596203 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5757980597610787596, guid: 1e41e7db7d507fa449f055c12d0973ea, type: 3}

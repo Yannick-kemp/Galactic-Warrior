@@ -90,7 +90,15 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 }
             }
 
-            transform.right = _direction;
+            // Aerial: orient along the travel direction. GroundSlide: never use _direction here —
+            // transform.right = Vector2.down would rotate the whole VFX prefab -90°, swinging its
+            // offset child systems (Flying/Debris/Trails) around the pivot. Instead, flip it
+            // HORIZONTALLY toward the Warrior right away (same transform.right convention the slide
+            // phase re-applies each FixedUpdate, so landing simply overwrites with the same logic).
+            if (_mode == ProjectileMode.Aerial)
+                transform.right = _direction;
+            else
+                transform.right = new Vector2(GetHorizontalSignTowardWarrior(), 0f);
 
             if (lifetime > 0f)
                 Destroy(gameObject, lifetime);
@@ -305,6 +313,22 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 p.y = plat.platformCollider.bounds.max.y + _surfaceOffset;
                 _rb.position = p;
             }
+        }
+
+        // Horizontal sign toward the Warrior's current position; falls back to the fire direction's
+        // X sign (then right) when no Warrior exists. Shared convention between the spawn orientation
+        // and the slide phase, so the two can never fight each other.
+        private float GetHorizontalSignTowardWarrior()
+        {
+            Warrior warrior = GetWarrior();
+            if (warrior != null)
+            {
+                float dx = warrior.transform.position.x - transform.position.x;
+                if (Mathf.Abs(dx) > 0.001f)
+                    return Mathf.Sign(dx);
+            }
+
+            return _direction.x >= 0f ? 1f : -1f;
         }
 
         private void SpawnImpactFx(Vector2 hitPoint)
