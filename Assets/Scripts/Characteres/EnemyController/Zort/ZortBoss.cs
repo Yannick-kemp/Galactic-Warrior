@@ -199,6 +199,11 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         private bool _earthSlashReleaseFired;
         private bool _awaitingEarthSlashRelease;
 
+        // Earth Slash : contexte partagé entre la coroutine et les AnimationEvents de swing
+        // (OnEarthSlashSwingFrame1/2/3), qui sont des callbacks Animator sans accès aux locales.
+        private Warrior _earthSlashWarrior;
+        private bool _earthSlashHitLanded;
+
         // Defensive teleport (two hits within a window → reposition to Zone 2).
         private int _hitsTakenCount;
         private float _lastHitTime = -999f;
@@ -591,6 +596,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             _dashDodgePending = false;
             _awaitingEarthSlashRelease = false; // a cut-short slash must not leave the event armed
             _earthSlashReleaseFired = false;
+            _earthSlashWarrior = null;          // un AnimationEvent tardif ne doit pas toucher hors attaque
+            _earthSlashHitLanded = false;
         }
 
         private float GetCooldownForPhase()
@@ -1017,6 +1024,43 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 _earthSlashReleaseFired = true;
         }
 
+        /// <summary>Called by AnimationEvents on the 3 swing frames of the attack2 clip. Each plays its
+        /// swing sound AND applies the Earth Slash damage (proximity-gated via TryApplyEarthSlashDamage),
+        /// instead of the old continuous window. Guarded by _awaitingEarthSlashRelease so the same shared
+        /// "isAttacking2" clip on other attacks (Gravity Well, Desperation Nova) stays inert. The swing
+        /// frames MUST be placed at/before the release frame, else _awaitingEarthSlashRelease is already
+        /// false and neither the sound nor the damage fires.</summary>
+        public void OnEarthSlashSwingFrame1()
+        {
+            if (!_awaitingEarthSlashRelease || attackData == null) return;
+            PlaySfx(attackData.earthSlashSwing1);
+            TryApplyEarthSlashSwingDamage();
+        }
+
+        public void OnEarthSlashSwingFrame2()
+        {
+            if (!_awaitingEarthSlashRelease || attackData == null) return;
+            PlaySfx(attackData.earthSlashSwing2);
+            TryApplyEarthSlashSwingDamage();
+        }
+
+        public void OnEarthSlashSwingFrame3()
+        {
+            if (!_awaitingEarthSlashRelease || attackData == null) return;
+            PlaySfx(attackData.earthSlashSwing3);
+            TryApplyEarthSlashSwingDamage();
+        }
+
+        /// <summary>Variante A — un seul hit par slash : le premier des 3 frames de swing qui touche
+        /// inflige les dégâts, les suivants ne refont pas mal (mais leurs sons jouent quand même).
+        /// Réutilise TryApplyEarthSlashDamage (proximité earthSlashContactRange + gardes + son d'impact).</summary>
+        private void TryApplyEarthSlashSwingDamage()
+        {
+            if (_earthSlashHitLanded)
+                return;
+            if (TryApplyEarthSlashDamage(_earthSlashWarrior))
+                _earthSlashHitLanded = true;
+        }
         /// <summary>Teleport next to the Warrior (AttackShadowStep pattern) then chain Earth Slash.</summary>
         private IEnumerator TeleportThenEarthSlash(Warrior warrior)
         {
@@ -1172,6 +1216,11 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             if (attackData == null || warrior == null) { EndAction(); yield break; }
 
+            // Contexte lu par les AnimationEvents de swing (OnEarthSlashSwingFrame1/2/3) qui appliquent
+            // désormais les dégâts. Réinitialisé à chaque slash.
+            _earthSlashWarrior = warrior;
+            _earthSlashHitLanded = false;
+
             FaceWarrior(warrior);
 
             // 1. Charge horizontally toward the Warrior until within 1.2 units, after the max-distance
@@ -1185,10 +1234,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             // Esquive spectrale : armée pour toute la durée de la charge, une seule par dash.
             _dashDodgeArmed = true;
             _dashDodgePending = false;
-
-            // 1 hit par slash : la fenêtre de dégâts (charge → wind-up → recovery) touche dès que le
-            // Warrior est proche, à n'importe quel frame, puis se ferme pour cette exécution.
-            bool slashHitLanded = false;
 
             while (true)
             {
@@ -1231,10 +1276,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
                 FaceWarrior(warrior);
 
-                // Fenêtre de dégâts continue (proximité 2D, indépendante du frame et du saut) : dès que
-                // le Warrior est visuellement proche pendant la charge, il encaisse — une seule fois par slash.
-                if (!slashHitLanded && TryApplyEarthSlashDamage(warrior))
-                    slashHitLanded = true;
+                // Aucun dégât pendant la charge : ils sont désormais appliqués uniquement aux 3 frames
+                // de swing (OnEarthSlashSwingFrame1/2/3).
 
                 dashElapsed += Time.deltaTime;
                 yield return null;
@@ -1250,23 +1293,20 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             _earthSlashReleaseFired = false;     // reset before the slash animation plays
             _awaitingEarthSlashRelease = true;   // arm OnEarthSlashReleaseFrame for THIS routine only
             AttackAnimation2Display();
-            PlaySfx(attackData.meleeHit);
-           
+            // PlaySfx(attackData.meleeHit);
+
+            // Attente du release (Animation Event) ou du timeout. Les dégâts sont appliqués par les
+            // AnimationEvents de swing pendant cette fenêtre (tant que _awaitingEarthSlashRelease est true).
             float earthSlashReleaseDeadline = Time.time + earthSlashReleaseTimeout;
             while (!_earthSlashReleaseFired && Time.time < earthSlashReleaseDeadline)
-            {
-                if (!slashHitLanded && TryApplyEarthSlashDamage(warrior))
-                    slashHitLanded = true;
                 yield return null;
-            }
             _awaitingEarthSlashRelease = false;
 
             // 3. Slash VFX at the animated, flip-mirrored spawn point. Oriented via transform.right
             //    (same as VoidProjectile) so it lies in the 2D plane facing the slash direction.
             //    Pure VFX prefab — no Rigidbody2D/collider added.
-            // Son de swing, synchronisé avec le spawn du VFX (release piloté par l'AnimationEvent) ;
-            // distinct du meleeHit de wind-up joué à l'étape 2.
-            PlaySfx(attackData.earthSlashSwing);
+            // Note : earthSlashSwing n'est plus joué ici — il l'est par l'AnimationEvent OnEarthSlashSwingFrame
+            //        au frame 0 du clip attack2 (entrée du swing), synchronisé avec l'animation.
             if (attackData.slashEarthVfxPrefab != null)
             {
                 Vector3 spawnPos = GetEarthSlashSpawnPos();
@@ -1278,17 +1318,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 Destroy(vfx, 2f);
             }
 
-            // 4-5. Fenêtre active + recovery : on continue de vérifier la proximité 2D chaque frame
-            //      (no physics collider — direct range check, même pattern que VoidWraith) jusqu'à ce
-            //      que le slash touche une fois, ou que la recovery s'achève. Le Warrior est donc touché
-            //      dès qu'il est visuellement proche pendant l'exécution, peu importe le frame / le saut.
+            // 4-5. Recovery : plus aucun dégât ici (les dégâts ne partent qu'aux 3 frames de swing).
             float recoveryUntil = Time.time + 0.5f;
             while (Time.time < recoveryUntil)
-            {
-                if (!slashHitLanded && TryApplyEarthSlashDamage(warrior))
-                    slashHitLanded = true;
                 yield return null;
-            }
+
+            _earthSlashWarrior = null; // un AnimationEvent tardif ne doit pas toucher hors attaque
             EndAction();
         }
 
@@ -1673,8 +1708,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 return false;
 
             // Le coup ne porte que si DamageWarrior n'a pas été annulé in extremis (esquive/bouclier
-            // levés pile à ce frame) : son d'impact distinct uniquement sur un vrai hit (Option 1 —
-            // couvre la fenêtre de charge ET le slash final, une seule fois par slash via slashHitLanded).
+            // levés pile à ce frame) : earthSlashImpact distinct uniquement sur un vrai hit. Appelé
+            // désormais depuis les 3 AnimationEvents de swing via TryApplyEarthSlashSwingDamage.
             if (!DamageWarrior(warrior, attackData.shadowStepDamage, transform.position, HitKind.Projectile))
                 return false;
 
