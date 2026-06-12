@@ -44,6 +44,17 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         private PlatFormColliderTrigger _targetPlatform;    // GroundSlide: the platform currently being ridden
         private float _surfaceOffset = 0.18f;               // GroundSlide: half-height used to sit on a surface
 
+        // GroundSlide — origin-platform targeting (optional). When _hasFixedTarget is true, the shot
+        // lands at _targetSurfaceY and slides toward _targetSlideX (the Warrior's surface/position at
+        // LAUNCH), bounded by [_targetMinX, _targetMaxX], independent of where the Warrior goes next
+        // (e.g. jumps away). When false, GroundSlide keeps its original dynamic hunt of the Warrior's
+        // current platform. Aerial ignores all of these.
+        private bool _hasFixedTarget;
+        private float _targetSurfaceY;
+        private float _targetSlideX;
+        private float _targetMinX = float.NegativeInfinity;
+        private float _targetMaxX = float.PositiveInfinity;
+
         private void Awake()
         {
             _rb = GetComponent<Rigidbody2D>();
@@ -59,7 +70,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             float lifetime,
             LayerMask obstacleMask,
             GameObject impactFxPrefab,
-            ProjectileMode mode = ProjectileMode.Aerial)
+            ProjectileMode mode = ProjectileMode.Aerial,
+            bool hasGroundSlideTarget = false,
+            float targetSurfaceY = 0f,
+            float targetSlideX = 0f,
+            float targetMinX = float.NegativeInfinity,
+            float targetMaxX = float.PositiveInfinity)
         {
             _owner = owner;
             _direction = direction.sqrMagnitude > 0.001f ? direction.normalized : Vector2.right;
@@ -70,6 +86,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             _obstacleMask = obstacleMask;
             _impactFxPrefab = impactFxPrefab;
             _mode = mode;
+
+            // Origin-platform targeting only applies to GroundSlide; ignored otherwise so Aerial and any
+            // GroundSlide caller that omits the args keep their exact previous behaviour.
+            _hasFixedTarget = hasGroundSlideTarget && mode == ProjectileMode.GroundSlide;
+            _targetSurfaceY = targetSurfaceY;
+            _targetSlideX = targetSlideX;
+            _targetMinX = targetMinX;
+            _targetMaxX = targetMaxX;
 
             if (_rb == null)
                 _rb = GetComponent<Rigidbody2D>();
@@ -116,10 +140,37 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             }
 
             // ── GroundSlide ─────────────────────────────────────────────────────
-            // Seeking phase: do nothing — gravity + FreezePositionX make it fall straight down.
-            // ResolveHit decides when it has reached the Warrior's current platform.
+            // Seeking phase: gravity + FreezePositionX make it fall straight down.
+            //  • Fixed target : land as soon as it reaches the captured origin surface (Y threshold),
+            //                   regardless of the Warrior — robust to a jump during the fall.
+            //  • Dynamic      : ResolveHit lands it on the Warrior's CURRENT platform.
             if (!_sliding)
+            {
+                if (_hasFixedTarget && _rb.position.y <= _targetSurfaceY + _surfaceOffset)
+                    BeginFixedGroundSlide();
                 return;
+            }
+
+            // Fixed-target slide: ride the captured origin surface toward the captured X (where the
+            // Warrior was at launch), clamped to the platform's X extent. The Warrior's current
+            // position is never consulted here, so a jump after the launch changes nothing.
+            if (_hasFixedTarget)
+            {
+                float targetX = Mathf.Clamp(_targetSlideX, _targetMinX, _targetMaxX);
+                float dxFixed = targetX - transform.position.x;
+                float vxFixed = 0f;
+                if (Mathf.Abs(dxFixed) > 0.05f)
+                {
+                    vxFixed = Mathf.Sign(dxFixed) * _speed;
+                    transform.right = new Vector2(Mathf.Sign(dxFixed), 0f);
+                }
+                _rb.linearVelocity = new Vector2(vxFixed, 0f);
+
+                Vector2 pFixed = _rb.position;
+                pFixed.y = _targetSurfaceY + _surfaceOffset;
+                _rb.position = pFixed;
+                return;
+            }
 
             Warrior warrior = GetWarrior();
 
@@ -211,9 +262,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             {
                 if (_mode == ProjectileMode.GroundSlide)
                 {
-                    // Only the Warrior's CURRENT platform may stop the fall; every other platform is
-                    // passed through (the trigger collider never physically blocks).
-                    if (!_sliding && IsWarriorCurrentPlatform(other, out PlatFormColliderTrigger plat))
+                    // Fixed target: ignore collider-based landing entirely — the fall is resolved by the
+                    // Y threshold in FixedUpdate, so a Warrior jump (CurrentplatForm == null) can't make
+                    // the shot pass through its captured origin platform.
+                    // Dynamic: only the Warrior's CURRENT platform may stop the fall; every other
+                    // platform is passed through (the trigger collider never physically blocks).
+                    if (!_hasFixedTarget && !_sliding && IsWarriorCurrentPlatform(other, out PlatFormColliderTrigger plat))
                         BeginGroundSlide(plat);
 
                     return;
@@ -311,6 +365,28 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             {
                 Vector2 p = _rb.position;
                 p.y = plat.platformCollider.bounds.max.y + _surfaceOffset;
+                _rb.position = p;
+            }
+        }
+
+        /// <summary>Land on the captured ORIGIN surface (fixed-target GroundSlide). Unlike
+        /// <see cref="BeginGroundSlide"/> it tracks no PlatFormColliderTrigger — it sits on _targetSurfaceY
+        /// and the slide phase (FixedUpdate) drives it toward _targetSlideX within the captured X bounds.</summary>
+        private void BeginFixedGroundSlide()
+        {
+            _sliding = true;
+            _targetPlatform = null;
+
+            Collider2D col = GetComponent<Collider2D>();
+            _surfaceOffset = col != null ? col.bounds.extents.y : 0.18f;
+
+            if (_rb != null)
+            {
+                _rb.gravityScale = 0f;
+                _rb.constraints = RigidbodyConstraints2D.FreezeRotation;
+
+                Vector2 p = _rb.position;
+                p.y = _targetSurfaceY + _surfaceOffset;
                 _rb.position = p;
             }
         }

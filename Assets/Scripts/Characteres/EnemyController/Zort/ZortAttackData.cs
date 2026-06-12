@@ -117,6 +117,13 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [Tooltip("Warrior must be within this distance when the slash lands to take damage.")]
         public float earthSlashContactRange = 1.5f;
 
+        [Tooltip("Sound played when the Earth Slash swings/releases (synced with the slash VFX spawn).")]
+        public AudioClip earthSlashSwing;
+
+        [Tooltip("Impact sound played only when the Earth Slash actually damages the Warrior " +
+                 "(not on a dodged/shielded hit).")]
+        public AudioClip earthSlashImpact;
+
         // ─── Gravity Well (Phase 2+) ──────────────────────────────────────────────
 
         [Header("Gravity Well (Phase 2+)")]
