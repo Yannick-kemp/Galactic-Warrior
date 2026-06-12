@@ -121,7 +121,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             get
             {
                 return enemyType != EnemyType.Bee
-                    && enemyType != EnemyType.BeeEretic;
+                    && enemyType != EnemyType.BeeEretic
+                    && enemyType != EnemyType.Wraith;
             }
         }
 
@@ -473,6 +474,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             if (worldHealthBar != null)
                 worldHealthBar.UpdateHealth(currentHealth, maxHealth);
+        }
+
+        /// <summary>Show/hide the world-space health bar. Used by bosses that briefly vanish
+        /// (e.g. Zort's blinks/teleports) so the bar disappears with the sprite. Null-safe.</summary>
+        protected void SetHealthBarVisible(bool visible)
+        {
+            if (worldHealthBar != null)
+                worldHealthBar.SetVisibility(visible);
         }
 
         protected virtual void OnDeath()

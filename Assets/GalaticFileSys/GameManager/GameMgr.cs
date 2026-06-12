@@ -1639,6 +1639,40 @@ public class GameMgr : MonoBehaviour, IGame
         PlayerPrefs.Save();
     }
 
+    // ----------------------------------------------------------------------------------
+    // Development helpers: wipe the persisted checkpoint save so a level starts fresh.
+    // ----------------------------------------------------------------------------------
+
+    // Right-click the GameManager component in the Inspector (works during a Play session).
+    [ContextMenu("Dev/Reset Saved Checkpoint")]
+    private void DevResetSavedCheckpointContext()
+    {
+        ClearSavedCheckpoint();
+        Debug.Log("[GameMgr] DEV: Saved checkpoint reset (in-memory + PlayerPrefs).");
+    }
+
+    // Static entry point usable from an Editor menu item even when no GameMgr exists yet
+    // (e.g. outside Play mode). Deletes the on-disk keys and, if a live instance is running,
+    // also clears its in-memory checkpoint state.
+    public static void DevResetSavedCheckpoint()
+    {
+        if (Instance != null)
+        {
+            Instance.ClearSavedCheckpoint();
+        }
+        else
+        {
+            PlayerPrefs.DeleteKey(CheckpointHasKey);
+            PlayerPrefs.DeleteKey(CheckpointSceneKey);
+            PlayerPrefs.DeleteKey(CheckpointXKey);
+            PlayerPrefs.DeleteKey(CheckpointYKey);
+            PlayerPrefs.DeleteKey(CheckpointZKey);
+            PlayerPrefs.Save();
+        }
+
+        Debug.Log("[GameMgr] DEV: Saved checkpoint reset.");
+    }
+
     private void SaveCheckpointToDisk()
     {
         PlayerPrefs.SetInt(CheckpointHasKey, _hasCheckpointPosition ? 1 : 0);

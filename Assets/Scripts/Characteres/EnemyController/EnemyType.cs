@@ -10,5 +10,7 @@
     BeeEretic,
     Morvex,
     Hivernox,
-    Arachnee
+    Arachnee,
+    Zort,
+    Wraith
 }
