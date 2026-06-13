@@ -1715,7 +1715,7 @@ BoxCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 4, y: 6}
+    oldSize: {x: 3.8, y: 5.7}
     newSize: {x: 3.8, y: 5.7}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
@@ -1761,7 +1761,7 @@ BoxCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 4, y: 6}
+    oldSize: {x: 3.8, y: 5.7}
     newSize: {x: 3.8, y: 5.7}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
@@ -1807,7 +1807,7 @@ BoxCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 4, y: 6}
+    oldSize: {x: 3.8, y: 5.7}
     newSize: {x: 3.8, y: 5.7}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
@@ -1939,7 +1939,7 @@ MonoBehaviour:
   crescentArrivalThreshold: 0.2
   crescentSpawnPoint: {fileID: 638520062}
   crescentReleaseTimeout: 1.5
-  earthSlashSpawnPoint: {fileID: 0}
+  earthSlashSpawnPoint: {fileID: 1741650286}
   earthSlashReleaseTimeout: 1
   contactSlashCooldown: 1
   contactSlashRange: 1.4

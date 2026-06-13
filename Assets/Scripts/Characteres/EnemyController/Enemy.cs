@@ -147,6 +147,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         public virtual bool HardAnchorToMovingPlatforms => true;
 
+        // Enemies are scripted movers: their MovePosition must never shove the Warrior via the
+        // implicit velocity Unity derives from it. See CharacterController.RequestCoreMovePosition.
+        protected override bool NeutralizeImplicitMoveVelocity => true;
+
         [SerializeField] protected EnemyHitReactionProfile hitReaction;
         public EnemyHitReactionProfile HitReaction => hitReaction;
 

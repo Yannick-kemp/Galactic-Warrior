@@ -126,6 +126,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                  "en plein slash et se fait interrompre (téléport défensif / esquive) → le slash ne touche jamais.")]
         [SerializeField] private float earthSlashReleaseTimeout = 0.3f;
 
+        [Header("Earth Slash — Hit Circle")]
+        [Tooltip("Layer(s) du Warrior, pour la détection OverlapCircle du hit d'Earth Slash.")]
+        [SerializeField] private LayerMask warriorLayerMask;
+        [Tooltip("Décalage du centre du cercle vers l'avant (direction du facing de Zort), en unités world.")]
+        [SerializeField] private float earthSlashCircleForwardOffset = 0.6f;
+        [Tooltip("Décalage vertical du centre du cercle (pour aligner sur le buste/lame), en unités world.")]
+        [SerializeField] private float earthSlashCircleVerticalOffset = 0f;
+
         [Header("Zone 3 — Contact Trigger")]
         [Tooltip("Minimum delay between two contact-triggered Earth Slashes (anti-spam).")]
         [SerializeField] private float contactSlashCooldown = 1f;
@@ -200,7 +208,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         private bool _awaitingEarthSlashRelease;
 
         // Earth Slash : contexte partagé entre la coroutine et les AnimationEvents de swing
-        // (OnEarthSlashSwingFrame1/2/3), qui sont des callbacks Animator sans accès aux locales.
+        // (OnEarthSlashSwingFrame1/2/3), callbacks Animator sans accès aux variables locales.
         private Warrior _earthSlashWarrior;
         private bool _earthSlashHitLanded;
 
@@ -1061,6 +1069,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (TryApplyEarthSlashDamage(_earthSlashWarrior))
                 _earthSlashHitLanded = true;
         }
+
         /// <summary>Teleport next to the Warrior (AttackShadowStep pattern) then chain Earth Slash.</summary>
         private IEnumerator TeleportThenEarthSlash(Warrior warrior)
         {
@@ -1270,7 +1279,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 MarkIntentionalEnemyDisplacement(0.1f);
                 Vector3 next = new Vector3(nextX, transform.position.y, transform.position.z);
                 if (rigidbody2 != null)
-                    rigidbody2.MovePosition(next);
+                    // Route through the core wrapper so the implicit MovePosition velocity is
+                    // neutralized (NeutralizeImplicitMoveVelocity) and cannot shove the Warrior.
+                    MoveCharacterTo(next);
                 else
                     transform.position = next;
 
@@ -1685,7 +1696,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             if (warrior.IsDodging || warrior.ShieldIsUp)
                 return false;
-
+            warrior.SpawnBloodshedEffectFromEnemy(this);
             warrior.TakeDamage(damage);
             warrior.ApplyHitReaction(kind, from, attackData.warriorHitStun, attackData.warriorHitKnockback);
             return true;
@@ -1704,7 +1715,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 return false;
             if (warrior.IsDodging || warrior.ShieldIsUp)
                 return false;
-            if (Vector2.Distance(transform.position, warrior.transform.position) > attackData.earthSlashContactRange)
+            if (!IsWarriorInEarthSlashCircle(warrior))
                 return false;
 
             // Le coup ne porte que si DamageWarrior n'a pas été annulé in extremis (esquive/bouclier
@@ -1715,6 +1726,57 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             PlaySfx(attackData.earthSlashImpact);
             return true;
+        }
+
+        /// <summary>True si le collider du Warrior chevauche le cercle d'attaque de l'Earth Slash.
+        /// Le cercle est centré devant Zort (offset dans la direction du facing) et de rayon
+        /// earthSlashContactRange — le Warrior « entre » dans ce cercle quel que soit son point central.</summary>
+        private bool IsWarriorInEarthSlashCircle(Warrior warrior)
+        {
+            if (warrior == null) 
+                return false;
+
+            Vector2 circleCenter = GetEarthSlashCircleCenter();
+
+            // Détecte spécifiquement le collider du Warrior (via son layer) dans le cercle.
+            Collider2D hit = Physics2D.OverlapCircle(circleCenter, attackData.earthSlashContactRange, warriorLayerMask);
+            if (hit == null) 
+                return false;
+
+            // Confirme que c'est bien le Warrior (et pas un autre collider sur le même layer).
+            Warrior found = hit.GetComponent<Warrior>() ?? hit.GetComponentInParent<Warrior>();
+            return found == warrior;
+        }
+
+        // Centre du cercle de hit de l'Earth Slash : devant Zort (sens du facing) + offset vertical.
+        // Partagé entre la détection et le gizmo pour qu'ils ne divergent jamais.
+        private Vector2 GetEarthSlashCircleCenter()
+        {
+            Vector2 facing = GetFacingDirection();
+            return (Vector2)transform.position
+                + facing * earthSlashCircleForwardOffset
+                + Vector2.up * earthSlashCircleVerticalOffset;
+        }
+
+        // Visualise le cercle de hit de l'Earth Slash dans l'éditeur, TOUJOURS (pas seulement quand Zort
+        // est sélectionné). En edit-mode on n'appelle pas GetFacingDirection() (qui dépend de l'état
+        // runtime via RefreshFacingFlags) → facing = droite.
+        private void OnDrawGizmos()
+        {
+            if (attackData == null) return;
+
+            Vector2 facing = Application.isPlaying ? (Vector2)GetFacingDirection() : Vector2.right;
+            Vector3 c = (Vector2)transform.position
+                + facing * earthSlashCircleForwardOffset
+                + Vector2.up * earthSlashCircleVerticalOffset;
+
+            float r = attackData.earthSlashContactRange;
+
+            // Disque plein translucide pour le repérer d'un coup d'œil, puis le contour net.
+            Gizmos.color = new Color(1f, 0.4f, 0f, 0.12f);
+            Gizmos.DrawSphere(c, r);
+            Gizmos.color = new Color(1f, 0.4f, 0f, 0.9f);
+            Gizmos.DrawWireSphere(c, r);
         }
 
         private void FireVoidProjectile(GameObject prefab, Vector2 dir, float speed, int damage,

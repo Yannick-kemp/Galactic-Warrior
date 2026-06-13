@@ -75,7 +75,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             MarkIntentionalEnemyDisplacement(0.1f);
 
             if (rigidbody2 != null)
+            {
                 rigidbody2.MovePosition(next);
+                NeutralizeMoveVelocityIfNeeded();
+            }
             else
                 transform.position = next;
 
