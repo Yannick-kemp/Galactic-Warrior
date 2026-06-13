@@ -163,6 +163,10 @@ namespace Assets.Scripts.Relics.Projectiles
 
             if (enemy.IsBoss)
             {
+                // Zort punishes ice bullets: he teleports onto the Warrior and chains an Earth Slash.
+                if (enemy is ZortBoss zort)
+                    zort.NotifyIceBulletHit();
+
                 // Bosses are excluded from the two-step ice execution and take normal damage.
                 killed = enemy.TakeDamageAndReturnKilled(_damage);
             }

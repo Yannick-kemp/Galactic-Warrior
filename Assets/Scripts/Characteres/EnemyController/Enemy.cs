@@ -476,6 +476,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 worldHealthBar.UpdateHealth(currentHealth, maxHealth);
         }
 
+        /// <summary>Show/hide the world-space health bar. Used by bosses that briefly vanish
+        /// (e.g. Zort's blinks/teleports) so the bar disappears with the sprite. Null-safe.</summary>
+        protected void SetHealthBarVisible(bool visible)
+        {
+            if (worldHealthBar != null)
+                worldHealthBar.SetVisibility(visible);
+        }
+
         protected virtual void OnDeath()
         {
             if (_deathStarted) return;

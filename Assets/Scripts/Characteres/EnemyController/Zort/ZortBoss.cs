@@ -65,6 +65,17 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         private bool _inTransition;
         private bool _invulnerable;
 
+        // Invisibilité (blinks/téléportations) : Zort devient intangible et sa barre est masquée.
+        // _invulnerableBeforeHide mémorise l'invulnérabilité d'avant le masquage pour la restaurer à la
+        // réapparition (sans écraser une invulnérabilité posée par une transition de phase).
+        // _spriteHidden permet à StopActionRoutine de restaurer la visibilité si un blink est coupé net.
+        private bool _invulnerableBeforeHide;
+        private bool _spriteHidden;
+
+        // Esquive spectrale du dash d'Earth Slash : armé pendant la charge, consommé une seule fois.
+        private bool _dashDodgeArmed;
+        private bool _dashDodgePending;
+
         private Coroutine _actionRoutine;
         private Coroutine _transitionRoutine;
 
@@ -105,6 +116,16 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                  "changed, transition cut). The projectile spawns anyway after this delay so the FSM never blocks.")]
         [SerializeField] private float crescentReleaseTimeout = 1.5f;
 
+        [Header("Earth Slash — VFX Animation Sync")]
+        [Tooltip("Animated child Transform marking where the Earth Slash VFX spawns (parent it to the blade " +
+                 "so it follows the swing). If null, falls back to projectileOrigin, then Zort's position.")]
+        [SerializeField] private Transform earthSlashSpawnPoint;
+        [Tooltip("Filet de sécurité (s) si l'AnimationEvent OnEarthSlashReleaseFrame ne part jamais " +
+                 "(event pas encore posé / clip changé / transition coupée). Borne AUSSI le wind-up avant " +
+                 "les dégâts du slash : le garder COURT (~0.3) sinon Zort reste vulnérable trop longtemps " +
+                 "en plein slash et se fait interrompre (téléport défensif / esquive) → le slash ne touche jamais.")]
+        [SerializeField] private float earthSlashReleaseTimeout = 0.3f;
+
         [Header("Zone 3 — Contact Trigger")]
         [Tooltip("Minimum delay between two contact-triggered Earth Slashes (anti-spam).")]
         [SerializeField] private float contactSlashCooldown = 1f;
@@ -113,6 +134,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                  "because the BoxCollider2Ds rarely truly overlap there.")]
         [SerializeField] private float contactSlashRange = 1.4f;
 
+        [Header("Earth Slash — Spectral Dodge")]
+        [Tooltip("Durée de la dématérialisation pendant l'esquive du dash (s).")]
+        [SerializeField] private float dashDodgeBlinkDuration = 0.12f;
+        [Tooltip("Distance à laquelle Zort réapparaît, de l'autre côté du Warrior (unités world).")]
+        [SerializeField] private float dashDodgeBlinkOffset = 1.6f;
+
         [Header("Zone 2 — Defensive Teleport")]
         [Tooltip("Hits taken (within the window) before Zort defensively teleports to a Zone-2 spot.")]
         [SerializeField] private int hitsToTriggerDefensive = 2;
@@ -120,6 +147,22 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private float defensiveHitWindow = 2.5f;
         [Tooltip("Cooldown after a defensive teleport before it can trigger again.")]
         [SerializeField] private float defensiveTeleportCooldown = 8f;
+
+        [Header("Evasive Blink (rise into Warrior's reach)")]
+        [Tooltip("Cooldown entre deux esquives préventives (s).")]
+        [SerializeField] private float evasiveBlinkCooldown = 4f;
+        [Tooltip("Durée de la dématérialisation (s).")]
+        [SerializeField] private float evasiveBlinkDuration = 0.12f;
+        [Tooltip("Demi-largeur de la zone de réapparition autour de arenaCenter (unités world).")]
+        [SerializeField] private float evasiveBlinkArenaHalfWidth = 6f;
+        [Tooltip("Demi-hauteur de la zone de réapparition autour de arenaCenter (unités world).")]
+        [SerializeField] private float evasiveBlinkArenaHalfHeight = 3f;
+        [Tooltip("Distance minimale au Warrior pour qu'un point de réapparition soit accepté.")]
+        [SerializeField] private float evasiveBlinkMinWarriorDistance = 4f;
+        [Tooltip("Nombre d'essais de tirage aléatoire avant de basculer sur le repli déterministe.")]
+        [SerializeField] private int evasiveBlinkMaxAttempts = 8;
+        [Tooltip("Marge verticale pour considérer que Zort 'monte' (anti-jitter).")]
+        [SerializeField] private float evasiveRiseEpsilon = 0.02f;
 
         [Header("Platform Detection")]
         [Tooltip("World-space BoxCollider2D width at or below which the Warrior's platform counts as 'small'.")]
@@ -150,12 +193,30 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         private bool _crescentReleaseFired;
         private bool _awaitingCrescentRelease;
 
+        // Earth Slash VFX sync: set true by the AttackAnimation2Display clip's AnimationEvent
+        // (OnEarthSlashReleaseFrame), consumed by AttackEarthSlash. _awaitingEarthSlashRelease guards it
+        // so the same shared "isAttacking2" clip on other attacks has no side effect.
+        private bool _earthSlashReleaseFired;
+        private bool _awaitingEarthSlashRelease;
+
         // Defensive teleport (two hits within a window → reposition to Zone 2).
         private int _hitsTakenCount;
         private float _lastHitTime = -999f;
         private float _nextDefensiveTeleportTime;
         private bool _defensiveTeleportPending;
         private bool _desperationNovaActive; // AttackDesperationNova is protected from defensive interrupt
+
+        // Touché par un IceBulletProjectile : déclenche une téléportation punitive + Earth Slash,
+        // consommée dans Update (même pattern sûr que la téléportation défensive).
+        private bool _iceBulletPunishPending;
+
+        // Esquive préventive : Zort remonte dans la portée d'attaque du Warrior par en-dessous.
+        // _lastPosY est échantillonné en tête d'Update (AVANT le mouvement du frame) : le mouvement
+        // de Zort se fait dans Update même, donc une capture en fin d'Update donnerait un delta nul.
+        private bool _evasiveBlinkPending;
+        private float _nextEvasiveBlinkTime;
+        private float _lastPosY;
+        private bool _roseSinceLastFrame;
 
         private float HealthRatio => maxHealth <= 0f ? 0f : currentHealth / maxHealth;
 
@@ -177,6 +238,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             IgnorePlatformCollisions();
 
             CanMove = true;
+            _lastPosY = transform.position.y; // baseline esquive préventive : pas de fausse 'montée' au premier frame
             _nextAttackTime = Time.time + openingObservationSeconds; // opening observation window
             _gravityWellTimer = gravityWellInterval;
             _riftPulseTimer = riftPulseInterval;
@@ -207,6 +269,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                     return;
             }
 
+            // Échantillonnage 'montée' AVANT tout mouvement du frame : le delta mesure le déplacement
+            // effectué par le frame précédent. Mis à jour ici (chaque frame actif) et non en fin
+            // d'Update, où les early-returns le laisseraient stale et où la capture post-mouvement
+            // rendrait le delta toujours nul au point de détection.
+            _roseSinceLastFrame = transform.position.y > _lastPosY + evasiveRiseEpsilon
+                || (rigidbody2 != null && rigidbody2.linearVelocity.y > 0.01f);
+            _lastPosY = transform.position.y;
+
             HandlePhaseTransitions(warrior);
             if (_inTransition)
                 return;
@@ -221,6 +291,26 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 _nextDefensiveTeleportTime = Time.time + defensiveTeleportCooldown;
                 StopActionRoutine();
                 BeginAction(DefensiveTeleportToZone2(warrior));
+                return;
+            }
+
+            // Punition ice bullet : téléportation sur le Warrior + Earth Slash. Priorité haute, comme
+            // le défensif, mais protégée pendant la desperation nova (le pending reste et part après).
+            if (_iceBulletPunishPending && !_desperationNovaActive)
+            {
+                _iceBulletPunishPending = false;
+                StopActionRoutine();
+                BeginAction(TeleportThenEarthSlash(warrior));
+                return;
+            }
+
+            // Esquive préventive : Zort remonte dans la portée d'attaque du Warrior par en-dessous → blink.
+            if (_evasiveBlinkPending && !_desperationNovaActive)
+            {
+                _evasiveBlinkPending = false;
+                _nextEvasiveBlinkTime = Time.time + evasiveBlinkCooldown;
+                StopActionRoutine();
+                BeginAction(EvasiveBlink(warrior));
                 return;
             }
 
@@ -240,6 +330,13 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (_actionRoutine != null)
                 return;
 
+            // Détection esquive préventive — n'évalue qu'en mouvement libre (aucune action en cours).
+            // Si elle s'arme, on saute le FSM ce frame pour ne pas monter d'un cran de plus dans la
+            // hitbox ; le pending est consommé en tête d'Update au prochain frame.
+            TryArmEvasiveBlink(warrior);
+            if (_evasiveBlinkPending)
+                return;
+
             UpdateBehaviourFSM(warrior);
         }
 
@@ -250,10 +347,29 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         /// <summary>Transitions and Spectral Summon make Zort untouchable. TakeDamage() routes here.</summary>
         public override bool TakeDamageAndReturnKilled(float damage)
         {
+            // Esquive spectrale : pendant le dash d'Earth Slash, le premier coup traverse une
+            // image rémanente — aucun dégât, et déclenche un blink (consommé dans la boucle de dash).
+            if (_dashDodgeArmed)
+            {
+                _dashDodgeArmed = false;   // une seule esquive par dash
+                _dashDodgePending = true;  // consommé par AttackEarthSlash (blink + reprise de charge)
+                return false;              // coup annulé : pas de dégât, OnDamaged n'est pas appelé
+            }
+
             if (_invulnerable)
                 return false;
 
             return base.TakeDamageAndReturnKilled(damage);
+        }
+
+        /// <summary>Appelée par IceBulletProjectile quand il touche Zort. Arme une téléportation
+        /// punitive sur le Warrior suivie d'un Earth Slash, consommée au prochain Update.</summary>
+        public void NotifyIceBulletHit()
+        {
+            if (IsDeadOrDying || _inTransition)
+                return;
+
+            _iceBulletPunishPending = true;
         }
 
         protected override void OnDamaged(float damage, bool killed)
@@ -285,6 +401,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             StopAllCoroutines();      // kill any live beams/wells before the death flow
             _invulnerable = true;
+            _iceBulletPunishPending = false; // a punish armed just before death must never fire
+            _evasiveBlinkPending = false;    // an evasive blink armed just before death must never fire
             PlaySfx(attackData != null ? attackData.deathSound : null);
 
             // Base flow: dissolve VFX, EnemyMgr boss-death slow-mo + final level complete.
@@ -316,6 +434,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             _inTransition = true;
             _invulnerable = true;
+            _iceBulletPunishPending = false; // une punition armée avant la transition ne part pas à contretemps
+            _evasiveBlinkPending = false;    // idem pour une esquive préventive armée avant la transition
 
             StopMoveTowardCoroutine();
             WaitAnimationDisplay();
@@ -330,6 +450,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             currentPhase = next;
             _invulnerable = false;
+            _lastPosY = transform.position.y; // les entrées de phase déplacent Zort : pas de fausse 'montée' au frame suivant
             _inTransition = false;
             _nextAttackTime = Time.time + 0.5f; // resume pressure quickly after a transition
             _transitionRoutine = null;
@@ -458,8 +579,18 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 _actionRoutine = null;
             }
 
+            // Un blink coupé net entre SetVisible(false) et SetVisible(true) laisserait Zort invisible,
+            // intangible et barre cachée durablement : on restaure la visibilité ici. SetVisible(true)
+            // réactive sprites/colliders/barre ; l'invulnérabilité est ensuite forcée à false ci-dessous.
+            if (_spriteHidden)
+                SetVisible(true);
+
             _invulnerable = false; // never leave a cut-short Summon in its invulnerable state
             _desperationNovaActive = false; // clear the protection flag if the nova was force-stopped
+            _dashDodgeArmed = false;   // never leave the spectral dodge armed after a cut-short dash
+            _dashDodgePending = false;
+            _awaitingEarthSlashRelease = false; // a cut-short slash must not leave the event armed
+            _earthSlashReleaseFired = false;
         }
 
         private float GetCooldownForPhase()
@@ -662,6 +793,17 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 : (Vector2)transform.position;
         }
 
+        // Spawn point for the Earth Slash VFX: animated child Transform if assigned (follows the blade
+        // and is already mirrored by Zort's flip since it's a child), else projectileOrigin, else Zort.
+        private Vector3 GetEarthSlashSpawnPos()
+        {
+            if (earthSlashSpawnPoint != null)
+                return earthSlashSpawnPoint.position;
+            if (projectileOrigin != null)
+                return projectileOrigin.position;
+            return transform.position;
+        }
+
         // Zone 3 — teleport next to the Warrior and Earth Slash.
         private void HandleMeleeZone(Warrior warrior)
         {
@@ -826,9 +968,27 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             // Spawn from the animated marker (crescentSpawnPoint follows the blade) or Zort's position.
             Vector2 spawnPos = GetCrescentSpawnPos();
 
+            // Capture la plateforme d'origine du Warrior AU LANCER (même raycast platformLayerMask +
+            // fallback CurrentplatForm que partout ailleurs). Si le Warrior saute juste après, le crescent
+            // vise quand même cette surface et glisse vers le X où il était — pas en l'air / dans le vide.
+            // Repli : aucune plateforme trouvée (Warrior déjà aérien au spawn) → comportement dynamique actuel.
+            Collider2D originPlatform = GetWarriorPlatformCollider(warrior);
+            bool hasTarget = originPlatform != null;
+            float targetSurfaceY = 0f, targetSlideX = 0f;
+            float targetMinX = float.NegativeInfinity, targetMaxX = float.PositiveInfinity;
+            if (hasTarget)
+            {
+                Bounds b = originPlatform.bounds;
+                targetSurfaceY = b.max.y;
+                targetSlideX = warrior.transform.position.x;
+                targetMinX = b.min.x;
+                targetMaxX = b.max.x;
+            }
+
             FireVoidProjectileAt(spawnPos, attackData.crescentPrefab,
                 Vector2.down, attackData.crescentSpeed, attackData.crescentDamage,
-                ProjectileMode.GroundSlide);
+                ProjectileMode.GroundSlide,
+                hasTarget, targetSurfaceY, targetSlideX, targetMinX, targetMaxX);
             PlaySfx(attackData.crescentFire);
 
             yield return new WaitForSeconds(0.4f);
@@ -847,12 +1007,29 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 _crescentReleaseFired = true;
         }
 
+        /// <summary>Called by an AnimationEvent on the slash clip (AttackAnimation2Display) at the exact
+        /// blade-impact frame. Unblocks AttackEarthSlash so the VFX spawns precisely then. Guarded by
+        /// _awaitingEarthSlashRelease, so the same shared "isAttacking2" clip on other attacks (Gravity
+        /// Well, Desperation Nova, teleport intro) has no side effect.</summary>
+        public void OnEarthSlashReleaseFrame()
+        {
+            if (_awaitingEarthSlashRelease)
+                _earthSlashReleaseFired = true;
+        }
+
         /// <summary>Teleport next to the Warrior (AttackShadowStep pattern) then chain Earth Slash.</summary>
         private IEnumerator TeleportThenEarthSlash(Warrior warrior)
         {
             if (attackData == null || warrior == null) { EndAction(); yield break; }
 
-            AttackAnimationDisplay();
+            // Pose neutre pour l'intro du téléport (Zort devient invisible juste après, donc la pose
+            // importe peu). Surtout : NE PAS pré-armer isAttacking2 ici. Sinon, comme on réapparaît à
+            // exactement 1.2u et que la boucle de dash d'AttackEarthSlash casse immédiatement (sans
+            // jamais appeler RunAnimationDisplay), le state Attack2 serait déjà actif → le
+            // AttackAnimation2Display() de l'étape 2 ne reflanquerait aucune transition → l'AnimationEvent
+            // OnEarthSlashReleaseFrame ne se redéclencherait pas. En partant d'une pose neutre, l'étape 2
+            // fait un vrai false→true sur isAttacking2 → ré-entrée garantie dans Attack2 → event fiable.
+            WaitAnimationDisplay();
             PlaySfx(attackData.teleportOut);
             SetVisible(false);
             yield return new WaitForSeconds(0.25f);
@@ -874,6 +1051,34 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             // Chain into the existing Earth Slash (it calls EndAction at its end).
             yield return AttackEarthSlash(warrior);
+        }
+
+        /// <summary>Esquive spectrale : Zort se dématérialise et réapparaît de l'autre côté du Warrior,
+        /// puis la charge d'Earth Slash reprend. Réutilise le VFX/SFX de téléportation existants.</summary>
+        private IEnumerator SpectralDodgeBlink(Warrior warrior)
+        {
+            PlaySfx(attackData != null ? attackData.teleportOut : null);
+            SetVisible(false);
+            _invulnerable = true; // i-frames le temps du blink, comme la téléportation défensive
+            yield return new WaitForSeconds(dashDodgeBlinkDuration);
+
+            // Réapparaître de l'AUTRE côté du Warrior par rapport à la position actuelle de Zort.
+            float sideSign = transform.position.x <= warrior.transform.position.x ? 1f : -1f; // côté opposé
+            Vector3 target = warrior.transform.position + Vector3.right * (sideSign * dashDodgeBlinkOffset);
+            target.y = transform.position.y; // conserver la hauteur de charge
+            target.z = transform.position.z;
+
+            MarkIntentionalEnemyDisplacement(0.3f);
+            if (rigidbody2 != null)
+                rigidbody2.position = target;
+            else
+                transform.position = target;
+
+            SpawnFx(attackData != null ? attackData.teleportVfxPrefab : null, target);
+            SetVisible(true);
+            PlaySfx(attackData != null ? attackData.teleportIn : null);
+            _invulnerable = false;
+            FaceWarrior(warrior);
         }
 
         /// <summary>Case B helper: one frame of grace, then teleport + Earth Slash.</summary>
@@ -976,6 +1181,15 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             float startX = transform.position.x;
             float dashElapsed = 0f;
             float maxDashSeconds = attackData.earthSlashMaxDashDistance / Mathf.Max(0.01f, attackData.earthSlashDashSpeed) + 0.5f;
+
+            // Esquive spectrale : armée pour toute la durée de la charge, une seule par dash.
+            _dashDodgeArmed = true;
+            _dashDodgePending = false;
+
+            // 1 hit par slash : la fenêtre de dégâts (charge → wind-up → recovery) touche dès que le
+            // Warrior est proche, à n'importe quel frame, puis se ferme pour cette exécution.
+            bool slashHitLanded = false;
+
             while (true)
             {
                 float toWarrior = warrior.transform.position.x - transform.position.x;
@@ -985,6 +1199,19 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                     break;
                 if (dashElapsed >= maxDashSeconds)
                     break; // blocked by the Warrior's collider, or Warrior fleeing — slash anyway
+
+                // Le Warrior a frappé pendant la charge : le coup a traversé une image rémanente
+                // (TakeDamageAndReturnKilled), on exécute le blink puis on reprend la charge.
+                if (_dashDodgePending)
+                {
+                    _dashDodgePending = false;
+                    yield return SpectralDodgeBlink(warrior);
+                    // Recalibrer le repère de charge après le blink : on repart de la nouvelle position.
+                    startX = transform.position.x;
+                    dashElapsed = 0f;
+                    FaceWarrior(warrior);
+                    continue; // reprendre la charge proprement depuis la nouvelle position
+                }
 
                 RunAnimationDisplay();
 
@@ -1003,21 +1230,46 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                     transform.position = next;
 
                 FaceWarrior(warrior);
+
+                // Fenêtre de dégâts continue (proximité 2D, indépendante du frame et du saut) : dès que
+                // le Warrior est visuellement proche pendant la charge, il encaisse — une seule fois par slash.
+                if (!slashHitLanded && TryApplyEarthSlashDamage(warrior))
+                    slashHitLanded = true;
+
                 dashElapsed += Time.deltaTime;
                 yield return null;
             }
 
-            // 2. Arrival telegraph: wind-up.
+            // Fin du dash : l'esquive spectrale ne doit jamais rester armée hors charge.
+            _dashDodgeArmed = false;
+            _dashDodgePending = false;
+
+            // 2. Arrival telegraph + animation. The VFX spawn is driven by an AnimationEvent on the slash
+            //    clip (OnEarthSlashReleaseFrame), so it lands on the exact blade-impact frame, not a fixed timer.
             FaceWarrior(warrior);
+            _earthSlashReleaseFired = false;     // reset before the slash animation plays
+            _awaitingEarthSlashRelease = true;   // arm OnEarthSlashReleaseFrame for THIS routine only
             AttackAnimation2Display();
             PlaySfx(attackData.meleeHit);
-            yield return new WaitForSeconds(0.3f);
+           
+            float earthSlashReleaseDeadline = Time.time + earthSlashReleaseTimeout;
+            while (!_earthSlashReleaseFired && Time.time < earthSlashReleaseDeadline)
+            {
+                if (!slashHitLanded && TryApplyEarthSlashDamage(warrior))
+                    slashHitLanded = true;
+                yield return null;
+            }
+            _awaitingEarthSlashRelease = false;
 
-            // 3. Slash VFX. Oriented via transform.right (same as VoidProjectile) so it lies in the
-            //    2D plane facing the slash direction. Pure VFX prefab — no Rigidbody2D/collider added.
+            // 3. Slash VFX at the animated, flip-mirrored spawn point. Oriented via transform.right
+            //    (same as VoidProjectile) so it lies in the 2D plane facing the slash direction.
+            //    Pure VFX prefab — no Rigidbody2D/collider added.
+            // Son de swing, synchronisé avec le spawn du VFX (release piloté par l'AnimationEvent) ;
+            // distinct du meleeHit de wind-up joué à l'étape 2.
+            PlaySfx(attackData.earthSlashSwing);
             if (attackData.slashEarthVfxPrefab != null)
             {
-                Vector3 spawnPos = projectileOrigin != null ? projectileOrigin.position : transform.position;
+                Vector3 spawnPos = GetEarthSlashSpawnPos();
                 GameObject vfx = Instantiate(attackData.slashEarthVfxPrefab, spawnPos, Quaternion.identity);
                 vfx.transform.right = GetFacingDirection();
                 ParticleSystem ps = vfx.GetComponent<ParticleSystem>();
@@ -1026,12 +1278,17 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 Destroy(vfx, 2f);
             }
 
-            // 4. Proximity damage (no physics collider — direct range check, same pattern as VoidWraith).
-            if (Vector2.Distance(transform.position, warrior.transform.position) <= attackData.earthSlashContactRange)
-                DamageWarrior(warrior, attackData.shadowStepDamage, transform.position, HitKind.Spark);
-
-            // 5. Recovery.
-            yield return new WaitForSeconds(0.5f);
+            // 4-5. Fenêtre active + recovery : on continue de vérifier la proximité 2D chaque frame
+            //      (no physics collider — direct range check, même pattern que VoidWraith) jusqu'à ce
+            //      que le slash touche une fois, ou que la recovery s'achève. Le Warrior est donc touché
+            //      dès qu'il est visuellement proche pendant l'exécution, peu importe le frame / le saut.
+            float recoveryUntil = Time.time + 0.5f;
+            while (Time.time < recoveryUntil)
+            {
+                if (!slashHitLanded && TryApplyEarthSlashDamage(warrior))
+                    slashHitLanded = true;
+                yield return null;
+            }
             EndAction();
         }
 
@@ -1097,7 +1354,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (!warrior.IsJumping &&
                 Vector2.Distance(warrior.transform.position, transform.position) <= attackData.diveShockwaveRadius)
             {
-                DamageWarrior(warrior, attackData.diveDamage, transform.position, HitKind.Spark);
+                DamageWarrior(warrior, attackData.diveDamage, transform.position, HitKind.Projectile);
             }
 
             yield return new WaitForSeconds(0.7f);
@@ -1201,7 +1458,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             _desperationNovaActive = true; // protected from the defensive-teleport interrupt
 
-            AttackAnimation3Display();
+            AttackAnimation2Display();
             PlaySfx(attackData.novaCharge);
             yield return new WaitForSeconds(attackData.novaChargeDuration);
 
@@ -1212,7 +1469,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (warrior != null && !warrior.IsJumping &&
                 Vector2.Distance(warrior.transform.position, center) <= attackData.novaRadius)
             {
-                DamageWarrior(warrior, attackData.novaDamage, center, HitKind.Spark);
+                DamageWarrior(warrior, attackData.novaDamage, center, HitKind.Projectile);
             }
 
             yield return new WaitForSeconds(1.0f);
@@ -1288,6 +1545,92 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 transform.position.z);
         }
 
+        /// <summary>
+        /// Esquive préventive — arme le blink quand Zort MONTE vers le Warrior par en-dessous et
+        /// pénètre dans sa portée d'attaque réelle. Checks ordonnés du moins cher au plus cher :
+        /// cooldown → montée → centres, puis seulement l'OverlapCircle de GetEnemiesInAttackRange().
+        /// Consommé en tête d'Update (pattern _defensiveTeleportPending).
+        /// </summary>
+        private void TryArmEvasiveBlink(Warrior warrior)
+        {
+            if (_evasiveBlinkPending || Time.time < _nextEvasiveBlinkTime)
+                return;
+
+            if (!_roseSinceLastFrame)
+                return;
+
+            // Centre de Zort sous celui du Warrior (centres de colliders si disponibles).
+            float myCenterY = NormalCollider != null
+                ? NormalCollider.bounds.center.y
+                : transform.position.y;
+            float warriorCenterY = warrior.collider2 != null
+                ? warrior.collider2.bounds.center.y
+                : warrior.transform.position.y;
+            if (myCenterY >= warriorCenterY)
+                return;
+
+            // C'est bien CE Zort qui est dans le cercle d'attaque — pas un wraith.
+            Enemy[] inRange = warrior.GetEnemiesInAttackRange();
+            for (int i = 0; i < inRange.Length; i++)
+            {
+                if (inRange[i] == this)
+                {
+                    _evasiveBlinkPending = true;
+                    return;
+                }
+            }
+        }
+
+        // Point de réapparition de l'esquive préventive : aléatoire mais borné par l'arène et validé
+        // (assez loin du Warrior pour que l'esquive serve), avec repli déterministe côté opposé.
+        private Vector3 PickEvasiveBlinkTarget(Warrior warrior)
+        {
+            Vector3 center = arenaCenter != null ? arenaCenter.position : transform.position;
+
+            for (int attempt = 0; attempt < evasiveBlinkMaxAttempts; attempt++)
+            {
+                Vector3 candidate = center + new Vector3(
+                    Random.Range(-evasiveBlinkArenaHalfWidth, evasiveBlinkArenaHalfWidth),
+                    Random.Range(-evasiveBlinkArenaHalfHeight, evasiveBlinkArenaHalfHeight),
+                    0f);
+                candidate.z = transform.position.z;
+
+                if (Vector2.Distance(candidate, warrior.transform.position) >= evasiveBlinkMinWarriorDistance)
+                    return candidate;
+            }
+
+            // Repli : côté opposé au Warrior par rapport au centre de l'arène, en hauteur.
+            float sideSign = warrior.transform.position.x <= center.x ? 1f : -1f;
+            return center + new Vector3(sideSign * evasiveBlinkArenaHalfWidth * 0.8f, evasiveBlinkArenaHalfHeight * 0.5f, 0f);
+        }
+
+        /// <summary>Esquive préventive : Zort se dématérialise (i-frames) et réapparaît à un point
+        /// aléatoire validé de l'arène, hors de portée du Warrior. Pure fuite — aucune contre-attaque.</summary>
+        private IEnumerator EvasiveBlink(Warrior warrior)
+        {
+            if (warrior == null) { EndAction(); yield break; }
+
+            PlaySfx(attackData != null ? attackData.teleportOut : null);
+            SetVisible(false);
+            _invulnerable = true; // i-frames le temps du blink, comme les autres téléportations
+            yield return new WaitForSeconds(evasiveBlinkDuration);
+
+            Vector3 target = PickEvasiveBlinkTarget(warrior);
+            MarkIntentionalEnemyDisplacement(0.3f);
+            if (rigidbody2 != null)
+                rigidbody2.position = target;
+            else
+                transform.position = target;
+
+            SpawnFx(attackData != null ? attackData.teleportVfxPrefab : null, target);
+            SetVisible(true);
+            PlaySfx(attackData != null ? attackData.teleportIn : null);
+            _invulnerable = false;
+            FaceWarrior(warrior);
+
+            EndAction();
+        }
+
         // ─────────────────────────────────────────────────────────────────────────
         // Helpers
         // ─────────────────────────────────────────────────────────────────────────
@@ -1297,16 +1640,46 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             return GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
         }
 
-        private void DamageWarrior(Warrior warrior, int damage, Vector2 from, HitKind kind)
+        /// <summary>Inflige les dégâts au Warrior. Renvoie true si le coup a porté, false si annulé
+        /// (Warrior mort / esquive / bouclier) — permet à l'appelant de ne jouer un son d'impact que
+        /// sur un vrai hit. Les appelants qui ignorent le retour gardent le comportement d'origine.</summary>
+        private bool DamageWarrior(Warrior warrior, int damage, Vector2 from, HitKind kind)
         {
             if (warrior == null || warrior.IsDeadOrDying || damage <= 0)
-                return;
+                return false;
 
             if (warrior.IsDodging || warrior.ShieldIsUp)
-                return;
+                return false;
 
             warrior.TakeDamage(damage);
             warrior.ApplyHitReaction(kind, from, attackData.warriorHitStun, attackData.warriorHitKnockback);
+            return true;
+        }
+
+        /// <summary>
+        /// Inflige le hit d'Earth Slash si le Warrior est à portée. Distance 2D (proximité « visuelle »,
+        /// donc le vertical compte : un Warrior proche mais en l'air est touché, un saut qui l'éloigne
+        /// vraiment ne l'est pas). Retourne true seulement si le coup a effectivement porté ; une esquive
+        /// (IsDodging) ou un bouclier (ShieldIsUp) renvoie false → l'appelant continue d'essayer dans la
+        /// fenêtre, et le slash n'est « consommé » que sur un vrai hit.
+        /// </summary>
+        private bool TryApplyEarthSlashDamage(Warrior warrior)
+        {
+            if (warrior == null || warrior.IsDeadOrDying)
+                return false;
+            if (warrior.IsDodging || warrior.ShieldIsUp)
+                return false;
+            if (Vector2.Distance(transform.position, warrior.transform.position) > attackData.earthSlashContactRange)
+                return false;
+
+            // Le coup ne porte que si DamageWarrior n'a pas été annulé in extremis (esquive/bouclier
+            // levés pile à ce frame) : son d'impact distinct uniquement sur un vrai hit (Option 1 —
+            // couvre la fenêtre de charge ET le slash final, une seule fois par slash via slashHitLanded).
+            if (!DamageWarrior(warrior, attackData.shadowStepDamage, transform.position, HitKind.Projectile))
+                return false;
+
+            PlaySfx(attackData.earthSlashImpact);
+            return true;
         }
 
         private void FireVoidProjectile(GameObject prefab, Vector2 dir, float speed, int damage,
@@ -1319,7 +1692,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         /// <summary>Same as <see cref="FireVoidProjectile"/> but the spawn position is explicit
         /// (used by the Zone-2 vertical crescent, which spawns above the Warrior).</summary>
         private void FireVoidProjectileAt(Vector2 spawnPos, GameObject prefab, Vector2 dir, float speed, int damage,
-            ProjectileMode mode = ProjectileMode.Aerial)
+            ProjectileMode mode = ProjectileMode.Aerial,
+            bool hasGroundSlideTarget = false, float targetSurfaceY = 0f, float targetSlideX = 0f,
+            float targetMinX = float.NegativeInfinity, float targetMaxX = float.PositiveInfinity)
         {
             if (prefab == null)
                 return;
@@ -1329,9 +1704,17 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             Rigidbody2D rb = obj.GetComponent<Rigidbody2D>();
             if (rb == null)
                 rb = obj.AddComponent<Rigidbody2D>();
-            rb.gravityScale = 0f;
             rb.freezeRotation = true;
             rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+            // Réglages physiques conditionnels au mode (Approche B) :
+            //  • Aerial      : ZortBoss tient le projectile en vol rectiligne → gravité 0 ici.
+            //  • GroundSlide : VoidProjectile POSSÈDE la gravité (EnterSeek applique la gravité de chute
+            //                  puis la fige à l'atterrissage). Ne pas la mettre à 0 ici — sinon on ne
+            //                  comptait que sur Initialize pour la restaurer (dépendance d'ordre fragile).
+            // Le collider reste un trigger dans LES DEUX modes : le GroundSlide en a besoin pour traverser
+            // toutes les plateformes sauf celle du Warrior (l'atterrissage est logique, pas physique).
+            if (mode == ProjectileMode.Aerial)
+                rb.gravityScale = 0f;
 
             Collider2D col = obj.GetComponent<Collider2D>();
             if (col == null)
@@ -1352,7 +1735,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             proj.Initialize(this, dir, speed, damage,
                 attackData.warriorHitStun, attackData.warriorHitKnockback,
                 attackData.projectileLifetime, attackData.projectileObstacleMask,
-                attackData.genericImpactFxPrefab, mode);
+                attackData.genericImpactFxPrefab, mode,
+                hasGroundSlideTarget, targetSurfaceY, targetSlideX, targetMinX, targetMaxX);
 
             IgnoreOwnerCollisions(obj);
 
@@ -1458,14 +1842,49 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             transform.position = target;
         }
 
+        // Centralise toute la conséquence de l'(in)visibilité : sprites, intangibilité, barre de vie.
+        // Tous les blinks/téléportations passent par ici, donc Zort est totalement intouchable et sa
+        // barre masquée tant qu'il est invisible, et tout revient à l'état normal à la réapparition.
         private void SetVisible(bool visible)
         {
+            // Sprites
             SpriteRenderer[] renderers = GetComponentsInChildren<SpriteRenderer>(true);
             for (int i = 0; i < renderers.Length; i++)
             {
                 if (renderers[i] != null)
                     renderers[i].enabled = visible;
             }
+
+            // Intangibilité : pendant l'invisibilité, les colliders sont désactivés → le scan d'attaque
+            // du Warrior (OverlapCircleAll sur enemyLayer) ne touche plus Zort à son ancienne position.
+            SetCollidersEnabled(visible);
+
+            // Invulnérabilité de secours (au cas où un collider resterait actif via une autre route),
+            // sans écraser une invulnérabilité déjà posée (ex. transition de phase) : on la sauvegarde
+            // au masquage et on la restaure à la réapparition.
+            if (!visible)
+            {
+                _invulnerableBeforeHide = _invulnerable;
+                _invulnerable = true;
+            }
+            else
+            {
+                _invulnerable = _invulnerableBeforeHide;
+            }
+
+            // Barre de vie (World-Space Canvas) masquée pendant l'invisibilité.
+            SetHealthBarVisible(visible);
+
+            _spriteHidden = !visible;
+        }
+
+        // Active/désactive tous les colliders de Zort (corps + triggers hérités d'Enemy/CharacterController).
+        private void SetCollidersEnabled(bool enabled)
+        {
+            if (NormalCollider != null) NormalCollider.enabled = enabled;
+            if (collider2 != null) collider2.enabled = enabled;
+            if (TriggerColliderLeft != null) TriggerColliderLeft.enabled = enabled;
+            if (TriggerColliderRight != null) TriggerColliderRight.enabled = enabled;
         }
 
         private void FaceWarrior(Warrior warrior)
