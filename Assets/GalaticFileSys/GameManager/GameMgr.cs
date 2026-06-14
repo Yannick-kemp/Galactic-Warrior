@@ -105,6 +105,12 @@ public class GameMgr : MonoBehaviour, IGame
     [SerializeField] private int level2EntryCoinsReward = 50;
     [SerializeField] private int level2EntryUpgradeTokens = 1;
 
+    [Header("Final Victory Reward")]
+    [SerializeField] private int finalRewardCoins = 250;
+    [SerializeField] private int finalRewardTokens = 2;
+
+    private const string GameCompletedKey = "GW_GameCompleted";
+
     private const string CheckpointHasKey = "GW_HasCheckpoint";
     private const string CheckpointSceneKey = "GW_CheckpointScene";
     private const string CheckpointXKey = "GW_CheckpointX";
@@ -649,8 +655,10 @@ public class GameMgr : MonoBehaviour, IGame
 
         if (!HasNextCampaignScene(currentIndex))
         {
-            Debug.Log("[GameMgr] No next campaign scene. Returning to menu.");
-            LoadMainMenu();
+            // Dernier niveau du jeu terminé (boss final vaincu) → écran de victoire
+            // au lieu du retour-menu silencieux.
+            Debug.Log("[GameMgr] Final campaign scene cleared. Showing victory screen.");
+            ShowFinalVictoryScreen();
             return;
         }
 
@@ -678,6 +686,56 @@ public class GameMgr : MonoBehaviour, IGame
         }
 
         GoToCampaignSceneByIndex(nextIndex);
+    }
+
+    // ─── Final victory (last campaign scene boss defeated) ───────────────────────
+
+    public bool IsGameCompleted => PlayerPrefs.GetInt(GameCompletedKey, 0) == 1;
+
+    private void ShowFinalVictoryScreen()
+    {
+        Time.timeScale = 1f;
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = true;
+
+        PlayerPrefs.SetInt(GameCompletedKey, 1);
+        PlayerPrefs.Save();
+        SaveProgression();
+
+        int score = ScoreManager.Instance != null ? ScoreManager.Instance.TotalPoints : 0;
+        float dur = ScoreManager.Instance != null ? ScoreManager.Instance.RunDuration : 0f;
+        int retries = ScoreManager.Instance != null ? ScoreManager.Instance.RetryCount : 0;
+
+        UIManager.Instance?.ShowVictoryScreen(score, dur, retries, finalRewardCoins, finalRewardTokens);
+    }
+
+    // Called by the victory screen buttons.
+    public void ReturnToMenuFromVictory()
+    {
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = false;
+
+        // LoadMenu already restores timeScale, resets the run, AND destroys the persistent
+        // Warrior (which owns WarriorUI / the VictoryScreen) so nothing leaks into the menu.
+        LoadMenu(mainMenuSceneName);
+    }
+
+    public void StartNewGamePlus()
+    {
+        Time.timeScale = 1f;
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = false;
+
+        // The persistent Warrior owns WarriorUI/VictoryScreen; destroy it before loading the
+        // first scene, otherwise it carries over as a duplicate.
+        if (Warrior.Instance != null)
+            Destroy(Warrior.Instance.gameObject);
+
+        // Reuses the existing New Game flow (restarts from the first scene).
+        // The GW_GameCompleted flag stays in PlayerPrefs for menu unlocks.
+        StartNewGame();
     }
 
     private IEnumerator ReturnToMenuAfterLevelCompleteRoutine(string nextSceneName)

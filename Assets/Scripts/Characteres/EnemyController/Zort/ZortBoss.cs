@@ -86,6 +86,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private float _damageReceivedDuringWell;
 
+        // Live gravity-well FX instance, tracked so OnDeath can destroy it even though
+        // StopAllCoroutines() prevents AttackGravityWell from cleaning it up itself.
+        private GameObject _activeWell;
+
         [Header("Range Zones")]
         [Tooltip("Outer awareness range (documentation/tuning; the FSM boundary is crescentRange).")]
         [SerializeField] private float levitationRange = 12f;
@@ -404,6 +408,11 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         protected override void OnDeath()
         {
+            // Purge arena hazards BEFORE cutting coroutines: several FX are destroyed by the
+            // end of their own coroutine, which StopAllCoroutines() would otherwise prevent —
+            // leaving wraiths/rifts/beam/well alive to kill the player during the victory screen.
+            PurgeArenaHazardsOnDeath();
+
             StopActionRoutine();
 
             if (_transitionRoutine != null)
@@ -420,6 +429,43 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             // Base flow: dissolve VFX, EnemyMgr boss-death slow-mo + final level complete.
             base.OnDeath();
+        }
+
+        /// <summary>
+        /// Destroys / deactivates every arena hazard Zort spawned so none of them can damage
+        /// the Warrior during the victory sequence. Must run before StopAllCoroutines().
+        /// </summary>
+        private void PurgeArenaHazardsOnDeath()
+        {
+            // 1. Void Wraiths still alive (spawned standalone, independent of Zort).
+            for (int i = Enemy.ActiveEnemies.Count - 1; i >= 0; i--)
+            {
+                Enemy e = Enemy.ActiveEnemies[i];
+                if (e != null && e != this && e.EnemyType == EnemyType.Wraith)
+                    e.ForceDeathImmediate();
+            }
+
+            // 2. Pre-placed rift hazards (toggled GameObjects).
+            if (riftHazardSlots != null)
+            {
+                foreach (GameObject slot in riftHazardSlots)
+                    if (slot != null) slot.SetActive(false);
+            }
+
+            // 3. Gravity-well FX (its coroutine will no longer clean it up).
+            if (_activeWell != null)
+            {
+                Destroy(_activeWell);
+                _activeWell = null;
+            }
+
+            // 4. Void Stare beam(s) parented under Zort.
+            foreach (VoidBeam beam in GetComponentsInChildren<VoidBeam>(true))
+                if (beam != null) Destroy(beam.gameObject);
+
+            // 5. Void projectiles still in flight.
+            foreach (VoidProjectile p in FindObjectsByType<VoidProjectile>(FindObjectsSortMode.None))
+                if (p != null) Destroy(p.gameObject);
         }
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -1466,6 +1512,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             GameObject well = null;
             if (attackData.gravityWellFxPrefab != null)
                 well = Instantiate(attackData.gravityWellFxPrefab, center, Quaternion.identity);
+            _activeWell = well;
 
             _damageReceivedDuringWell = 0f;
             float cancelThreshold = maxHealth * attackData.gravityWellCancelPercent;

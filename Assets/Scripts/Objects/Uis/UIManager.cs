@@ -9,6 +9,7 @@ public class UIManager : MonoBehaviour
     [SerializeField] private PurchaseUI purchaseUI;
     [SerializeField] private RewardUI rewardUI;
     [SerializeField] private UpgradeUI upgradeUI;
+    [SerializeField] private VictoryUI victoryUI;
 
     private void Awake()
     {
@@ -190,5 +191,27 @@ public class UIManager : MonoBehaviour
             return;
 
         upgradeUI.Hide();
+    }
+
+    public void ShowVictoryScreen(int score, float runSeconds, int retries, int coins, int tokens)
+    {
+        if (victoryUI == null)
+            victoryUI = FindFirstObjectByType<VictoryUI>(FindObjectsInactive.Include);
+
+        if (victoryUI == null)
+        {
+            Debug.LogError("[UIManager] VictoryUI not found in scene.");
+            return;
+        }
+
+        victoryUI.Show(score, runSeconds, retries, coins, tokens);
+    }
+
+    public void HideVictoryScreen()
+    {
+        if (victoryUI == null)
+            victoryUI = FindFirstObjectByType<VictoryUI>(FindObjectsInactive.Include);
+
+        victoryUI?.Hide();
     }
 }
