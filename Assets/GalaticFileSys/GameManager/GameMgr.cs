@@ -109,7 +109,25 @@ public class GameMgr : MonoBehaviour, IGame
     [SerializeField] private int finalRewardCoins = 250;
     [SerializeField] private int finalRewardTokens = 2;
 
+    [Header("Boss Memory Relic")]
+    [Tooltip("Small world prefab (SpriteRenderer + BossRelicRiseAnimation) spawned at the boss " +
+             "death position: the relic rises then disappears. Optional — leave empty for no animation.")]
+    [SerializeField] private GameObject bossRelicRisePrefab;
+
+    [Tooltip("Extra pause (seconds) after the rise animation, before the end-of-level / victory UI " +
+             "appears, so the player can see the relic. Only applied the first time a boss is defeated.")]
+    [SerializeField, Min(0f)] private float bossRelicHoldBeforeUiSeconds = 1.5f;
+
     private const string GameCompletedKey = "GW_GameCompleted";
+
+    // Boss memory relics — distinct from gameplay relics, persisted to disk like checkpoints.
+    private const string BossRelicsDefeatedKey = "GW_BossRelicsDefeated";
+    private readonly HashSet<EnemyType> _bossRelicsDefeated = new HashSet<EnemyType>();
+    public int BossRelicCount => _bossRelicsDefeated.Count;
+    public event System.Action<int> OnBossRelicCountChanged;
+
+    private EnemyType _pendingBossRelicType;
+    private Vector3 _pendingBossDeathPosition;
 
     private const string CheckpointHasKey = "GW_HasCheckpoint";
     private const string CheckpointSceneKey = "GW_CheckpointScene";
@@ -185,6 +203,7 @@ public class GameMgr : MonoBehaviour, IGame
         NormalizeCampaignSceneOrder();
         LoadProgression();
         LoadCheckpointFromDisk();
+        LoadBossRelicsFromDisk();
 
         SceneManager.sceneLoaded += HandleSceneLoaded;
         HandleSceneLoaded(SceneManager.GetActiveScene(), LoadSceneMode.Single);
@@ -821,10 +840,13 @@ public class GameMgr : MonoBehaviour, IGame
         _bossSlowMoPlaying = false;
     }
 
-    public void HandleBossFinalDeathLevelComplete()
+    public void HandleBossFinalDeathLevelComplete(EnemyType bossType, Vector3 bossDeathPosition)
     {
         if (_bossFinalDeathFlowRunning) return;
         if (_levelCompletionHandledThisScene) return;
+
+        _pendingBossRelicType = bossType;
+        _pendingBossDeathPosition = bossDeathPosition;
 
         StartCoroutine(HandleBossFinalDeathLevelCompleteRoutine());
     }
@@ -843,9 +865,89 @@ public class GameMgr : MonoBehaviour, IGame
 
         yield return new WaitForSecondsRealtime(bossDeathCompletionDelay);
 
+        // After the slow-mo: play the boss MemoryRelic sequence (reused VFX + SFX + new "rise"
+        // animation), then increment the persistent boss-relic counter, before the end-of-level UI.
+        yield return GrantBossRelicSequence(_pendingBossRelicType, _pendingBossDeathPosition);
+
         CompleteCurrentCampaignSceneInternal();
 
         _bossFinalDeathFlowRunning = false;
+    }
+
+    // ─── Boss MemoryRelic (distinct, persistent counter) ─────────────────────────
+
+    private IEnumerator GrantBossRelicSequence(EnemyType bossType, Vector3 worldPos)
+    {
+        // Anti-double: a boss already in the set (scene replay / re-kill) plays no sequence.
+        if (_bossRelicsDefeated.Contains(bossType))
+            yield break;
+
+        // Simple "rise" animation at the boss death spot: the relic rises then disappears.
+        if (bossRelicRisePrefab != null)
+        {
+            GameObject go = Instantiate(bossRelicRisePrefab, worldPos, Quaternion.identity);
+            BossRelicRiseAnimation rise = go.GetComponent<BossRelicRiseAnimation>();
+            float wait = rise != null ? rise.Duration : 0.8f;
+            Debug.Log($"[GameMgr] Boss relic rise spawned '{go.name}' at {worldPos}, wait={wait}s.");
+            yield return new WaitForSeconds(wait);
+        }
+        else
+        {
+            Debug.LogWarning("[GameMgr] bossRelicRisePrefab is NOT assigned → no rise animation will appear.");
+        }
+
+        // Increment persistent counter → RelicMemory CountText shows it (this scene + next scenes).
+        TryGrantBossRelic(bossType);
+
+        // Hold so the relic is visible before the end-of-level / victory UI appears.
+        if (bossRelicHoldBeforeUiSeconds > 0f)
+            yield return new WaitForSecondsRealtime(bossRelicHoldBeforeUiSeconds);
+    }
+
+    /// <summary>Adds the boss to the persistent defeated set. Returns false if already granted.</summary>
+    public bool TryGrantBossRelic(EnemyType bossType)
+    {
+        if (!_bossRelicsDefeated.Add(bossType))
+            return false;
+
+        SaveBossRelicsToDisk();
+        OnBossRelicCountChanged?.Invoke(_bossRelicsDefeated.Count);
+        Debug.Log($"[GameMgr] Boss relic granted: {bossType}. Total={_bossRelicsDefeated.Count}");
+        return true;
+    }
+
+    private void LoadBossRelicsFromDisk()
+    {
+        _bossRelicsDefeated.Clear();
+
+        string csv = PlayerPrefs.GetString(BossRelicsDefeatedKey, string.Empty);
+        if (string.IsNullOrEmpty(csv))
+            return;
+
+        string[] parts = csv.Split(',');
+        for (int i = 0; i < parts.Length; i++)
+        {
+            string token = parts[i].Trim();
+            if (string.IsNullOrEmpty(token))
+                continue;
+
+            if (System.Enum.TryParse(token, out EnemyType type))
+                _bossRelicsDefeated.Add(type);
+        }
+    }
+
+    private void SaveBossRelicsToDisk()
+    {
+        PlayerPrefs.SetString(BossRelicsDefeatedKey, string.Join(",", _bossRelicsDefeated));
+        PlayerPrefs.Save();
+    }
+
+    public void ClearBossRelics()
+    {
+        _bossRelicsDefeated.Clear();
+        PlayerPrefs.DeleteKey(BossRelicsDefeatedKey);
+        PlayerPrefs.Save();
+        OnBossRelicCountChanged?.Invoke(0);
     }
 
     public void UnlockLevel2()
@@ -1150,6 +1252,7 @@ public class GameMgr : MonoBehaviour, IGame
     {
         ResetMenuLaunchState();
         ClearSavedCheckpoint(); // New Game always restarts the campaign from the very beginning.
+        ClearBossRelics();      // New Game also wipes boss-relic progress.
         _suppressCheckpointRespawnOnce = true;
         ScoreManager.Instance?.StartNewRun();
         SceneManager.LoadScene(warriorSceneName);

@@ -12,7 +12,16 @@ public class DebugSaveHotkeys : MonoBehaviour
             PlayerPrefs.DeleteKey("GW_Level2Unlocked");
             PlayerPrefs.Save();
 
-            Debug.Log("[DebugSaveHotkeys] Progress reset.");
+            // Also wipe boss-relic progress (memory + disk) so the rise animation/grant replays.
+            if (GameMgr.Instance != null)
+                GameMgr.Instance.ClearBossRelics();
+            else
+            {
+                PlayerPrefs.DeleteKey("GW_BossRelicsDefeated");
+                PlayerPrefs.Save();
+            }
+
+            Debug.Log("[DebugSaveHotkeys] Progress reset (incl. boss relics).");
         }
 #endif
     }

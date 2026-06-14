@@ -352,6 +352,11 @@ MonoBehaviour:
   DescendentPhase: 0
   _isJumping: 0
   _isMoving: 0
+  enableDestinationPlatformAntiTunnel: 1
+  antiTunnelLandingSkin: 0.015
+  antiTunnelCastExtraDistance: 0.08
+  antiTunnelHorizontalSkin: 0.03
+  antiTunnelTopStartTolerance: 0.04
   Range: 3
   attackCooldown: 1.5
   attackDamage: 10
@@ -382,15 +387,31 @@ MonoBehaviour:
   deathSfxMaxDistance: 20
   canBeStunned: 1
   meleeHitDistance: 0.65
+  useWorldYDeathFallback: 1
+  worldDeathY: -30
   targetAnimationName: AttackAnimation
+  enemyType: 0
+  isBoss: 1
+  bossDisplayName: 
   totalFramesInAnimation: 16
   frameIndex: -1
   disableAttackWhenHitSeconds: 0.2
   hitReaction: {fileID: 11400000, guid: 8ee4ab02b7d720748bdc06cbbda11b13, type: 2}
-  dieWhenOutOfViewport: 1
-  requireSeenOnceBeforeAutoDeath: 1
-  viewportMargin: 0.08
-  autoDeathCheckInterval: 0.15
+  patrolEdgeArriveThreshold: 0.12
+  preventWarriorBodyMomentumPush: 1
+  warriorBodyPushRestoreStrength: 1
+  maxAllowedBodyPushDistance: 0.03
+  warriorBodyPushContactMemory: 0.1
+  warriorBodyPushMaxCorrectionPerStep: 0.2
+  preventWarriorBodyHorizontalPush: 1
+  preventWarriorBodyVerticalLift: 1
+  warriorBodyLiftAllowance: 0.04
+  cancelWarriorBodyPushVelocity: 1
+  useGroundCheckPointForPatrolEdge: 1
+  patrolEdgeAheadProbeDistance: 0.55
+  patrolEdgeRayExtraLength: 0.2
+  patrolEdgeBoundsSkin: 0.02
+  participatesInWarriorTopPingPongEscape: 1
   fireballPrefab: {fileID: 7250769548175652991, guid: d032ebe203268e1449ad5cb0ae9ed319, type: 3}
   firePoint: {fileID: 8352844488636603656}
   projectileSpeed: 5
