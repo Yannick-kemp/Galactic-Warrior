@@ -83,6 +83,7 @@ namespace Assets.Scripts.Characteres.WarriorController
                     M97Monster => 0.134f,
                     CrawlingMonster => 0.4f,
                     RakaMonster => 0.2f,
+                    ZalaytyMonster => 0.3f,
                     _ => attack1KnockbackForce
                 };
 
