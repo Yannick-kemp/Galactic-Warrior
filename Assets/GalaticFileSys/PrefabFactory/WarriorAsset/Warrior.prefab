@@ -469,6 +469,7 @@ MonoBehaviour:
   overlapRecoveryAirborneBounceRequiresDescent: 1
   overlapRecoveryDownwardVyThreshold: 0.1
   overlapRecoveryUsePositionTeleportNudge: 0
+  bossJumpCancelOverlapSuppressSeconds: 0.5
   sparkImpulse: 1.2
   sparkUpBias: 0.15
   hitReactMinInterval: 0.12

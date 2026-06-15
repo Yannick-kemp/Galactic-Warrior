@@ -137,12 +137,19 @@ public class GameMgr : MonoBehaviour, IGame
 
     private const string CampaignPurchasedKey = "GW_CampaignPurchased";
     private const string HighestReachedSceneIndexKey = "GW_HighestReachedSceneIndex";
+    private const string ContinueSceneIndexKey = "GW_ContinueSceneIndex";
     private const string LegacyLevel2UnlockedKey = "GW_Level2Unlocked";
 
     [Header("Post-Level Complete")]
     [SerializeField] private bool returnToMenuAfterPurchasedLevelComplete = true;
 
+    // Monotonic: the furthest scene ever reached. Drives level-select unlocks. Only ever increases.
     private int _highestReachedSceneIndex;
+
+    // The scene "Continue" should resume at = the level right after the one most recently completed.
+    // Unlike _highestReachedSceneIndex this is NOT monotonic, so replaying an earlier level correctly
+    // sends Continue to that level's successor instead of jumping to the furthest level ever reached.
+    private int _continueSceneIndex;
 
     private bool _isSceneTransitionRunning;
     private bool _level2EntryFlowShownThisLoad;
@@ -663,6 +670,7 @@ public class GameMgr : MonoBehaviour, IGame
     private void CompleteCurrentCampaignSceneInternal()
     {
         int currentIndex = GetCurrentCampaignSceneIndex();
+
         if (currentIndex < 0)
         {
             LoadMainMenu();
@@ -697,6 +705,9 @@ public class GameMgr : MonoBehaviour, IGame
         string nextSceneName = campaignSceneOrder[nextIndex];
 
         MarkSceneAsReached(nextIndex);
+        // Continue must resume at the level that follows the one just completed (not the furthest
+        // level ever reached), so replaying an earlier level advances to its successor correctly.
+        SetContinueScene(nextIndex);
 
         if (returnToMenuAfterPurchasedLevelComplete)
         {
@@ -793,6 +804,12 @@ public class GameMgr : MonoBehaviour, IGame
         yield return new WaitForSecondsRealtime(transitionBeforeLoadDelay);
 
         _shouldShowLevel2EntryFlowOnNextLoad = false;
+
+        // Destroy the persistent (DontDestroyOnLoad) warrior so it does NOT leak its accumulated
+        // state into the next level. With it gone, the next scene's own Warrior prefab instance
+        // registers as a brand-new Instance with prefab defaults = a full "new game" reset.
+        if (Warrior.Instance != null)
+            Destroy(Warrior.Instance.gameObject);
 
         WarriorInstance = null;
         SceneManager.LoadScene(mainMenuSceneName);
@@ -1077,6 +1094,11 @@ public class GameMgr : MonoBehaviour, IGame
         // Moving on to a different level: drop the previous level's transient checkpoint refs.
         // (The saved checkpoint was already cleared in CompleteCurrentCampaignSceneInternal.)
         ResetTransientCheckpoint();
+
+        // Destroy the persistent warrior so the next level spawns a fresh one (new-game defaults)
+        // instead of inheriting this level's accumulated state.
+        if (Warrior.Instance != null)
+            Destroy(Warrior.Instance.gameObject);
 
         WarriorInstance = null;
         SceneManager.LoadScene(targetSceneName);
@@ -2015,6 +2037,10 @@ public class GameMgr : MonoBehaviour, IGame
 
         if (level2Unlocked)
             _highestReachedSceneIndex = Mathf.Max(_highestReachedSceneIndex, Mathf.Min(1, maxIndex));
+
+        // Continue target defaults to the first playable level; it is set explicitly on level completion.
+        _continueSceneIndex = PlayerPrefs.GetInt(ContinueSceneIndexKey, defaultReachedIndex);
+        _continueSceneIndex = Mathf.Clamp(_continueSceneIndex, 0, maxIndex);
     }
 
     private void SaveProgression()
@@ -2022,6 +2048,7 @@ public class GameMgr : MonoBehaviour, IGame
         PlayerPrefs.SetInt(CampaignPurchasedKey, level2Unlocked ? 1 : 0);
         PlayerPrefs.SetInt(LegacyLevel2UnlockedKey, level2Unlocked ? 1 : 0);
         PlayerPrefs.SetInt(HighestReachedSceneIndexKey, _highestReachedSceneIndex);
+        PlayerPrefs.SetInt(ContinueSceneIndexKey, _continueSceneIndex);
         PlayerPrefs.Save();
     }
 
@@ -2038,6 +2065,19 @@ public class GameMgr : MonoBehaviour, IGame
         SaveProgression();
 
         Debug.Log($"[GameMgr] Highest reached scene index saved: {_highestReachedSceneIndex} ({campaignSceneOrder[_highestReachedSceneIndex]})");
+    }
+
+    // Records where "Continue" should resume next. Set to the successor of a level on completion.
+    private void SetContinueScene(int sceneIndex)
+    {
+        int clamped = Mathf.Clamp(sceneIndex, 0, Mathf.Max(0, campaignSceneOrder.Count - 1));
+        if (clamped == _continueSceneIndex)
+            return;
+
+        _continueSceneIndex = clamped;
+        SaveProgression();
+
+        Debug.Log($"[GameMgr] Continue target set: {_continueSceneIndex} ({campaignSceneOrder[_continueSceneIndex]})");
     }
 
     private int GetCampaignSceneIndex(string sceneName)
@@ -2085,7 +2125,9 @@ public class GameMgr : MonoBehaviour, IGame
             GetCampaignSceneIndex(_checkpointSceneName) >= 0)
             return _checkpointSceneName;
 
-        int sceneIndex = Mathf.Clamp(_highestReachedSceneIndex, 0, campaignSceneOrder.Count - 1);
+        // Resume at the level following the most recently completed one (NOT the furthest level ever
+        // reached) so that replaying an earlier level still advances to its correct successor.
+        int sceneIndex = Mathf.Clamp(_continueSceneIndex, 0, campaignSceneOrder.Count - 1);
         return campaignSceneOrder[sceneIndex];
     }
 

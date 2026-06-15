@@ -217,6 +217,7 @@ MonoBehaviour:
   purchaseUI: {fileID: 0}
   rewardUI: {fileID: 0}
   upgradeUI: {fileID: 0}
+  victoryUI: {fileID: 0}
 --- !u!1001 &3275879327721890790
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -225,6 +226,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 6986745237680299719}
     m_Modifications:
+    - target: {fileID: 1928913765699674672, guid: 7f6241061ccd43346b13f6640d109246, type: 3}
+      propertyPath: bossRelicRisePrefab
+      value: 
+      objectReference: {fileID: 56399314846283128, guid: 0cf26184b98d2e84587bedb6f750f00e, type: 3}
     - target: {fileID: 4315649855814584681, guid: 7f6241061ccd43346b13f6640d109246, type: 3}
       propertyPath: m_Name
       value: GameMgr

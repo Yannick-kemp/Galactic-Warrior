@@ -83,7 +83,7 @@ namespace Assets.Scripts.Characteres.WarriorController
                     M97Monster => 0.134f,
                     CrawlingMonster => 0.4f,
                     RakaMonster => 0.2f,
-                    ZalaytyMonster => 0.25f,    
+                    ZalaytyMonster => 0.35f,    
                     _ => attack1KnockbackForce
                 };
 
@@ -94,8 +94,7 @@ namespace Assets.Scripts.Characteres.WarriorController
                     P39Monster_WithHealthBar => 7,
                     RakaMonster => 4,
                     ZalaytyMonster => 5,
-                    HashagarMonster => 2, 
-                    ZortBoss => 100,
+                    HashagarMonster => 2,
                     _ => attack1Damage
                 };
 
