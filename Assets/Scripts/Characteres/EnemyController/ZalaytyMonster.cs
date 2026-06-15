@@ -398,7 +398,10 @@ public class ZalaytyMonster : Enemy
         _lastRequestedIndependentMoveFixedTime = Time.fixedTime;
 
         if (rigidbody2 != null)
+        {
             rigidbody2.MovePosition(mergedPosition);
+            NeutralizeMoveVelocityIfNeeded();
+        }
         else
             transform.position = new Vector3(mergedPosition.x, mergedPosition.y, transform.position.z);
     }
@@ -2365,7 +2368,10 @@ public class ZalaytyMonster : Enemy
         RememberIndependentMoveRequest(finalPosition);
 
         if (rigidbody2 != null)
+        {
             rigidbody2.MovePosition(finalPosition);
+            NeutralizeMoveVelocityIfNeeded();
+        }
         else
             transform.position = new Vector3(finalPosition.x, finalPosition.y, transform.position.z);
     }

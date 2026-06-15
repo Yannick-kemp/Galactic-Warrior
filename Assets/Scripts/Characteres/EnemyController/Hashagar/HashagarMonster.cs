@@ -87,6 +87,10 @@ public class HashagarMonster : Enemy
     {
         base.Start();
 
+        // Hashagar is the LandOfFire boss (Hivernox/Zort flag themselves the same way).
+        // Required so its death goes through the EnemyMgr boss path → slow-mo + boss relic grant.
+        SetBoss(true, "Hashagar");
+
         CacheAttack2Clip();
 
         // Hashagar defaults

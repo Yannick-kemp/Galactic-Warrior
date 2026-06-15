@@ -12,16 +12,18 @@ public class CameraMgr : MonoBehaviour
 
     private void Awake()
     {
-        if (Instance != null && Instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
-
+        // Scene-local on purpose. The MainCamera carries this scene's BackGroundLoop (parallax)
+        // configuration, so it must NOT survive a scene change: a persistent (DontDestroyOnLoad)
+        // camera would leak the first scene's background into every later scene, and the new
+        // scene's own camera would be destroyed by the singleton dedup. Each scene owns its camera.
         Instance = this;
-        DontDestroyOnLoad(gameObject);
-
         mainCamera = Camera.main;
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+            Instance = null;
     }
 
     public void SetCameraMode(CameraMode mode, Transform target = null, Vector3? customOffset = null, float speed = 5f)

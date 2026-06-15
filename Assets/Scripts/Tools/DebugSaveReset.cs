@@ -12,9 +12,10 @@ public class DebugSaveReset : MonoBehaviour
         PlayerPrefs.DeleteKey("GW_CampaignPurchased");
         PlayerPrefs.DeleteKey("GW_HighestReachedSceneIndex");
         PlayerPrefs.DeleteKey("GW_Level2Unlocked");
+        PlayerPrefs.DeleteKey("GW_BossRelicsDefeated");
         PlayerPrefs.Save();
 
-        Debug.Log("[DebugSaveReset] Progress reset.");
+        Debug.Log("[DebugSaveReset] Progress reset (incl. boss relics).");
 #endif
     }
 }

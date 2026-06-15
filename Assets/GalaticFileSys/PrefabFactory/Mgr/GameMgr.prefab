@@ -67,7 +67,7 @@ MonoBehaviour:
   enemyResetRadius: 12
   enemyResetHealthPercent: 1
   movingPlatformRespawnSeatOffset: 0.35
-  mainMenuSceneName: MainMenu
+  mainMenuSceneName: menu
   level2SceneName: AgeOfIce
   level3SceneName: LandOfFire
   level4SceneName: Redemption

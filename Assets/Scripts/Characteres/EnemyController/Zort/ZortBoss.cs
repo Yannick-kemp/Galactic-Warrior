@@ -86,6 +86,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private float _damageReceivedDuringWell;
 
+        // Live gravity-well FX instance, tracked so OnDeath can destroy it even though
+        // StopAllCoroutines() prevents AttackGravityWell from cleaning it up itself.
+        private GameObject _activeWell;
+
         [Header("Range Zones")]
         [Tooltip("Outer awareness range (documentation/tuning; the FSM boundary is crescentRange).")]
         [SerializeField] private float levitationRange = 12f;
@@ -125,6 +129,14 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                  "les dégâts du slash : le garder COURT (~0.3) sinon Zort reste vulnérable trop longtemps " +
                  "en plein slash et se fait interrompre (téléport défensif / esquive) → le slash ne touche jamais.")]
         [SerializeField] private float earthSlashReleaseTimeout = 0.3f;
+
+        [Header("Earth Slash — Hit Circle")]
+        [Tooltip("Layer(s) du Warrior, pour la détection OverlapCircle du hit d'Earth Slash.")]
+        [SerializeField] private LayerMask warriorLayerMask;
+        [Tooltip("Décalage du centre du cercle vers l'avant (direction du facing de Zort), en unités world.")]
+        [SerializeField] private float earthSlashCircleForwardOffset = 0.6f;
+        [Tooltip("Décalage vertical du centre du cercle (pour aligner sur le buste/lame), en unités world.")]
+        [SerializeField] private float earthSlashCircleVerticalOffset = 0f;
 
         [Header("Zone 3 — Contact Trigger")]
         [Tooltip("Minimum delay between two contact-triggered Earth Slashes (anti-spam).")]
@@ -198,6 +210,11 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         // so the same shared "isAttacking2" clip on other attacks has no side effect.
         private bool _earthSlashReleaseFired;
         private bool _awaitingEarthSlashRelease;
+
+        // Earth Slash : contexte partagé entre la coroutine et les AnimationEvents de swing
+        // (OnEarthSlashSwingFrame1/2/3), callbacks Animator sans accès aux variables locales.
+        private Warrior _earthSlashWarrior;
+        private bool _earthSlashHitLanded;
 
         // Defensive teleport (two hits within a window → reposition to Zone 2).
         private int _hitsTakenCount;
@@ -391,6 +408,11 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         protected override void OnDeath()
         {
+            // Purge arena hazards BEFORE cutting coroutines: several FX are destroyed by the
+            // end of their own coroutine, which StopAllCoroutines() would otherwise prevent —
+            // leaving wraiths/rifts/beam/well alive to kill the player during the victory screen.
+            PurgeArenaHazardsOnDeath();
+
             StopActionRoutine();
 
             if (_transitionRoutine != null)
@@ -407,6 +429,43 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             // Base flow: dissolve VFX, EnemyMgr boss-death slow-mo + final level complete.
             base.OnDeath();
+        }
+
+        /// <summary>
+        /// Destroys / deactivates every arena hazard Zort spawned so none of them can damage
+        /// the Warrior during the victory sequence. Must run before StopAllCoroutines().
+        /// </summary>
+        private void PurgeArenaHazardsOnDeath()
+        {
+            // 1. Void Wraiths still alive (spawned standalone, independent of Zort).
+            for (int i = Enemy.ActiveEnemies.Count - 1; i >= 0; i--)
+            {
+                Enemy e = Enemy.ActiveEnemies[i];
+                if (e != null && e != this && e.EnemyType == EnemyType.Wraith)
+                    e.ForceDeathImmediate();
+            }
+
+            // 2. Pre-placed rift hazards (toggled GameObjects).
+            if (riftHazardSlots != null)
+            {
+                foreach (GameObject slot in riftHazardSlots)
+                    if (slot != null) slot.SetActive(false);
+            }
+
+            // 3. Gravity-well FX (its coroutine will no longer clean it up).
+            if (_activeWell != null)
+            {
+                Destroy(_activeWell);
+                _activeWell = null;
+            }
+
+            // 4. Void Stare beam(s) parented under Zort.
+            foreach (VoidBeam beam in GetComponentsInChildren<VoidBeam>(true))
+                if (beam != null) Destroy(beam.gameObject);
+
+            // 5. Void projectiles still in flight.
+            foreach (VoidProjectile p in FindObjectsByType<VoidProjectile>(FindObjectsSortMode.None))
+                if (p != null) Destroy(p.gameObject);
         }
 
         // ─────────────────────────────────────────────────────────────────────────
@@ -591,6 +650,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             _dashDodgePending = false;
             _awaitingEarthSlashRelease = false; // a cut-short slash must not leave the event armed
             _earthSlashReleaseFired = false;
+            _earthSlashWarrior = null;          // un AnimationEvent tardif ne doit pas toucher hors attaque
+            _earthSlashHitLanded = false;
         }
 
         private float GetCooldownForPhase()
@@ -1017,6 +1078,44 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 _earthSlashReleaseFired = true;
         }
 
+        /// <summary>Called by AnimationEvents on the 3 swing frames of the attack2 clip. Each plays its
+        /// swing sound AND applies the Earth Slash damage (proximity-gated via TryApplyEarthSlashDamage),
+        /// instead of the old continuous window. Guarded by _awaitingEarthSlashRelease so the same shared
+        /// "isAttacking2" clip on other attacks (Gravity Well, Desperation Nova) stays inert. The swing
+        /// frames MUST be placed at/before the release frame, else _awaitingEarthSlashRelease is already
+        /// false and neither the sound nor the damage fires.</summary>
+        public void OnEarthSlashSwingFrame1()
+        {
+            if (!_awaitingEarthSlashRelease || attackData == null) return;
+            PlaySfx(attackData.earthSlashSwing1);
+            TryApplyEarthSlashSwingDamage();
+        }
+
+        public void OnEarthSlashSwingFrame2()
+        {
+            if (!_awaitingEarthSlashRelease || attackData == null) return;
+            PlaySfx(attackData.earthSlashSwing2);
+            TryApplyEarthSlashSwingDamage();
+        }
+
+        public void OnEarthSlashSwingFrame3()
+        {
+            if (!_awaitingEarthSlashRelease || attackData == null) return;
+            PlaySfx(attackData.earthSlashSwing3);
+            TryApplyEarthSlashSwingDamage();
+        }
+
+        /// <summary>Variante A — un seul hit par slash : le premier des 3 frames de swing qui touche
+        /// inflige les dégâts, les suivants ne refont pas mal (mais leurs sons jouent quand même).
+        /// Réutilise TryApplyEarthSlashDamage (proximité earthSlashContactRange + gardes + son d'impact).</summary>
+        private void TryApplyEarthSlashSwingDamage()
+        {
+            if (_earthSlashHitLanded)
+                return;
+            if (TryApplyEarthSlashDamage(_earthSlashWarrior))
+                _earthSlashHitLanded = true;
+        }
+
         /// <summary>Teleport next to the Warrior (AttackShadowStep pattern) then chain Earth Slash.</summary>
         private IEnumerator TeleportThenEarthSlash(Warrior warrior)
         {
@@ -1172,6 +1271,11 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             if (attackData == null || warrior == null) { EndAction(); yield break; }
 
+            // Contexte lu par les AnimationEvents de swing (OnEarthSlashSwingFrame1/2/3) qui appliquent
+            // désormais les dégâts. Réinitialisé à chaque slash.
+            _earthSlashWarrior = warrior;
+            _earthSlashHitLanded = false;
+
             FaceWarrior(warrior);
 
             // 1. Charge horizontally toward the Warrior until within 1.2 units, after the max-distance
@@ -1185,10 +1289,6 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             // Esquive spectrale : armée pour toute la durée de la charge, une seule par dash.
             _dashDodgeArmed = true;
             _dashDodgePending = false;
-
-            // 1 hit par slash : la fenêtre de dégâts (charge → wind-up → recovery) touche dès que le
-            // Warrior est proche, à n'importe quel frame, puis se ferme pour cette exécution.
-            bool slashHitLanded = false;
 
             while (true)
             {
@@ -1225,16 +1325,16 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 MarkIntentionalEnemyDisplacement(0.1f);
                 Vector3 next = new Vector3(nextX, transform.position.y, transform.position.z);
                 if (rigidbody2 != null)
-                    rigidbody2.MovePosition(next);
+                    // Route through the core wrapper so the implicit MovePosition velocity is
+                    // neutralized (NeutralizeImplicitMoveVelocity) and cannot shove the Warrior.
+                    MoveCharacterTo(next);
                 else
                     transform.position = next;
 
                 FaceWarrior(warrior);
 
-                // Fenêtre de dégâts continue (proximité 2D, indépendante du frame et du saut) : dès que
-                // le Warrior est visuellement proche pendant la charge, il encaisse — une seule fois par slash.
-                if (!slashHitLanded && TryApplyEarthSlashDamage(warrior))
-                    slashHitLanded = true;
+                // Aucun dégât pendant la charge : ils sont désormais appliqués uniquement aux 3 frames
+                // de swing (OnEarthSlashSwingFrame1/2/3).
 
                 dashElapsed += Time.deltaTime;
                 yield return null;
@@ -1250,23 +1350,20 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             _earthSlashReleaseFired = false;     // reset before the slash animation plays
             _awaitingEarthSlashRelease = true;   // arm OnEarthSlashReleaseFrame for THIS routine only
             AttackAnimation2Display();
-            PlaySfx(attackData.meleeHit);
-           
+            // PlaySfx(attackData.meleeHit);
+
+            // Attente du release (Animation Event) ou du timeout. Les dégâts sont appliqués par les
+            // AnimationEvents de swing pendant cette fenêtre (tant que _awaitingEarthSlashRelease est true).
             float earthSlashReleaseDeadline = Time.time + earthSlashReleaseTimeout;
             while (!_earthSlashReleaseFired && Time.time < earthSlashReleaseDeadline)
-            {
-                if (!slashHitLanded && TryApplyEarthSlashDamage(warrior))
-                    slashHitLanded = true;
                 yield return null;
-            }
             _awaitingEarthSlashRelease = false;
 
             // 3. Slash VFX at the animated, flip-mirrored spawn point. Oriented via transform.right
             //    (same as VoidProjectile) so it lies in the 2D plane facing the slash direction.
             //    Pure VFX prefab — no Rigidbody2D/collider added.
-            // Son de swing, synchronisé avec le spawn du VFX (release piloté par l'AnimationEvent) ;
-            // distinct du meleeHit de wind-up joué à l'étape 2.
-            PlaySfx(attackData.earthSlashSwing);
+            // Note : earthSlashSwing n'est plus joué ici — il l'est par l'AnimationEvent OnEarthSlashSwingFrame
+            //        au frame 0 du clip attack2 (entrée du swing), synchronisé avec l'animation.
             if (attackData.slashEarthVfxPrefab != null)
             {
                 Vector3 spawnPos = GetEarthSlashSpawnPos();
@@ -1278,17 +1375,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 Destroy(vfx, 2f);
             }
 
-            // 4-5. Fenêtre active + recovery : on continue de vérifier la proximité 2D chaque frame
-            //      (no physics collider — direct range check, même pattern que VoidWraith) jusqu'à ce
-            //      que le slash touche une fois, ou que la recovery s'achève. Le Warrior est donc touché
-            //      dès qu'il est visuellement proche pendant l'exécution, peu importe le frame / le saut.
+            // 4-5. Recovery : plus aucun dégât ici (les dégâts ne partent qu'aux 3 frames de swing).
             float recoveryUntil = Time.time + 0.5f;
             while (Time.time < recoveryUntil)
-            {
-                if (!slashHitLanded && TryApplyEarthSlashDamage(warrior))
-                    slashHitLanded = true;
                 yield return null;
-            }
+
+            _earthSlashWarrior = null; // un AnimationEvent tardif ne doit pas toucher hors attaque
             EndAction();
         }
 
@@ -1420,6 +1512,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             GameObject well = null;
             if (attackData.gravityWellFxPrefab != null)
                 well = Instantiate(attackData.gravityWellFxPrefab, center, Quaternion.identity);
+            _activeWell = well;
 
             _damageReceivedDuringWell = 0f;
             float cancelThreshold = maxHealth * attackData.gravityWellCancelPercent;
@@ -1650,7 +1743,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             if (warrior.IsDodging || warrior.ShieldIsUp)
                 return false;
-
+            warrior.SpawnBloodshedEffectFromEnemy(this);
             warrior.TakeDamage(damage);
             warrior.ApplyHitReaction(kind, from, attackData.warriorHitStun, attackData.warriorHitKnockback);
             return true;
@@ -1669,17 +1762,68 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 return false;
             if (warrior.IsDodging || warrior.ShieldIsUp)
                 return false;
-            if (Vector2.Distance(transform.position, warrior.transform.position) > attackData.earthSlashContactRange)
+            if (!IsWarriorInEarthSlashCircle(warrior))
                 return false;
 
             // Le coup ne porte que si DamageWarrior n'a pas été annulé in extremis (esquive/bouclier
-            // levés pile à ce frame) : son d'impact distinct uniquement sur un vrai hit (Option 1 —
-            // couvre la fenêtre de charge ET le slash final, une seule fois par slash via slashHitLanded).
+            // levés pile à ce frame) : earthSlashImpact distinct uniquement sur un vrai hit. Appelé
+            // désormais depuis les 3 AnimationEvents de swing via TryApplyEarthSlashSwingDamage.
             if (!DamageWarrior(warrior, attackData.shadowStepDamage, transform.position, HitKind.Projectile))
                 return false;
 
             PlaySfx(attackData.earthSlashImpact);
             return true;
+        }
+
+        /// <summary>True si le collider du Warrior chevauche le cercle d'attaque de l'Earth Slash.
+        /// Le cercle est centré devant Zort (offset dans la direction du facing) et de rayon
+        /// earthSlashContactRange — le Warrior « entre » dans ce cercle quel que soit son point central.</summary>
+        private bool IsWarriorInEarthSlashCircle(Warrior warrior)
+        {
+            if (warrior == null) 
+                return false;
+
+            Vector2 circleCenter = GetEarthSlashCircleCenter();
+
+            // Détecte spécifiquement le collider du Warrior (via son layer) dans le cercle.
+            Collider2D hit = Physics2D.OverlapCircle(circleCenter, attackData.earthSlashContactRange, warriorLayerMask);
+            if (hit == null) 
+                return false;
+
+            // Confirme que c'est bien le Warrior (et pas un autre collider sur le même layer).
+            Warrior found = hit.GetComponent<Warrior>() ?? hit.GetComponentInParent<Warrior>();
+            return found == warrior;
+        }
+
+        // Centre du cercle de hit de l'Earth Slash : devant Zort (sens du facing) + offset vertical.
+        // Partagé entre la détection et le gizmo pour qu'ils ne divergent jamais.
+        private Vector2 GetEarthSlashCircleCenter()
+        {
+            Vector2 facing = GetFacingDirection();
+            return (Vector2)transform.position
+                + facing * earthSlashCircleForwardOffset
+                + Vector2.up * earthSlashCircleVerticalOffset;
+        }
+
+        // Visualise le cercle de hit de l'Earth Slash dans l'éditeur, TOUJOURS (pas seulement quand Zort
+        // est sélectionné). En edit-mode on n'appelle pas GetFacingDirection() (qui dépend de l'état
+        // runtime via RefreshFacingFlags) → facing = droite.
+        private void OnDrawGizmos()
+        {
+            if (attackData == null) return;
+
+            Vector2 facing = Application.isPlaying ? (Vector2)GetFacingDirection() : Vector2.right;
+            Vector3 c = (Vector2)transform.position
+                + facing * earthSlashCircleForwardOffset
+                + Vector2.up * earthSlashCircleVerticalOffset;
+
+            float r = attackData.earthSlashContactRange;
+
+            // Disque plein translucide pour le repérer d'un coup d'œil, puis le contour net.
+            Gizmos.color = new Color(1f, 0.4f, 0f, 0.12f);
+            Gizmos.DrawSphere(c, r);
+            Gizmos.color = new Color(1f, 0.4f, 0f, 0.9f);
+            Gizmos.DrawWireSphere(c, r);
         }
 
         private void FireVoidProjectile(GameObject prefab, Vector2 dir, float speed, int damage,

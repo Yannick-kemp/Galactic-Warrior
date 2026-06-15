@@ -5,6 +5,15 @@ using UnityEngine.UI;
 
 public class LevelTransitionUI : MonoBehaviour
 {
+    // A single persistent instance is enough for the whole game. Place one on the
+    // persistent _APP prefab so it survives scene loads (campaign -> menu transition);
+    // any duplicate that comes in with another scene (e.g. WarriorScene) is discarded.
+    public static LevelTransitionUI Instance { get; private set; }
+
+    [Header("Persistence")]
+    [Tooltip("Keep this overlay alive across scene loads. Enable when it lives on the persistent _APP prefab.")]
+    [SerializeField] private bool persistAcrossScenes = true;
+
     [Header("Root")]
     [SerializeField] private CanvasGroup rootCanvasGroup;
     [SerializeField] private RectTransform titleGroup;
@@ -32,7 +41,29 @@ public class LevelTransitionUI : MonoBehaviour
 
     private void Awake()
     {
+        if (Instance != null && Instance != this)
+        {
+            // Another transition overlay already owns the slot (e.g. one persisted from
+            // _APP and a second one shipped inside a freshly loaded scene). Drop this one.
+            Destroy(gameObject);
+            return;
+        }
+
+        Instance = this;
+
+        // Only a root object can be marked DontDestroyOnLoad. If this overlay is a child
+        // (e.g. nested under a Canvas inside _APP) it persists via its parent instead, so we
+        // must NOT reparent it - that would strip its Canvas ancestor and break rendering.
+        if (persistAcrossScenes && transform.parent == null)
+            DontDestroyOnLoad(gameObject);
+
         ForceHiddenImmediate();
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+            Instance = null;
     }
 
     public void ForceHiddenImmediate()
