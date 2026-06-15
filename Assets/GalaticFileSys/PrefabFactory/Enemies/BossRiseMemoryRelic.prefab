@@ -75,7 +75,7 @@ MonoBehaviour:
     m_RotationOrder: 4
   vfxPrefab: {fileID: 7679207228444779054, guid: ce733ea4bc5bb4341b89ac25cbee21ad, type: 3}
   vfxLifetime: 2
-  sfxClip: {fileID: 8300000, guid: cb54e089d90d49740b65767f5af87fbd, type: 3}
+  sfxClip: {fileID: 8300000, guid: b5dff50ef4de81545ac98ad5f149f0d3, type: 3}
   sfxVolume: 0.9
 --- !u!212 &6171775550708402940
 SpriteRenderer:

@@ -27,6 +27,23 @@ public class VictoryUI : MonoBehaviour
     [SerializeField] private Vector3 shownScale = Vector3.one;
     [SerializeField] private float fadeDuration = 0.25f;
 
+    [Header("Victory Audio")]
+    [Tooltip("When the screen appears, every other sound is stopped and this track plays.")]
+    [SerializeField] private AudioClip victoryMusic;
+    [SerializeField] private bool loopVictoryMusic = true;
+    [SerializeField, Range(0f, 1f)] private float victoryMusicVolume = 1f;
+    [Tooltip("Optional. If empty, an AudioSource is created on this object at runtime.")]
+    [SerializeField] private AudioSource musicSource;
+
+    [Header("HUD to hide while shown")]
+    [Tooltip("HUD objects hidden while the victory screen is up (health bar, portrait, relic " +
+             "column, enemy counter…). Do NOT add WarriorUI itself — VictoryScreen is inside it.")]
+    [SerializeField] private GameObject[] hudToHide;
+
+    [Header("End Credits")]
+    [Tooltip("Optional. If empty, searched in children. Plays the credits when the screen appears.")]
+    [SerializeField] private VictoryCreditsSequence credits;
+
     private bool _visible;
     private Coroutine _routine;
 
@@ -46,8 +63,63 @@ public class VictoryUI : MonoBehaviour
 
         gameObject.SetActive(true);
 
+        PlayVictoryAudio();
+        SetHudHidden(true);
+
+        if (credits == null)
+            credits = GetComponentInChildren<VictoryCreditsSequence>(true);
+        if (credits != null)
+            credits.Play();
+
         if (_routine != null) StopCoroutine(_routine);
         _routine = StartCoroutine(ShowRoutine());
+    }
+
+    private void SetHudHidden(bool hidden)
+    {
+        if (hudToHide == null)
+            return;
+
+        for (int i = 0; i < hudToHide.Length; i++)
+        {
+            if (hudToHide[i] != null)
+                hudToHide[i].SetActive(!hidden);
+        }
+    }
+
+    /// <summary>Stops every other sound in the scene, then plays the victory track.</summary>
+    private void PlayVictoryAudio()
+    {
+        EnsureMusicSource();
+
+        // Silence everything else (gameplay SFX, music, one-shots, …).
+        AudioSource[] all = FindObjectsByType<AudioSource>(FindObjectsSortMode.None);
+        for (int i = 0; i < all.Length; i++)
+        {
+            if (all[i] != null && all[i] != musicSource)
+                all[i].Stop();
+        }
+
+        if (victoryMusic == null || musicSource == null)
+            return;
+
+        musicSource.clip = victoryMusic;
+        musicSource.loop = loopVictoryMusic;
+        musicSource.volume = victoryMusicVolume;
+        musicSource.Play();
+    }
+
+    private void EnsureMusicSource()
+    {
+        if (musicSource != null)
+            return;
+
+        musicSource = GetComponent<AudioSource>();
+        if (musicSource == null)
+            musicSource = gameObject.AddComponent<AudioSource>();
+
+        musicSource.playOnAwake = false;
+        musicSource.spatialBlend = 0f; // 2D
     }
 
     public void Hide()
@@ -56,6 +128,8 @@ public class VictoryUI : MonoBehaviour
             return;
 
         _visible = false;
+
+        SetHudHidden(false); // restore the HUD if the victory screen is dismissed
 
         if (_routine != null) StopCoroutine(_routine);
         _routine = StartCoroutine(HideRoutine());
