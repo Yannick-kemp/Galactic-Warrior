@@ -105,6 +105,30 @@ public class GameMgr : MonoBehaviour, IGame
     [SerializeField] private int level2EntryCoinsReward = 50;
     [SerializeField] private int level2EntryUpgradeTokens = 1;
 
+    [Header("Final Victory Reward")]
+    [SerializeField] private int finalRewardCoins = 250;
+    [SerializeField] private int finalRewardTokens = 2;
+
+    [Header("Boss Memory Relic")]
+    [Tooltip("Small world prefab (SpriteRenderer + BossRelicRiseAnimation) spawned at the boss " +
+             "death position: the relic rises then disappears. Optional — leave empty for no animation.")]
+    [SerializeField] private GameObject bossRelicRisePrefab;
+
+    [Tooltip("Extra pause (seconds) after the rise animation, before the end-of-level / victory UI " +
+             "appears, so the player can see the relic. Only applied the first time a boss is defeated.")]
+    [SerializeField, Min(0f)] private float bossRelicHoldBeforeUiSeconds = 1.5f;
+
+    private const string GameCompletedKey = "GW_GameCompleted";
+
+    // Boss memory relics — distinct from gameplay relics, persisted to disk like checkpoints.
+    private const string BossRelicsDefeatedKey = "GW_BossRelicsDefeated";
+    private readonly HashSet<EnemyType> _bossRelicsDefeated = new HashSet<EnemyType>();
+    public int BossRelicCount => _bossRelicsDefeated.Count;
+    public event System.Action<int> OnBossRelicCountChanged;
+
+    private EnemyType _pendingBossRelicType;
+    private Vector3 _pendingBossDeathPosition;
+
     private const string CheckpointHasKey = "GW_HasCheckpoint";
     private const string CheckpointSceneKey = "GW_CheckpointScene";
     private const string CheckpointXKey = "GW_CheckpointX";
@@ -113,12 +137,19 @@ public class GameMgr : MonoBehaviour, IGame
 
     private const string CampaignPurchasedKey = "GW_CampaignPurchased";
     private const string HighestReachedSceneIndexKey = "GW_HighestReachedSceneIndex";
+    private const string ContinueSceneIndexKey = "GW_ContinueSceneIndex";
     private const string LegacyLevel2UnlockedKey = "GW_Level2Unlocked";
 
     [Header("Post-Level Complete")]
     [SerializeField] private bool returnToMenuAfterPurchasedLevelComplete = true;
 
+    // Monotonic: the furthest scene ever reached. Drives level-select unlocks. Only ever increases.
     private int _highestReachedSceneIndex;
+
+    // The scene "Continue" should resume at = the level right after the one most recently completed.
+    // Unlike _highestReachedSceneIndex this is NOT monotonic, so replaying an earlier level correctly
+    // sends Continue to that level's successor instead of jumping to the furthest level ever reached.
+    private int _continueSceneIndex;
 
     private bool _isSceneTransitionRunning;
     private bool _level2EntryFlowShownThisLoad;
@@ -179,6 +210,7 @@ public class GameMgr : MonoBehaviour, IGame
         NormalizeCampaignSceneOrder();
         LoadProgression();
         LoadCheckpointFromDisk();
+        LoadBossRelicsFromDisk();
 
         SceneManager.sceneLoaded += HandleSceneLoaded;
         HandleSceneLoaded(SceneManager.GetActiveScene(), LoadSceneMode.Single);
@@ -638,6 +670,7 @@ public class GameMgr : MonoBehaviour, IGame
     private void CompleteCurrentCampaignSceneInternal()
     {
         int currentIndex = GetCurrentCampaignSceneIndex();
+
         if (currentIndex < 0)
         {
             LoadMainMenu();
@@ -649,8 +682,10 @@ public class GameMgr : MonoBehaviour, IGame
 
         if (!HasNextCampaignScene(currentIndex))
         {
-            Debug.Log("[GameMgr] No next campaign scene. Returning to menu.");
-            LoadMainMenu();
+            // Dernier niveau du jeu terminé (boss final vaincu) → écran de victoire
+            // au lieu du retour-menu silencieux.
+            Debug.Log("[GameMgr] Final campaign scene cleared. Showing victory screen.");
+            ShowFinalVictoryScreen();
             return;
         }
 
@@ -670,6 +705,9 @@ public class GameMgr : MonoBehaviour, IGame
         string nextSceneName = campaignSceneOrder[nextIndex];
 
         MarkSceneAsReached(nextIndex);
+        // Continue must resume at the level that follows the one just completed (not the furthest
+        // level ever reached), so replaying an earlier level advances to its successor correctly.
+        SetContinueScene(nextIndex);
 
         if (returnToMenuAfterPurchasedLevelComplete)
         {
@@ -678,6 +716,56 @@ public class GameMgr : MonoBehaviour, IGame
         }
 
         GoToCampaignSceneByIndex(nextIndex);
+    }
+
+    // ─── Final victory (last campaign scene boss defeated) ───────────────────────
+
+    public bool IsGameCompleted => PlayerPrefs.GetInt(GameCompletedKey, 0) == 1;
+
+    private void ShowFinalVictoryScreen()
+    {
+        Time.timeScale = 1f;
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = true;
+
+        PlayerPrefs.SetInt(GameCompletedKey, 1);
+        PlayerPrefs.Save();
+        SaveProgression();
+
+        int score = ScoreManager.Instance != null ? ScoreManager.Instance.TotalPoints : 0;
+        float dur = ScoreManager.Instance != null ? ScoreManager.Instance.RunDuration : 0f;
+        int retries = ScoreManager.Instance != null ? ScoreManager.Instance.RetryCount : 0;
+
+        UIManager.Instance?.ShowVictoryScreen(score, dur, retries, finalRewardCoins, finalRewardTokens);
+    }
+
+    // Called by the victory screen buttons.
+    public void ReturnToMenuFromVictory()
+    {
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = false;
+
+        // LoadMenu already restores timeScale, resets the run, AND destroys the persistent
+        // Warrior (which owns WarriorUI / the VictoryScreen) so nothing leaks into the menu.
+        LoadMenu(mainMenuSceneName);
+    }
+
+    public void StartNewGamePlus()
+    {
+        Time.timeScale = 1f;
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = false;
+
+        // The persistent Warrior owns WarriorUI/VictoryScreen; destroy it before loading the
+        // first scene, otherwise it carries over as a duplicate.
+        if (Warrior.Instance != null)
+            Destroy(Warrior.Instance.gameObject);
+
+        // Reuses the existing New Game flow (restarts from the first scene).
+        // The GW_GameCompleted flag stays in PlayerPrefs for menu unlocks.
+        StartNewGame();
     }
 
     private IEnumerator ReturnToMenuAfterLevelCompleteRoutine(string nextSceneName)
@@ -716,6 +804,12 @@ public class GameMgr : MonoBehaviour, IGame
         yield return new WaitForSecondsRealtime(transitionBeforeLoadDelay);
 
         _shouldShowLevel2EntryFlowOnNextLoad = false;
+
+        // Destroy the persistent (DontDestroyOnLoad) warrior so it does NOT leak its accumulated
+        // state into the next level. With it gone, the next scene's own Warrior prefab instance
+        // registers as a brand-new Instance with prefab defaults = a full "new game" reset.
+        if (Warrior.Instance != null)
+            Destroy(Warrior.Instance.gameObject);
 
         WarriorInstance = null;
         SceneManager.LoadScene(mainMenuSceneName);
@@ -763,10 +857,13 @@ public class GameMgr : MonoBehaviour, IGame
         _bossSlowMoPlaying = false;
     }
 
-    public void HandleBossFinalDeathLevelComplete()
+    public void HandleBossFinalDeathLevelComplete(EnemyType bossType, Vector3 bossDeathPosition)
     {
         if (_bossFinalDeathFlowRunning) return;
         if (_levelCompletionHandledThisScene) return;
+
+        _pendingBossRelicType = bossType;
+        _pendingBossDeathPosition = bossDeathPosition;
 
         StartCoroutine(HandleBossFinalDeathLevelCompleteRoutine());
     }
@@ -785,9 +882,89 @@ public class GameMgr : MonoBehaviour, IGame
 
         yield return new WaitForSecondsRealtime(bossDeathCompletionDelay);
 
+        // After the slow-mo: play the boss MemoryRelic sequence (reused VFX + SFX + new "rise"
+        // animation), then increment the persistent boss-relic counter, before the end-of-level UI.
+        yield return GrantBossRelicSequence(_pendingBossRelicType, _pendingBossDeathPosition);
+
         CompleteCurrentCampaignSceneInternal();
 
         _bossFinalDeathFlowRunning = false;
+    }
+
+    // ─── Boss MemoryRelic (distinct, persistent counter) ─────────────────────────
+
+    private IEnumerator GrantBossRelicSequence(EnemyType bossType, Vector3 worldPos)
+    {
+        // Anti-double: a boss already in the set (scene replay / re-kill) plays no sequence.
+        if (_bossRelicsDefeated.Contains(bossType))
+            yield break;
+
+        // Simple "rise" animation at the boss death spot: the relic rises then disappears.
+        if (bossRelicRisePrefab != null)
+        {
+            GameObject go = Instantiate(bossRelicRisePrefab, worldPos, Quaternion.identity);
+            BossRelicRiseAnimation rise = go.GetComponent<BossRelicRiseAnimation>();
+            float wait = rise != null ? rise.Duration : 0.8f;
+            Debug.Log($"[GameMgr] Boss relic rise spawned '{go.name}' at {worldPos}, wait={wait}s.");
+            yield return new WaitForSeconds(wait);
+        }
+        else
+        {
+            Debug.LogWarning("[GameMgr] bossRelicRisePrefab is NOT assigned → no rise animation will appear.");
+        }
+
+        // Increment persistent counter → RelicMemory CountText shows it (this scene + next scenes).
+        TryGrantBossRelic(bossType);
+
+        // Hold so the relic is visible before the end-of-level / victory UI appears.
+        if (bossRelicHoldBeforeUiSeconds > 0f)
+            yield return new WaitForSecondsRealtime(bossRelicHoldBeforeUiSeconds);
+    }
+
+    /// <summary>Adds the boss to the persistent defeated set. Returns false if already granted.</summary>
+    public bool TryGrantBossRelic(EnemyType bossType)
+    {
+        if (!_bossRelicsDefeated.Add(bossType))
+            return false;
+
+        SaveBossRelicsToDisk();
+        OnBossRelicCountChanged?.Invoke(_bossRelicsDefeated.Count);
+        Debug.Log($"[GameMgr] Boss relic granted: {bossType}. Total={_bossRelicsDefeated.Count}");
+        return true;
+    }
+
+    private void LoadBossRelicsFromDisk()
+    {
+        _bossRelicsDefeated.Clear();
+
+        string csv = PlayerPrefs.GetString(BossRelicsDefeatedKey, string.Empty);
+        if (string.IsNullOrEmpty(csv))
+            return;
+
+        string[] parts = csv.Split(',');
+        for (int i = 0; i < parts.Length; i++)
+        {
+            string token = parts[i].Trim();
+            if (string.IsNullOrEmpty(token))
+                continue;
+
+            if (System.Enum.TryParse(token, out EnemyType type))
+                _bossRelicsDefeated.Add(type);
+        }
+    }
+
+    private void SaveBossRelicsToDisk()
+    {
+        PlayerPrefs.SetString(BossRelicsDefeatedKey, string.Join(",", _bossRelicsDefeated));
+        PlayerPrefs.Save();
+    }
+
+    public void ClearBossRelics()
+    {
+        _bossRelicsDefeated.Clear();
+        PlayerPrefs.DeleteKey(BossRelicsDefeatedKey);
+        PlayerPrefs.Save();
+        OnBossRelicCountChanged?.Invoke(0);
     }
 
     public void UnlockLevel2()
@@ -917,6 +1094,11 @@ public class GameMgr : MonoBehaviour, IGame
         // Moving on to a different level: drop the previous level's transient checkpoint refs.
         // (The saved checkpoint was already cleared in CompleteCurrentCampaignSceneInternal.)
         ResetTransientCheckpoint();
+
+        // Destroy the persistent warrior so the next level spawns a fresh one (new-game defaults)
+        // instead of inheriting this level's accumulated state.
+        if (Warrior.Instance != null)
+            Destroy(Warrior.Instance.gameObject);
 
         WarriorInstance = null;
         SceneManager.LoadScene(targetSceneName);
@@ -1092,6 +1274,7 @@ public class GameMgr : MonoBehaviour, IGame
     {
         ResetMenuLaunchState();
         ClearSavedCheckpoint(); // New Game always restarts the campaign from the very beginning.
+        ClearBossRelics();      // New Game also wipes boss-relic progress.
         _suppressCheckpointRespawnOnce = true;
         ScoreManager.Instance?.StartNewRun();
         SceneManager.LoadScene(warriorSceneName);
@@ -1854,6 +2037,10 @@ public class GameMgr : MonoBehaviour, IGame
 
         if (level2Unlocked)
             _highestReachedSceneIndex = Mathf.Max(_highestReachedSceneIndex, Mathf.Min(1, maxIndex));
+
+        // Continue target defaults to the first playable level; it is set explicitly on level completion.
+        _continueSceneIndex = PlayerPrefs.GetInt(ContinueSceneIndexKey, defaultReachedIndex);
+        _continueSceneIndex = Mathf.Clamp(_continueSceneIndex, 0, maxIndex);
     }
 
     private void SaveProgression()
@@ -1861,6 +2048,7 @@ public class GameMgr : MonoBehaviour, IGame
         PlayerPrefs.SetInt(CampaignPurchasedKey, level2Unlocked ? 1 : 0);
         PlayerPrefs.SetInt(LegacyLevel2UnlockedKey, level2Unlocked ? 1 : 0);
         PlayerPrefs.SetInt(HighestReachedSceneIndexKey, _highestReachedSceneIndex);
+        PlayerPrefs.SetInt(ContinueSceneIndexKey, _continueSceneIndex);
         PlayerPrefs.Save();
     }
 
@@ -1877,6 +2065,19 @@ public class GameMgr : MonoBehaviour, IGame
         SaveProgression();
 
         Debug.Log($"[GameMgr] Highest reached scene index saved: {_highestReachedSceneIndex} ({campaignSceneOrder[_highestReachedSceneIndex]})");
+    }
+
+    // Records where "Continue" should resume next. Set to the successor of a level on completion.
+    private void SetContinueScene(int sceneIndex)
+    {
+        int clamped = Mathf.Clamp(sceneIndex, 0, Mathf.Max(0, campaignSceneOrder.Count - 1));
+        if (clamped == _continueSceneIndex)
+            return;
+
+        _continueSceneIndex = clamped;
+        SaveProgression();
+
+        Debug.Log($"[GameMgr] Continue target set: {_continueSceneIndex} ({campaignSceneOrder[_continueSceneIndex]})");
     }
 
     private int GetCampaignSceneIndex(string sceneName)
@@ -1924,7 +2125,9 @@ public class GameMgr : MonoBehaviour, IGame
             GetCampaignSceneIndex(_checkpointSceneName) >= 0)
             return _checkpointSceneName;
 
-        int sceneIndex = Mathf.Clamp(_highestReachedSceneIndex, 0, campaignSceneOrder.Count - 1);
+        // Resume at the level following the most recently completed one (NOT the furthest level ever
+        // reached) so that replaying an earlier level still advances to its correct successor.
+        int sceneIndex = Mathf.Clamp(_continueSceneIndex, 0, campaignSceneOrder.Count - 1);
         return campaignSceneOrder[sceneIndex];
     }
 

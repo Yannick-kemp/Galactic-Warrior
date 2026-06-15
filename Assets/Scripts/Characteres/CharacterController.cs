@@ -71,6 +71,11 @@ public class CharacterController : Character, ICharacterController
         RequestCoreMovePosition(mergedPosition);
     }
 
+    // Default: do not alter velocity (the Warrior keeps its own physics: falls, jumps, bounces).
+    // Enemies override this to true so their scripted MovePosition cannot transfer a momentum
+    // impulse onto the Warrior on contact.
+    protected virtual bool NeutralizeImplicitMoveVelocity => false;
+
     protected void RequestCoreMovePosition(Vector2 position)
     {
         _lastCoreMoveRequestPosition = position;
@@ -80,11 +85,25 @@ public class CharacterController : Character, ICharacterController
         if (rigidbody2 != null)
         {
             rigidbody2.MovePosition(position);
+            NeutralizeMoveVelocityIfNeeded();
         }
         else
         {
             transform.position = new Vector3(position.x, position.y, transform.position.z);
         }
+    }
+
+    // Cancels the implicit velocity Unity derives from a MovePosition call (for bodies whose
+    // movement is fully scripted) so it is not transferred as a momentum impulse onto the
+    // Warrior on contact. No-op unless NeutralizeImplicitMoveVelocity is true. Call right after
+    // any direct rigidbody2.MovePosition that bypasses RequestCoreMovePosition.
+    protected void NeutralizeMoveVelocityIfNeeded()
+    {
+        if (!NeutralizeImplicitMoveVelocity || rigidbody2 == null)
+            return;
+
+        rigidbody2.linearVelocity = Vector2.zero;
+        rigidbody2.angularVelocity = 0f;
     }
 
     // Add near your other virtual properties

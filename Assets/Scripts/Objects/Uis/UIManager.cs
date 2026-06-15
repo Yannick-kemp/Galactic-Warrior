@@ -9,6 +9,7 @@ public class UIManager : MonoBehaviour
     [SerializeField] private PurchaseUI purchaseUI;
     [SerializeField] private RewardUI rewardUI;
     [SerializeField] private UpgradeUI upgradeUI;
+    [SerializeField] private VictoryUI victoryUI;
 
     private void Awake()
     {
@@ -90,12 +91,20 @@ public class UIManager : MonoBehaviour
 
     public void PlayLevelTransition(string levelName, string subtitle = "")
     {
+        // Prefer the persistent singleton (survives the campaign -> menu scene load),
+        // then the serialized reference, then a last-resort scene search.
+        if (levelTransitionUI == null)
+            levelTransitionUI = LevelTransitionUI.Instance;
+
         if (levelTransitionUI == null)
             levelTransitionUI = FindFirstObjectByType<LevelTransitionUI>(FindObjectsInactive.Include);
 
         if (levelTransitionUI == null)
         {
-            Debug.LogError("[UIManager] LevelTransitionUI not found.");
+            // Not fatal: the overlay is purely cosmetic. Warn and let the scene flow continue
+            // so a missing overlay never blocks the end-of-level transition.
+            Debug.LogWarning("[UIManager] LevelTransitionUI not found - skipping transition overlay. " +
+                             "Place a LevelTransitionUI on the persistent _APP prefab to enable it.");
             return;
         }
 
@@ -190,5 +199,27 @@ public class UIManager : MonoBehaviour
             return;
 
         upgradeUI.Hide();
+    }
+
+    public void ShowVictoryScreen(int score, float runSeconds, int retries, int coins, int tokens)
+    {
+        if (victoryUI == null)
+            victoryUI = FindFirstObjectByType<VictoryUI>(FindObjectsInactive.Include);
+
+        if (victoryUI == null)
+        {
+            Debug.LogError("[UIManager] VictoryUI not found in scene.");
+            return;
+        }
+
+        victoryUI.Show(score, runSeconds, retries, coins, tokens);
+    }
+
+    public void HideVictoryScreen()
+    {
+        if (victoryUI == null)
+            victoryUI = FindFirstObjectByType<VictoryUI>(FindObjectsInactive.Include);
+
+        victoryUI?.Hide();
     }
 }

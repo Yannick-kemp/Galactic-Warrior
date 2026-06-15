@@ -523,7 +523,7 @@ public class EnemyMgr : MonoBehaviour
             _levelClearTriggeredThisScene = true;
 
             Debug.Log($"[EnemyMgr] Boss death triggered final flow: {enemy.BossDisplayName}");
-            GameMgr.Instance?.HandleBossFinalDeathLevelComplete();
+            GameMgr.Instance?.HandleBossFinalDeathLevelComplete(enemy.EnemyType, enemy.transform.position);
             return;
         }
 
