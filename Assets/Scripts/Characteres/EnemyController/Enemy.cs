@@ -1654,6 +1654,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         public virtual void SetSpawnOverrides(EnemySpawnOverrides overrides)
         {
             _spawnOverrides = overrides;
+
+            // Apply the boss flag immediately (not in ApplySpawnOverridesNow): EnemyMgr reads
+            // IsBoss right after SetSpawnOverrides but before Start, and some enemies (Bee) never
+            // call base.Start. This keeps boss registration / display correct.
+            if (overrides != null && overrides.overrideIsBoss)
+                SetBoss(overrides.isBoss);
         }
 
         protected void ApplySpawnOverridesNow()

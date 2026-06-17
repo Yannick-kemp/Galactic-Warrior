@@ -39,6 +39,7 @@ public class EnemySpawnPointEditor : Editor
         DrawOverridePair("overrideAttackCooldown", "attackCooldown", "Attack Cooldown");
         DrawOverridePair("overrideAttackDamage", "attackDamage", "Attack Damage");
         DrawOverridePair("overrideMaxHealth", "maxHealth", "Max Health");
+        DrawOverridePair("overrideIsBoss", "isBoss", "Is Boss");
 
         EditorGUILayout.EndVertical();
     }
