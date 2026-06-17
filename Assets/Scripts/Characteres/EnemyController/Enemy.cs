@@ -79,6 +79,35 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private bool useWorldYDeathFallback = true;
         [SerializeField] private float worldDeathY = -30f;
 
+        [Header("Ground Bound (terrestrial enemies only)")]
+        [Tooltip("ON = this enemy is permanently seated on the top surface of its current " +
+                 "platform and can never become airborne (gravity, body collisions, external " +
+                 "forces). Horizontal patrol and horizontal knockback are preserved. Set true in " +
+                 "Start() by terrestrial enemies (Raka, CrawlingMonster, P39). Flying / jumping " +
+                 "enemies must leave this false.")]
+        [SerializeField] protected bool groundBound = false;
+
+        // Last platform this ground-bound enemy was seated on. Cached so we can still detect when
+        // the platform is genuinely gone (destroyed/disabled) and release the Y lock so normal
+        // falling/death still work.
+        private Collider2D _groundBoundPlatformCollider;
+
+        private const float GroundBoundEdgeReleaseSkin = 0.1f;
+
+        // Y-lock state. While a ground-bound enemy rests on a static platform we add a
+        // FreezePositionY constraint so gravity / collisions / external forces cannot move it
+        // vertically, while X stays fully free for patrol and knockback. We never touch X, so the
+        // movement system is never fought. The base constraints are captured once and restored
+        // when the lock is released (moving platform, platform gone, or death).
+        [Tooltip("The support collider bottom must be within this distance of the platform top " +
+                 "before the Y axis is frozen, so the enemy is never locked mid-air while still " +
+                 "settling onto its platform.")]
+        [SerializeField, Min(0f)] private float groundBoundSeatTolerance = 0.06f;
+
+        private RigidbodyConstraints2D _groundBoundBaseConstraints;
+        private bool _groundBoundConstraintsCaptured;
+        private bool _groundBoundYLocked;
+
         private bool _isStunned;
         private Coroutine _stunRoutine;
         public bool IsStunned => _isStunned;
@@ -156,6 +185,11 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
         private EnemySpawnOverrides _spawnOverrides;
         protected EnemySpawnOverrides SpawnOverrides => _spawnOverrides;
+
+        /// <summary>Read-only access to the spawn-point overrides stored on this enemy (set by
+        /// EnemyMgr at spawn). Lets owned sub-components (e.g. a Bee's spark) read per-spawn-point
+        /// values without going through ApplySpawnOverridesNow. Null if spawned without overrides.</summary>
+        public EnemySpawnOverrides ActiveSpawnOverrides => _spawnOverrides;
 
         [Header("Moving Platform Patrol")]
         [SerializeField] protected float patrolEdgeArriveThreshold = 0.12f;
@@ -259,6 +293,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             PreventUnwantedWarriorBodyPush(null);
             RefreshWarriorBodyPushSafePosition();
+
+            // Keep ground-bound enemies glued to their platform by freezing the Rigidbody2D Y axis
+            // while resting on a static platform, so gravity / external forces cannot lift them.
+            ClampGroundBoundToSurface();
         }
 
         protected override void Start()
@@ -388,6 +426,102 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 if (frameIndex != lastFrameIndex && frameIndex >= 0)
                     lastFrameIndex = frameIndex;
             }
+        }
+
+        /// <summary>
+        /// Keeps a terrestrial enemy (<see cref="groundBound"/> = true) glued to its platform
+        /// surface by freezing the Rigidbody2D Y axis while it rests on a static platform. With Y
+        /// frozen, gravity, collision impulses and external forces (AddForce, Warrior body contact)
+        /// cannot move it vertically, so it can never become airborne -- while X stays completely
+        /// free, so patrol and horizontal knockback (SmoothStepBack) are untouched. We never write
+        /// position or velocity here, so the movement system is never fought (that was the cause of
+        /// the earlier freeze / lost-knockback regressions).
+        ///
+        /// The Y lock is released so normal physics resumes when: the enemy is on a moving/rotating
+        /// platform (its carry owns Y), its platform is gone (destroyed/disabled or it has drifted
+        /// off the span -> it must be able to fall and trigger the void-death fallback), or it dies.
+        /// It is only engaged once the enemy is actually resting on the surface, never mid-air.
+        ///
+        /// Driven once per physics step from FixedUpdate.
+        /// </summary>
+        protected void ClampGroundBoundToSurface()
+        {
+            if (!groundBound || rigidbody2 == null) return;
+
+            if (!_groundBoundConstraintsCaptured)
+            {
+                _groundBoundBaseConstraints = rigidbody2.constraints;
+                _groundBoundConstraintsCaptured = true;
+            }
+
+            if (IsDeadOrDying)
+            {
+                SetGroundBoundYLock(false);
+                return;
+            }
+
+            // Cache the live platform so we can still tell when it is genuinely gone.
+            if (CurrentplatForm != null && CurrentplatForm.platformCollider != null)
+                _groundBoundPlatformCollider = CurrentplatForm.platformCollider;
+
+            Collider2D platformCol = _groundBoundPlatformCollider;
+
+            // Platform genuinely gone -> release so the enemy can fall / die normally.
+            if (platformCol == null || !platformCol.enabled || !platformCol.gameObject.activeInHierarchy)
+            {
+                _groundBoundPlatformCollider = null;
+                SetGroundBoundYLock(false);
+                return;
+            }
+
+            // Moving / rotating platforms own the vertical carry -> never freeze Y there.
+            if (IsOnMovingOrRotatingPlatform())
+            {
+                SetGroundBoundYLock(false);
+                return;
+            }
+
+            Collider2D support = (NormalCollider != null && NormalCollider.enabled)
+                ? NormalCollider
+                : collider2;
+
+            if (support == null) return;
+
+            Bounds pb = platformCol.bounds;
+
+            // No live ground contact and no longer horizontally over the cached platform ->
+            // the enemy has truly left it; release so it falls instead of hanging in mid-air.
+            if (CurrentplatForm == null)
+            {
+                float cx = support.bounds.center.x;
+                if (cx < pb.min.x - GroundBoundEdgeReleaseSkin ||
+                    cx > pb.max.x + GroundBoundEdgeReleaseSkin)
+                {
+                    _groundBoundPlatformCollider = null;
+                    SetGroundBoundYLock(false);
+                    return;
+                }
+            }
+
+            // Only engage the lock once the support collider is actually resting on the surface, so
+            // we never freeze the enemy mid-air (e.g. while it is still settling after spawn). Once
+            // locked, forces can no longer lift it, so it stays resting and stays locked.
+            bool restingOnSurface = support.bounds.min.y <= pb.max.y + groundBoundSeatTolerance;
+            if (restingOnSurface)
+                SetGroundBoundYLock(true);
+        }
+
+        private void SetGroundBoundYLock(bool locked)
+        {
+            if (rigidbody2 == null) return;
+            if (locked == _groundBoundYLocked) return;
+
+            _groundBoundYLocked = locked;
+
+            if (locked)
+                rigidbody2.constraints = _groundBoundBaseConstraints | RigidbodyConstraints2D.FreezePositionY;
+            else if (_groundBoundConstraintsCaptured)
+                rigidbody2.constraints = _groundBoundBaseConstraints;
         }
 
         protected void ClampEnemyToPlatformTop()
@@ -1095,7 +1229,7 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         }
         #endregion
 
-        public IEnumerator SmoothStepBack(bool positif)
+        public virtual IEnumerator SmoothStepBack(bool positif)
         {
             var platformSnapshot = CurrentplatForm; // snapshot au début
 

@@ -90,6 +90,12 @@ public class RelicUIController : MonoBehaviour
     private readonly Dictionary<Button, bool> _lastArmedStateByButton = new();
     private readonly Dictionary<string, int> _lastKnownCountByRelicId = new();
 
+    // Shield/Sprint are mutually exclusive only while the OTHER effect is active. Their button is
+    // refreshed only on OnRelicCountChanged, so when the other effect ends (no count change) the
+    // blocked button would stay disabled. Track the last blocked state per button and re-refresh
+    // the moment it changes, so each relic returns to normal as soon as the exclusion lifts.
+    private readonly Dictionary<Button, bool> _lastMutualExclusionBlockedByButton = new();
+
     private void Awake()
     {
         if (warrior == null) warrior = FindFirstObjectByType<Warrior>();
@@ -136,6 +142,7 @@ public class RelicUIController : MonoBehaviour
     {
         UpdateKeyBlinkingButtons();
         RefreshArmableRelicButtonsWhenStateChanged();
+        RefreshMutualExclusionButtonsWhenStateChanged();
     }
 
     private void LateUpdate()
@@ -1013,6 +1020,41 @@ public class RelicUIController : MonoBehaviour
 
             if (!armed)
                 ForceButtonNormalVisual(r);
+        }
+    }
+
+    // Keeps Shield/Sprint usable as soon as the mutual exclusion lifts. The exclusion itself is
+    // unchanged (Shield blocked while Sprint is armed/active, Sprint blocked while Shield is up):
+    // we only re-evaluate the button when its blocked state flips, which OnRelicCountChanged alone
+    // would miss when the OTHER effect simply ends (no count change). Scoped to Shield/Sprint only.
+    private void RefreshMutualExclusionButtonsWhenStateChanged()
+    {
+        if (relicManager == null || warrior == null)
+            return;
+
+        for (int i = 0; i < rules.Count; i++)
+        {
+            RelicButtonRule r = rules[i];
+            if (r == null || r.button == null)
+                continue;
+
+            bool isShield = r.effect == RelicUseEffect.ShieldTimed ||
+                            (r.slot != null && r.slot.Definition is ShieldRelic);
+            bool isSprint = r.slot != null && r.slot.Definition is SprintRelic;
+            if (!isShield && !isSprint)
+                continue;
+
+            bool blocked = IsBlockedByMutualExclusion(r);
+
+            bool changed =
+                !_lastMutualExclusionBlockedByButton.TryGetValue(r.button, out bool previousBlocked) ||
+                previousBlocked != blocked;
+
+            if (!changed)
+                continue;
+
+            _lastMutualExclusionBlockedByButton[r.button] = blocked;
+            RefreshButton(r);
         }
     }
 

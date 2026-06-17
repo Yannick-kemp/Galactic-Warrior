@@ -51,6 +51,11 @@ public class EnemySpawnPointEditor : Editor
                 DrawZalaytyOverrides();
                 break;
 
+            case EnemyType.Bee:
+            case EnemyType.BeeEretic:
+                DrawBeeOverrides();
+                break;
+
             default:
                 EditorGUILayout.BeginVertical("box");
                 EditorGUILayout.LabelField("Specific Overrides", EditorStyles.boldLabel);
@@ -71,6 +76,18 @@ public class EnemySpawnPointEditor : Editor
 
         DrawNestedOverridePair(zalaytyProp, "overrideSqueezeCheckInterval", "squeezeCheckInterval", "Squeeze Check Interval");
         DrawNestedOverridePair(zalaytyProp, "overrideRepathInterval", "repathInterval", "Repath Interval");
+
+        EditorGUILayout.EndVertical();
+    }
+
+    private void DrawBeeOverrides()
+    {
+        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.LabelField("Bee Overrides", EditorStyles.boldLabel);
+
+        // Flat fields on EnemySpawnOverrides (read by the Bee's spark, SparkShieldAwareClamp2D).
+        DrawOverridePair("overrideSparkStun", "sparkStunSeconds", "Spark Stun Seconds");
+        DrawOverridePair("overrideSparkKnockback", "sparkKnockbackVel", "Spark Knockback Vel");
 
         EditorGUILayout.EndVertical();
     }

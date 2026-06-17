@@ -57,6 +57,9 @@ public class RakaMonster : Enemy
 
         base.Start();
 
+        // Terrestrial crawler: never allowed to leave its platform surface vertically.
+        groundBound = true;
+
         meleeHitDistance = 2.60f;
         Range = meleeRange;
         attackCooldown = meleeCooldown;

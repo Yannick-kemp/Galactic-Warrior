@@ -114,6 +114,15 @@ namespace Assets.Scripts.Relics.Projectiles
                 return;
             }
 
+            // Relic hit by the projectile -> collect it like a Warrior walk-over pickup. The
+            // projectile is NOT consumed and keeps flying; it only gathers the relic.
+            RelicPickup relic = other.GetComponent<RelicPickup>() ?? other.GetComponentInParent<RelicPickup>();
+            if (relic != null)
+            {
+                HitRelic(relic);
+                return;
+            }
+
             if (((1 << other.gameObject.layer) & obstacleMask) != 0)
             {
                 if (destroyOnAnyObstacle)
@@ -129,6 +138,15 @@ namespace Assets.Scripts.Relics.Projectiles
             if (enemy != null)
             {
                 HitEnemy(enemy, collision.collider);
+                return;
+            }
+
+            // Relic hit by the projectile -> collect it like a Warrior walk-over pickup. The
+            // projectile is NOT consumed and keeps flying; it only gathers the relic.
+            RelicPickup relic = collision.collider.GetComponent<RelicPickup>() ?? collision.collider.GetComponentInParent<RelicPickup>();
+            if (relic != null)
+            {
+                HitRelic(relic);
                 return;
             }
 
@@ -209,6 +227,19 @@ namespace Assets.Scripts.Relics.Projectiles
 
             RaiseHitEvents(arachnee, hitPoint, killed);
 
+            Destroy(gameObject);
+        }
+
+        private void HitRelic(RelicPickup relic)
+        {
+            if (relic == null) return;
+
+            // Collect the relic into the inventory/counter exactly like a Warrior walk-over pickup
+            // (same counter increment + HUD + SFX + pickup VFX, via RelicPickup.Collect). It does
+            // NOT arm or activate the relic -- arming/using stays the player's click. The ice
+            // bullet is consumed on contact (same lifecycle as hitting an enemy/obstacle).
+            _spent = true;
+            relic.Collect(_owner);
             Destroy(gameObject);
         }
 

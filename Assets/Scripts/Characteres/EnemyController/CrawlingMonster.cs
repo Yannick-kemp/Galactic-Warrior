@@ -1,5 +1,6 @@
 using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Services;
+using System.Collections;
 using UnityEngine;
 
 public class CrawlingMonster : Enemy
@@ -11,9 +12,25 @@ public class CrawlingMonster : Enemy
     private bool _goRight;
     private bool _lastGoRight;
 
+    [Header("Recoil")]
+    [Tooltip("How long patrol is paused after a Warrior knockback so the recoil is not immediately " +
+             "cancelled by the patrol coroutine restarting and driving its own MovePosition.")]
+    [SerializeField] private float recoilPatrolSuppressSeconds = 0.15f;
+    private float _recoilPatrolSuppressUntil = -999f;
+
+    [Tooltip("Edge inset used when clamping movement / recoil to the platform. Smaller lets the " +
+             "recoil push much closer to the platform edge so it is visible on (almost) every hit; " +
+             "the ground-bound Y-lock prevents falling even at the edge. Patrol still turns around " +
+             "at edgeSafeMargin, so this does not change patrol behaviour.")]
+    [SerializeField] private float platformSafeMargin = 0.12f;
+    protected override float PlatformSafeMargin => platformSafeMargin;
+
     protected override void Start()
     {
         base.Start();
+
+        // Terrestrial crawler: never allowed to leave its platform surface vertically.
+        groundBound = true;
 
         // Crawling defaults
         Range = 3.5f;
@@ -48,6 +65,11 @@ public class CrawlingMonster : Enemy
         }
 
         base.Update();
+
+        // While recoiling from a Warrior hit, let SmoothStepBack own the horizontal movement; do
+        // not restart patrol -- its competing MovePosition would cancel the recoil on some hits.
+        if (Time.time < _recoilPatrolSuppressUntil)
+            return;
 
         if (target != null && !IsAttacked)
         {
@@ -145,9 +167,31 @@ public class CrawlingMonster : Enemy
 
     public override float ComputeStepBackDistance(float incoming)
     {
-        if (hitReaction == null) return incoming;
+        // The per-enemy KnockBack value from the Warrior attack switch is authoritative for
+        // CrawlingMonster: return it as-is instead of clamping it to hitReaction.max * 0.6f, so
+        // changing the switch value (e.g. 0.5f vs 20f) actually changes the recoil. The anti-fall
+        // clamp (ClampToCurrentPlatform) in SmoothStepBack still keeps Crawling on its platform,
+        // so large values simply push it to the platform edge rather than off it.
+        return Mathf.Max(0f, incoming);
+    }
 
-        float v = incoming * hitReaction.stepBackMultiplier;
-        return Mathf.Clamp(v, hitReaction.min, hitReaction.max * 0.6f);
+    public override bool CanStepBack(bool positif)
+    {
+        // The base CanStepBack returns false as soon as the requested distance exceeds the
+        // platform safe band, which makes SmoothStepBack bail out with NO recoil at all for a
+        // large switch value (e.g. 20f). Crawling instead lets the recoil proceed: SmoothStepBack
+        // clamps the target to the platform edge (anti-fall preserved), so a large value pushes it
+        // to the edge and a small value moves it a little -> the switch value is actually visible.
+        // Only refuse when there is no platform to stand on.
+        return CurrentplatForm != null;
+    }
+
+    public override IEnumerator SmoothStepBack(bool positif)
+    {
+        // Pause patrol for the recoil duration so the step-back is not fought (and visually
+        // cancelled on some hits) by the patrol coroutine restarting and driving its own
+        // MovePosition. Each hit re-arms the window, so rapid combos keep the recoil clean.
+        _recoilPatrolSuppressUntil = Time.time + recoilPatrolSuppressSeconds;
+        yield return StartCoroutine(base.SmoothStepBack(positif));
     }
 }

@@ -404,7 +404,7 @@ Rigidbody2D:
   m_Interpolate: 0
   m_SleepingMode: 1
   m_CollisionDetection: 0
-  m_Constraints: 5
+  m_Constraints: 4
 --- !u!114 &9176622360892515322
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -439,6 +439,11 @@ MonoBehaviour:
   DescendentPhase: 0
   _isJumping: 0
   _isMoving: 0
+  enableDestinationPlatformAntiTunnel: 1
+  antiTunnelLandingSkin: 0.015
+  antiTunnelCastExtraDistance: 0.08
+  antiTunnelHorizontalSkin: 0.03
+  antiTunnelTopStartTolerance: 0.04
   Range: 3
   attackCooldown: 1.5
   attackDamage: 10
@@ -480,6 +485,20 @@ MonoBehaviour:
   disableAttackWhenHitSeconds: 0.2
   hitReaction: {fileID: 11400000, guid: 533894972b5c13546857e1467b413539, type: 2}
   patrolEdgeArriveThreshold: 0.12
+  preventWarriorBodyMomentumPush: 1
+  warriorBodyPushRestoreStrength: 1
+  maxAllowedBodyPushDistance: 0.03
+  warriorBodyPushContactMemory: 0.1
+  warriorBodyPushMaxCorrectionPerStep: 0.2
+  preventWarriorBodyHorizontalPush: 1
+  preventWarriorBodyVerticalLift: 1
+  warriorBodyLiftAllowance: 0.04
+  cancelWarriorBodyPushVelocity: 1
+  useGroundCheckPointForPatrolEdge: 1
+  patrolEdgeAheadProbeDistance: 0.55
+  patrolEdgeRayExtraLength: 0.2
+  patrolEdgeBoundsSkin: 0.02
+  participatesInWarriorTopPingPongEscape: 1
   edgeSafeMargin: 0.45
   edgeTolerance: 0.05
 --- !u!61 &3971217980109467877

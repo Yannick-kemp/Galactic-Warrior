@@ -29,6 +29,14 @@ public class EnemySpawnOverrides
     public bool overrideMaxHealth;
     public float maxHealth = 100f;
 
+    // Bee-only: spark hit reaction. Kept flat in Common (per request) so it shows directly under
+    // the spawn point; only the Bee's spark (SparkShieldAwareClamp2D) reads these values.
+    public bool overrideSparkStun;
+    [Min(0f)] public float sparkStunSeconds = 0.10f;
+
+    public bool overrideSparkKnockback;
+    [Min(0f)] public float sparkKnockbackVel = 0f;
+
     [Header("Zalayty")]
     public ZalaytySpawnOverrides zalayty = new ZalaytySpawnOverrides();
 }
