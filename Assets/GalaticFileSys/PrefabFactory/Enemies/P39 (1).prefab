@@ -285,8 +285,8 @@ Rigidbody2D:
     m_Bits: 0
   m_Interpolate: 0
   m_SleepingMode: 1
-  m_CollisionDetection: 0
-  m_Constraints: 5
+  m_CollisionDetection: 1
+  m_Constraints: 4
 --- !u!61 &8955273264539504818
 BoxCollider2D:
   m_ObjectHideFlags: 0
@@ -413,6 +413,11 @@ MonoBehaviour:
   DescendentPhase: 0
   _isJumping: 0
   _isMoving: 0
+  enableDestinationPlatformAntiTunnel: 1
+  antiTunnelLandingSkin: 0.015
+  antiTunnelCastExtraDistance: 0.08
+  antiTunnelHorizontalSkin: 0.03
+  antiTunnelTopStartTolerance: 0.04
   Range: 3
   attackCooldown: 1.5
   attackDamage: 10
@@ -443,15 +448,31 @@ MonoBehaviour:
   deathSfxMaxDistance: 20
   canBeStunned: 1
   meleeHitDistance: 0.65
+  useWorldYDeathFallback: 1
+  worldDeathY: -30
   targetAnimationName: AttackAnimation
+  enemyType: 0
+  isBoss: 0
+  bossDisplayName: 
   totalFramesInAnimation: 16
   frameIndex: 0
   disableAttackWhenHitSeconds: 0.2
   hitReaction: {fileID: 11400000, guid: 2bd15672d5e63f64c94f2771963815e8, type: 2}
-  dieWhenOutOfViewport: 1
-  requireSeenOnceBeforeAutoDeath: 1
-  viewportMargin: 0.08
-  autoDeathCheckInterval: 0.15
+  patrolEdgeArriveThreshold: 0.12
+  preventWarriorBodyMomentumPush: 1
+  warriorBodyPushRestoreStrength: 1
+  maxAllowedBodyPushDistance: 0.03
+  warriorBodyPushContactMemory: 0.1
+  warriorBodyPushMaxCorrectionPerStep: 0.2
+  preventWarriorBodyHorizontalPush: 1
+  preventWarriorBodyVerticalLift: 1
+  warriorBodyLiftAllowance: 0.04
+  cancelWarriorBodyPushVelocity: 1
+  useGroundCheckPointForPatrolEdge: 1
+  patrolEdgeAheadProbeDistance: 0.55
+  patrolEdgeRayExtraLength: 0.2
+  patrolEdgeBoundsSkin: 0.02
+  participatesInWarriorTopPingPongEscape: 1
   edgeSafeMargin: 0.45
   edgeTolerance: 0.05
 --- !u!114 &8963363870098307140

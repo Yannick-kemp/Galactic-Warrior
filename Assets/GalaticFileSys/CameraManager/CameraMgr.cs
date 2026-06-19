@@ -70,4 +70,44 @@ public class CameraMgr : MonoBehaviour
     {
         Debug.Log("CameraManager Initialized");
     }
+
+    /// <summary>This scene's main camera (lazily falls back to Camera.main). Single camera source
+    /// of truth for systems like zone culling.</summary>
+    public Camera MainCamera
+    {
+        get
+        {
+            if (mainCamera == null)
+                mainCamera = Camera.main;
+            return mainCamera;
+        }
+    }
+
+    /// <summary>World-space rectangle currently visible by the camera (XY plane). Returns false if
+    /// there is no camera. Handles orthographic (this game) and a perspective fallback.</summary>
+    public bool TryGetVisibleWorldRect(out Rect rect)
+    {
+        rect = default;
+
+        Camera cam = MainCamera;
+        if (cam == null)
+            return false;
+
+        Vector3 c = cam.transform.position;
+
+        if (cam.orthographic)
+        {
+            float halfH = cam.orthographicSize;
+            float halfW = halfH * cam.aspect;
+            rect = new Rect(c.x - halfW, c.y - halfH, halfW * 2f, halfH * 2f);
+            return true;
+        }
+
+        // Perspective fallback: frustum size at the camera's distance to the z = 0 play plane.
+        float dist = Mathf.Abs(c.z);
+        float h = 2f * dist * Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad);
+        float w = h * cam.aspect;
+        rect = new Rect(c.x - w * 0.5f, c.y - h * 0.5f, w, h);
+        return true;
+    }
 }

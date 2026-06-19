@@ -53,6 +53,12 @@ public class SparkShieldAwareClamp2D : MonoBehaviour
     [SerializeField] private Enemy owner;
     [SerializeField] private bool ignoreShieldWhileSprint = true;
 
+    [Header("Warrior Hit Reaction")]
+    [Tooltip("Default stun applied to the Warrior on spark contact. Overridable per spawn point via EnemySpawnOverrides.bee.")]
+    [SerializeField, Min(0f)] private float sparkStunSeconds = 0.10f;
+    [Tooltip("Default knockback velocity applied to the Warrior on spark contact. Overridable per spawn point via EnemySpawnOverrides.bee.")]
+    [SerializeField, Min(0f)] private float sparkKnockbackVel = 0f;
+
     private Warrior _warrior;
     private Renderer _rend;
 
@@ -331,11 +337,21 @@ public class SparkShieldAwareClamp2D : MonoBehaviour
         {
             // FIRST FRAME of a valid warrior contact (hitWarrior + damage armed)
 
-            // Option A (if you added the helper I suggested):
-            _warrior.ApplyHitReaction(HitKind.Spark, hit.point, stunSeconds: 0.10f, knockbackVel: 0f);
+            // Spark hit reaction. Defaults come from the serialized fields; a spawn point can
+            // override stun / knockback per-instance via EnemySpawnOverrides.bee (read from the
+            // owner enemy, set by EnemyMgr at spawn). Falls back to defaults if not spawned with
+            // overrides (e.g. hand-placed) or owner is missing.
+            float stun = sparkStunSeconds;
+            float knock = sparkKnockbackVel;
 
-            // Option B (if you want something minimal right now):
-            // _warrior.LosingBalanceAnimationDisplay();   // or any "hit" animation you have
+            EnemySpawnOverrides ov = owner != null ? owner.ActiveSpawnOverrides : null;
+            if (ov != null)
+            {
+                if (ov.overrideSparkStun) stun = ov.sparkStunSeconds;
+                if (ov.overrideSparkKnockback) knock = ov.sparkKnockbackVel;
+            }
+
+            _warrior.ApplyHitReaction(HitKind.Spark, hit.point, stunSeconds: stun, knockbackVel: knock);
         }
 
         _wasArmedWarriorHit = armedWarriorHit;

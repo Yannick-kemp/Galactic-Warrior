@@ -45,7 +45,7 @@ GameObject:
   - component: {fileID: 7557518934864180681}
   - component: {fileID: 1710070900053631450}
   - component: {fileID: 4607836878559005040}
-  m_Layer: 0
+  m_Layer: 18
   m_Name: relic-evo-ice
   m_TagString: Untagged
   m_Icon: {fileID: 0}

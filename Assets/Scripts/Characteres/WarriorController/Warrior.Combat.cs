@@ -81,19 +81,19 @@ namespace Assets.Scripts.Characteres.WarriorController
                 float KnockBack = enemy switch
                 {
                     M97Monster => 0.134f,
-                    CrawlingMonster => 0.4f,
+                    CrawlingMonster =>1.5f,
                     RakaMonster => 0.2f,
-                    ZalaytyMonster => 0.35f,    
+                    ZalaytyMonster => 0.4f,    
                     _ => attack1KnockbackForce
                 };
 
                 int damage = enemy switch
                 {
                     M97Monster => 6,
-                    CrawlingMonster => 8,
-                    P39Monster_WithHealthBar => 7,
+                    CrawlingMonster => 25,
+                    P39Monster_WithHealthBar => 20,
                     RakaMonster => 4,
-                    ZalaytyMonster => 5,
+                    ZalaytyMonster => 10,
                     HashagarMonster => 2,
                     _ => attack1Damage
                 };
@@ -319,6 +319,17 @@ namespace Assets.Scripts.Characteres.WarriorController
                     stunSeconds: 0f,
                     applyStun: false))
             {
+                // Damage / stun / platform protection are already applied above. Now request the
+                // recoil: Zalayty's SmoothStepBack override applies it ONLY inside the strict
+                // static-platform window (and is a no-op otherwise), so moving-platform and
+                // airborne combat are never broken.
+                if (enemy != null && !enemy.IsDeadOrDying && knockbackForce > 0f)
+                {
+                    enemy.stepBackDistance = enemy.ComputeStepBackDistance(knockbackForce);
+                    float dirX = enemy.transform.position.x - transform.position.x;
+                    StartCoroutine(dirX >= 0f ? enemy.SmoothStepBack(true) : enemy.SmoothStepBack(false));
+                }
+
                 return;
             }
 
