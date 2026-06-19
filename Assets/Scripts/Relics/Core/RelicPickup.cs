@@ -37,21 +37,26 @@ public class RelicPickup : MonoBehaviour
     }
     private void OnEnable()
     {
-        _armed = false;
         _consumed = false;
         CancelInvoke(nameof(Arm));
-        //  Invoke(nameof(Arm), armDelay);
+
+        // Arm on EVERY activation. Start() runs at most once, so relying on it left the pickup
+        // permanently disarmed after a zone SetActive cycle (zone culling) re-ran OnEnable without
+        // re-running Start. Arming here makes the pickup robust to any activation/deactivation.
+        _armed = true;
     }
 
     private void Arm() => _armed = true;
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        if (!_armed || _consumed) return;
+        if (!_armed || _consumed) 
+            return;
         if (other.gameObject.layer != _hitBoxLayer) return;
 
         var warrior = other.GetComponentInParent<Warrior>();
-        if (!warrior) return;
+        if (!warrior) 
+            return;
 
         Collect(warrior);
     }

@@ -76,6 +76,25 @@ namespace Assets.Scripts.Characteres.WarriorController
                 defaultWarriorSpriteRenderer.enabled = false;
         }
 
+        /// <summary>
+        /// Self-heal for the "invisible Warrior" bug: the Attack3 / ice-ball cast hides the default
+        /// sprite and only re-shows it from the AE_EndAttack3 animation event. Jumping (or any other
+        /// interrupt) can exit the Attack3 animation before that event fires, leaving the sprite
+        /// hidden while the Warrior stays fully functional. Called every Update: if the sprite is
+        /// hidden while we are demonstrably NOT casting (and not Hivernox-frozen), restore it.
+        /// </summary>
+        private void EnsureDefaultWarriorSpriteVisibleWhenNotCasting()
+        {
+            if (_frozenByHivernox) return;
+            if (_attack3Casting || _iceBallShotPending) return;   // a real cast owns the sprite
+            if (defaultWarriorSpriteRenderer == null) return;
+            if (defaultWarriorSpriteRenderer.enabled) return;     // already visible
+
+            // Not casting, not frozen, but the sprite is off -> a cast-exit restore was missed.
+            ShowDefaultWarriorVisuals();
+            HideAttack3Body();
+        }
+
         private void ShowAttack3Body()
         {
             // BodyFixedRoot is an Attack3 replacement body. It must never be visible

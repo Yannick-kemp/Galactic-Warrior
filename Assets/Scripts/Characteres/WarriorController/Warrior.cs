@@ -421,6 +421,8 @@ namespace Assets.Scripts.Characteres.WarriorController
                 _pendingIceBallAimWorld = InputMgr.Instance.TouchedVector;
                 ApplyAttack3OrbitAim(_pendingIceBallAimWorld);
             }
+
+            EnsureDefaultWarriorSpriteVisibleWhenNotCasting();
         }
 
         private void FixedUpdate()
