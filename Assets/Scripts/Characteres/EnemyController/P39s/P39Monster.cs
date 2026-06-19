@@ -26,6 +26,9 @@ public class P39Monster_WithHealthBar : Enemy
 
         base.Start();
 
+        // Terrestrial crawler: never allowed to leave its platform surface vertically.
+        groundBound = true;
+
         // P39 defaults
         Range = 4f;
         attackCooldown = 1f;

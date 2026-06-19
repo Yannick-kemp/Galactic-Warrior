@@ -4286,6 +4286,87 @@ public class ZalaytyMonster : Enemy
         return Mathf.Clamp(v, hitReaction.min, hitReaction.max * 0.6f);
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Guarded Warrior knockback (single chokepoint for EVERY SmoothStepBack request: melee,
+    // ice bullet, shield stomp, shield block, behave-attack).
+    //
+    // Zalayty accepts a horizontal recoil ONLY inside a strict static-platform window, and is a
+    // pure no-op otherwise, so none of his existing mechanics (A* paths, jumps, Warrior-top
+    // rebound, moving-platform carry, jump-down pass-through) can ever be disturbed by a hit.
+    //
+    // Window (all required):
+    //   1. supported on a STATIC platform (moving / rotating platforms excluded),
+    //   2. not airborne / jumping,
+    //   3. not in a Warrior-top rebound,
+    //   4. platform collision NOT ignored (no jump-down pass-through in progress).
+    // During the recoil the Y axis is frozen (cannot be pushed below / inside the platform) and
+    // base.SmoothStepBack clamps X to the platform span; afterwards the body is re-seated and
+    // platform collision restored, then the Y lock is released.
+    // ---------------------------------------------------------------------------------------
+    public override IEnumerator SmoothStepBack(bool positif)
+    {
+        if (!CanAcceptGuardedStaticPlatformKnockbackNow())
+            yield break;
+
+        RigidbodyConstraints2D baseConstraints = rigidbody2.constraints;
+
+        // Clean start + freeze Y so Warrior contact cannot sink him through the platform top.
+        Vector2 v0 = rigidbody2.linearVelocity;
+        v0.y = 0f;
+        rigidbody2.linearVelocity = v0;
+        rigidbody2.angularVelocity = 0f;
+        rigidbody2.constraints = baseConstraints | RigidbodyConstraints2D.FreezePositionY;
+
+        // Horizontal recoil. base.SmoothStepBack clamps X to the platform span every step, so it
+        // cannot be pushed off the edge even though Zalayty can disable ClampMoveToCurrentPlatform.
+        yield return StartCoroutine(base.SmoothStepBack(positif));
+
+        // Re-seat on the surface and restore platform collision, then release the Y lock.
+        if (this != null && !IsDeadOrDying)
+            this.RestorePlatformSupportAfterWarriorConstraint();
+
+        if (rigidbody2 != null)
+            rigidbody2.constraints = baseConstraints;
+
+        Physics2D.SyncTransforms();
+    }
+
+    private bool CanAcceptGuardedStaticPlatformKnockbackNow()
+    {
+        if (IsDeadOrDying || rigidbody2 == null)
+            return false;
+
+        // 2. not airborne / jumping
+        if (_isJumping || activesJumpCoroutine != null)
+            return false;
+
+        // 3. not in a Warrior-top rebound
+        if (_warriorTopReboundActive)
+            return false;
+
+        // 1. supported on a STATIC platform
+        if (!this.IsBodyStillSupportedByPlatformTop())
+            return false;
+
+        PlatFormColliderTrigger plat = CurrentplatForm;
+        if (plat == null || plat.platformCollider == null)
+            return false;
+
+        if (plat is MovingHorizontalPlatform || plat is MovingVerticalPlatform)
+            return false;
+        if (plat.GetType().Name == "RotatingPlatform")
+            return false;
+
+        // 4. platform collision must NOT be ignored (no jump-down pass-through in progress)
+        Collider2D body = (NormalCollider != null && NormalCollider.enabled) ? NormalCollider : collider2;
+        if (body == null)
+            return false;
+        if (Physics2D.GetIgnoreCollision(plat.platformCollider, body))
+            return false;
+
+        return true;
+    }
+
     protected override void ApplySpecificSpawnOverrides()
     {
         base.ApplySpecificSpawnOverrides();

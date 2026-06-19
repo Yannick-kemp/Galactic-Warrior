@@ -90,6 +90,17 @@ public class RelicUIController : MonoBehaviour
     private readonly Dictionary<Button, bool> _lastArmedStateByButton = new();
     private readonly Dictionary<string, int> _lastKnownCountByRelicId = new();
 
+    // Shield/Sprint are mutually exclusive only while the OTHER effect is active. Their button is
+    // refreshed only on OnRelicCountChanged, so when the other effect ends (no count change) the
+    // blocked button would stay disabled. Track the last blocked state per button and re-refresh
+    // the moment it changes, so each relic returns to normal as soon as the exclusion lifts.
+    private readonly Dictionary<Button, bool> _lastMutualExclusionBlockedByButton = new();
+
+    // Charges consumed into the currently armed-but-not-yet-active Sprint. Each Sprint click while
+    // armed-waiting adds its consumed stacks here; refunded in full if the waiting Sprint is
+    // cross-disarmed (e.g. clicking Shield), reset to 0 once it activates or is otherwise cleared.
+    private int _sprintArmedRefundableStacks;
+
     private void Awake()
     {
         if (warrior == null) warrior = FindFirstObjectByType<Warrior>();
@@ -136,6 +147,7 @@ public class RelicUIController : MonoBehaviour
     {
         UpdateKeyBlinkingButtons();
         RefreshArmableRelicButtonsWhenStateChanged();
+        RefreshMutualExclusionButtonsWhenStateChanged();
     }
 
     private void LateUpdate()
@@ -250,6 +262,25 @@ public class RelicUIController : MonoBehaviour
     }
     private void OnClickRule(int index)
     {
+        // Single exit point for the whole click flow. Whatever branch runs
+        // (consume / arm / disarm / refund / collect / blocked / early-out), the
+        // interactable state of EVERY relic button is recomputed here at the end.
+        // This is the guarantee that, e.g., consuming Sprint immediately re-enables
+        // Shield (total > 0) without waiting for a click on a third relic to fire
+        // OnRelicCountChanged. Individual branches still call RefreshButton(r) for
+        // their own armed/timed visuals; this only adds the missing global pass.
+        try
+        {
+            HandleRelicClick(index);
+        }
+        finally
+        {
+            RefreshAllButtons();
+        }
+    }
+
+    private void HandleRelicClick(int index)
+    {
         if (index < 0 || index >= rules.Count) return;
         if (relicManager == null) return;
         if (IsWarriorUnavailable()) return;
@@ -278,6 +309,11 @@ public class RelicUIController : MonoBehaviour
         // This keeps the armed state reversible without spending another stack.
         if (TryDisarmAlreadyArmedRelic(r))
             return;
+
+        // Mutual exclusion (new behavior): clicking the Shield button while Sprint is only
+        // armed-waiting (not yet active) disarms the waiting Sprint and refunds its charge, instead
+        // of being blocked. The Shield click then proceeds normally below.
+        DisarmWaitingSprintIfClickingShield(r);
 
         if (IsBlockedByMutualExclusion(r))
         {
@@ -342,6 +378,13 @@ public class RelicUIController : MonoBehaviour
             {
                 for (int i = 0; i < consume; i++)
                     relicManager.Collect(sprintDef, bypassFrameCap: true);
+            }
+            else if (warrior.IsSprintArmed && !warrior.IsDodging)
+            {
+                // Charges queued into an armed-but-not-yet-active sprint are refundable if it is
+                // later cross-disarmed. Accumulate so a multi-stacked armed sprint refunds ALL its
+                // charges. (Extending an ACTIVE sprint does not arm -> not counted here.)
+                _sprintArmedRefundableStacks += consume;
             }
 
             RefreshButton(r);
@@ -1016,6 +1059,47 @@ public class RelicUIController : MonoBehaviour
         }
     }
 
+    // Keeps Shield/Sprint usable as soon as the mutual exclusion lifts. The exclusion itself is
+    // unchanged (Shield blocked while Sprint is armed/active, Sprint blocked while Shield is up):
+    // we only re-evaluate the button when its blocked state flips, which OnRelicCountChanged alone
+    // would miss when the OTHER effect simply ends (no count change). Scoped to Shield/Sprint only.
+    private void RefreshMutualExclusionButtonsWhenStateChanged()
+    {
+        if (relicManager == null || warrior == null)
+            return;
+
+        // When the armed sprint goes away on its own (activated by movement, or cleared by
+        // death/disable without a cross-disarm), its queued charges are considered used -> drop the
+        // refundable tracker so we never refund charges that were actually consumed.
+        if (_sprintArmedRefundableStacks > 0 && !warrior.IsSprintArmed)
+            _sprintArmedRefundableStacks = 0;
+
+        for (int i = 0; i < rules.Count; i++)
+        {
+            RelicButtonRule r = rules[i];
+            if (r == null || r.button == null)
+                continue;
+
+            bool isShield = r.effect == RelicUseEffect.ShieldTimed ||
+                            (r.slot != null && r.slot.Definition is ShieldRelic);
+            bool isSprint = r.slot != null && r.slot.Definition is SprintRelic;
+            if (!isShield && !isSprint)
+                continue;
+
+            bool blocked = IsBlockedByMutualExclusion(r);
+
+            bool changed =
+                !_lastMutualExclusionBlockedByButton.TryGetValue(r.button, out bool previousBlocked) ||
+                previousBlocked != blocked;
+
+            if (!changed)
+                continue;
+
+            _lastMutualExclusionBlockedByButton[r.button] = blocked;
+            RefreshButton(r);
+        }
+    }
+
     private void StabilizeControllerOwnedArmableButtonVisuals()
     {
         if (relicManager == null)
@@ -1037,14 +1121,6 @@ public class RelicUIController : MonoBehaviour
             bool blocked = !armed && IsBlockedByMutualExclusion(r);
             bool interactable = !IsWarriorUnavailable() && (hasCount || armed) && !blocked;
             Color defaultColor = GetDefaultButtonColor(r.button);
-            
-            
-            //SO_Relic_Key
-            
-            
-            // LOG: see what LateUpdate is actually deciding every frame
-            if (r.slot != null && r.slot.Definition is IceBallRelic)
-                //Debug.Log($"[IceBall][LateUpdate] frame={Time.frameCount} armed={armed} count={count} interactable={interactable} targetGraphicColor={r.button.targetGraphic?.color}");
 
             r.button.interactable = interactable;
             r.button.transition = Selectable.Transition.None;
@@ -1147,16 +1223,64 @@ public class RelicUIController : MonoBehaviour
         r.button.targetGraphic.color = Color.Lerp(defaultColor, r.keyBlinkColor, pulse);
     }
 
+    // Clicking the Shield button while Sprint is only armed-waiting (armed but not yet active)
+    // cancels the waiting Sprint instead of leaving it to block Shield forever. Shield has no
+    // armed-waiting state (it activates+consumes instantly), so the symmetric direction is moot.
+    private void DisarmWaitingSprintIfClickingShield(RelicButtonRule clickedRule)
+    {
+        if (warrior == null || clickedRule == null)
+            return;
+
+        bool clickedIsShield = clickedRule.effect == RelicUseEffect.ShieldTimed ||
+                               (clickedRule.slot != null && clickedRule.slot.Definition is ShieldRelic);
+
+        // Only act when Sprint is armed-waiting: armed AND not yet active (IsDodging => _sprintActive).
+        if (!clickedIsShield || !warrior.IsSprintArmed || warrior.IsDodging)
+            return;
+
+        warrior.CancelArmedSprintRelic();   // resets _sprintArmed (Warrior.Sprint.cs:226/231)
+        RefundWaitingSprintCharge();
+    }
+
+    // Arming Sprint already decremented its counter (TryConsumeById on each Sprint click), and the
+    // sprint was never used, so give back ALL the charges accumulated in the waiting sprint
+    // (_sprintArmedRefundableStacks covers multi-stacked arming) and refresh the Sprint button.
+    private void RefundWaitingSprintCharge()
+    {
+        int refund = _sprintArmedRefundableStacks;
+        _sprintArmedRefundableStacks = 0;
+
+        if (refund <= 0)
+            return;
+
+        for (int i = 0; i < rules.Count; i++)
+        {
+            RelicButtonRule sr = rules[i];
+            if (sr == null || sr.slot == null)
+                continue;
+
+            if (sr.slot.Definition is SprintRelic sprintDef)
+            {
+                RefundStacks(sprintDef, refund);
+                RefreshButton(sr);
+                return;
+            }
+        }
+    }
+
     private bool IsBlockedByMutualExclusion(RelicButtonRule r)
     {
         if (warrior == null || r == null) return true;
 
-        // Shield button blocked while sprint is armed/active
+        // Shield button blocked ONLY while a sprint is genuinely ACTIVE (IsDodging => _sprintActive).
+        // An armed-but-not-yet-active Sprint (_sprintArmed) no longer blocks Shield: clicking Shield
+        // cross-disarms the waiting Sprint instead (see DisarmWaitingSprintIfClickingShield). This
+        // removes the only stuck state (_sprintArmed had no reset until the player moved).
         bool isShieldRule = r.effect == RelicUseEffect.ShieldTimed ||
                             (r.slot != null && r.slot.Definition is ShieldRelic);
 
         if (isShieldRule)
-            return warrior.IsDodging || warrior.IsSprintArmed;
+            return warrior.IsDodging;
 
         // Sprint button is still allowed while sprint is armed/active,
         // because extra Sprint Relic stacks extend/queue duration.

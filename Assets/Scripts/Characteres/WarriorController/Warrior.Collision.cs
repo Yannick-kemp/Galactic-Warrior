@@ -65,6 +65,12 @@ namespace Assets.Scripts.Characteres.WarriorController
         [Tooltip("Optional: asks nearby enemies to side-step away via SendMessage if their script exposes ForceAntiPingPongSideStepAwayFromWarrior(Warrior). Safe if the method does not exist.")]
         [SerializeField] private bool notifyEnemiesToSideStepOnTopTrap = true;
 
+        [Tooltip("ON = when the top ping-pong trap breaks with no safe land, try to drop the Warrior straight onto the ground BETWEEN the two bracketing enemies (one on each side) instead of a blind free fall. Falls back to the free fall when there is no bracketing pair or no ground between them.")]
+        [SerializeField] private bool enableLandBetweenEnemies = true;
+
+        [Tooltip("Downward raycast distance used to confirm there is real ground between the two bracketing enemies before snapping the Warrior down between them.")]
+        [SerializeField, Min(0.5f)] private float landBetweenEnemiesRaycastMaxDistance = 6.0f;
+
         private float _enemyTopTrapWindowStartedAt = -999f;
         private int _enemyTopTrapBounceCount;
         private readonly HashSet<int> _enemyTopTrapTouchedIds = new HashSet<int>();
@@ -953,8 +959,163 @@ namespace Assets.Scripts.Characteres.WarriorController
             Debug.Log($"[Warrior] Jump canceled into fall after hitting boss '{(enemy != null ? enemy.name : "?")}'.");
         }
 
+        /// <summary>
+        /// Last-resort landing for the multi-enemy top ping-pong: when the bounce chain is
+        /// exhausted and no safe land was found, drop the Warrior straight down onto the ground
+        /// in the gap BETWEEN the two bracketing enemies (nearest enemy on each side of him).
+        /// Snap-X + vertical fall (no scripted parabola): we move the Warrior's X to the mid
+        /// point, kill horizontal velocity, force a downward gravity fall, and briefly ignore the
+        /// nearby enemy colliders so he cannot re-catch a top on the way down.
+        /// Returns false (→ caller keeps the existing blind free fall) when:
+        ///   - the feature is disabled,
+        ///   - there is no genuine two-sided bracket (both enemies on the same side), or
+        ///   - there is no real ground between the two enemies (a hole).
+        /// </summary>
+        private bool TryLandBetweenBracketingEnemies(List<Enemy> nearbyEnemies)
+        {
+            if (!enableLandBetweenEnemies)
+                return false;
+
+            if (nearbyEnemies == null || nearbyEnemies.Count < 2 || collider2 == null)
+                return false;
+
+            if (PlatformLayer.value == 0)
+                return false;
+
+            float warriorX = collider2.bounds.center.x;
+
+            // Find the nearest bracketing enemy on each side (one left, one right).
+            Enemy leftEnemy = null;
+            Enemy rightEnemy = null;
+            float leftX = 0f;
+            float rightX = 0f;
+            float bestLeftDist = float.PositiveInfinity;
+            float bestRightDist = float.PositiveInfinity;
+
+            for (int i = 0; i < nearbyEnemies.Count; i++)
+            {
+                Enemy candidate = nearbyEnemies[i];
+                if (!CanEnemyParticipateInTopPingPong(candidate))
+                    continue;
+
+                Collider2D candidateCollider = GetEnemyTopTrapCollider(candidate);
+                if (candidateCollider == null)
+                    continue;
+
+                float candidateX = candidateCollider.bounds.center.x;
+                float dist = Mathf.Abs(candidateX - warriorX);
+
+                if (candidateX < warriorX)
+                {
+                    if (dist < bestLeftDist)
+                    {
+                        bestLeftDist = dist;
+                        leftEnemy = candidate;
+                        leftX = candidateX;
+                    }
+                }
+                else if (candidateX > warriorX)
+                {
+                    if (dist < bestRightDist)
+                    {
+                        bestRightDist = dist;
+                        rightEnemy = candidate;
+                        rightX = candidateX;
+                    }
+                }
+            }
+
+            // No genuine two-sided bracket (both on the same side, or only one usable) → fallback.
+            if (leftEnemy == null || rightEnemy == null)
+                return false;
+
+            float midX = (leftX + rightX) * 0.5f;
+
+            // Confirm there is real ground between the two enemies before snapping down.
+            Vector2 rayOrigin = new Vector2(midX, collider2.bounds.min.y);
+            RaycastHit2D groundHit = Physics2D.Raycast(
+                rayOrigin,
+                Vector2.down,
+                landBetweenEnemiesRaycastMaxDistance,
+                PlatformLayer);
+
+            // No ground in the gap (a hole) → fallback to the blind free fall.
+            if (groundHit.collider == null)
+                return false;
+
+            // ── Commit the between-enemies landing ────────────────────────────────────────
+            ResetEnemyTopTrapTracking();
+
+            StopJumpTowardCoroutine();
+            StopMoveTowardCoroutine();
+
+            if (_postBounceActive)
+                EndPostBounce();
+
+            _postBounceActive = false;
+            _lastBouncedEnemy = null;
+            _blockAction = false;
+
+            IsFallingHitEnemy = false;
+            IsFallingEdge = false;
+            IsFallingPlfExit = false;
+            IsFallingGrazesEdge = false;
+
+            DescendentPhase = true;
+            CanMove = true;
+            CanAttackWarrior = true;
+
+            if (rigidbody2 != null)
+            {
+                // Snap X only: align the Warrior horizontally with the gap mid-point, keep Y so
+                // the fall stays vertical. The ignore-collision window below prevents the snap
+                // from producing an unwanted enemy hit even if midX is close to a body collider.
+                Vector2 pos = rigidbody2.position;
+                pos.x = midX;
+                rigidbody2.position = pos;
+                Physics2D.SyncTransforms();
+
+                RigidbodyConstraints2D constraints = rigidbody2.constraints;
+                constraints &= ~RigidbodyConstraints2D.FreezePositionY;
+                constraints |= RigidbodyConstraints2D.FreezeRotation;
+                rigidbody2.constraints = constraints;
+
+                rigidbody2.gravityScale =
+                    Mathf.Max(rigidbody2.gravityScale, enemyTopTrapFallGravity);
+
+                Vector2 velocity = rigidbody2.linearVelocity;
+                velocity.x = 0f;
+                if (velocity.y > -enemyTopTrapMinDownVelocity)
+                    velocity.y = -enemyTopTrapMinDownVelocity;
+
+                rigidbody2.linearVelocity = velocity;
+                rigidbody2.WakeUp();
+            }
+
+            JumpAnimationDisplay();
+
+            if (_enemyTopTrapIgnoreRoutine != null)
+                StopCoroutine(_enemyTopTrapIgnoreRoutine);
+
+            _enemyTopTrapIgnoreRoutine =
+                StartCoroutine(TemporarilyIgnoreNearbyEnemiesForTopTrap(
+                    nearbyEnemies,
+                    waitFullDuration: false));
+
+            NotifyNearbyEnemiesToSideStep(nearbyEnemies);
+
+            return true;
+        }
+
         private void BreakEnemyTopPingPongTrap(List<Enemy> nearbyEnemies)
         {
+            // New rule: once the bounce chain is exhausted with no safe land, prefer dropping
+            // the Warrior straight onto the ground BETWEEN the two bracketing enemies rather
+            // than the blind free fall below. Only applies to a genuine two-sided bracket with
+            // real ground between the enemies; otherwise we fall through to the free fall.
+            if (TryLandBetweenBracketingEnemies(nearbyEnemies))
+                return;
+
             ResetEnemyTopTrapTracking();
 
             StopJumpTowardCoroutine();

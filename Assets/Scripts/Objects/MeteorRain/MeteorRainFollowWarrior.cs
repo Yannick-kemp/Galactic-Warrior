@@ -111,6 +111,22 @@ public sealed class MeteorRainFollowWarrior : MonoBehaviour
         UnbindWarriorEvents();
     }
 
+    private void OnEnable()
+    {
+        // Zone culling (or any SetActive cycle) re-runs OnEnable but NOT Awake, and OnDisable above
+        // unbinds the Warrior events. Re-bind here so the rain keeps following after a reactivation.
+        // Unbind-first keeps it idempotent (BindWarriorEvents uses += and would double-subscribe).
+        UnbindWarriorEvents();
+        BindWarriorEvents();
+
+        // Re-assert the startInactive guard ONLY when the rain was never legitimately started.
+        // This prevents a SetActive cycle (or Play-On-Awake child particles) from launching the
+        // rain without crossing MeteorStartTrigger. A rain already started via StartRainAndFollow
+        // is left completely untouched, so this cannot break an in-progress rain.
+        if (startInactive && !_rainStarted)
+            StopRainImmediate();
+    }
+
     private void CacheSystems()
     {
         if (_systems == null || _systems.Length == 0)
