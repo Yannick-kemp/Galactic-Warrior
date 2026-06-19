@@ -932,6 +932,12 @@ MonoBehaviour:
     attackDamage: 1
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 1
       squeezeCheckInterval: 1
@@ -1455,6 +1461,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -2088,6 +2100,12 @@ MonoBehaviour:
     attackDamage: 1
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 1
       squeezeCheckInterval: 1
@@ -3321,6 +3339,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -3460,6 +3484,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -3984,6 +4014,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -4374,6 +4410,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -4616,6 +4658,12 @@ MonoBehaviour:
     attackDamage: 1
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 1
       squeezeCheckInterval: 1
@@ -5056,6 +5104,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -5292,6 +5346,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -5430,6 +5490,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -6262,6 +6328,12 @@ MonoBehaviour:
     attackDamage: 1
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 1
       squeezeCheckInterval: 1
@@ -7385,6 +7457,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -7554,6 +7632,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -8154,6 +8238,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -8980,6 +9070,12 @@ MonoBehaviour:
     attackDamage: 1
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 1
       squeezeCheckInterval: 1
@@ -9044,6 +9140,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -9676,6 +9778,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -10138,6 +10246,12 @@ MonoBehaviour:
     attackDamage: 1
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 1
       squeezeCheckInterval: 1
@@ -10677,6 +10791,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -10775,6 +10895,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -10982,6 +11108,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -11046,6 +11178,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -11110,6 +11248,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -11578,6 +11722,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -11642,6 +11792,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -11733,6 +11889,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -12295,6 +12457,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -12593,6 +12761,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -12657,6 +12831,12 @@ MonoBehaviour:
     attackDamage: 1
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 1
       squeezeCheckInterval: 1
@@ -13025,6 +13205,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -13094,6 +13280,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -13158,6 +13350,12 @@ MonoBehaviour:
     attackDamage: 1
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 1
       squeezeCheckInterval: 1
@@ -13869,6 +14067,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -14100,6 +14304,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -14164,6 +14374,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -14877,6 +15093,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -15011,6 +15233,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -15149,6 +15377,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -15229,6 +15463,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -15486,6 +15726,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -16671,6 +16917,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -17031,6 +17283,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -17095,6 +17353,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -17259,6 +17523,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -18571,6 +18841,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -18802,6 +19078,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -18876,6 +19158,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -19816,6 +20104,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -20405,6 +20699,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -20989,6 +21289,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -22118,6 +22424,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -22368,6 +22680,12 @@ MonoBehaviour:
     attackDamage: 5
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 1
       squeezeCheckInterval: 2
@@ -22822,6 +23140,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -23206,6 +23530,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -25433,6 +25763,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -25635,6 +25971,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
