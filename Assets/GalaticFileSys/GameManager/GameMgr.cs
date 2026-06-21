@@ -185,6 +185,20 @@ public class GameMgr : MonoBehaviour, IGame
 
     public int RetriesRemaining => Mathf.Max(0, maxRetries - retryCount);
 
+    // ─── Retry-reward feature (additive, scoring untouched) ──────────────────────
+    // Exposed so a separate RetryRewardManager can observe retry losses and restore retries
+    // it has "bought" with score. The scoring system is never modified by any of this.
+
+    /// <summary>Max retries available per run (mirrors the configured ceiling).</summary>
+    public int MaxRetries => maxRetries;
+
+    /// <summary>
+    /// Raised right after a retry has been successfully consumed (a death's "Retry" was accepted
+    /// and retryCount incremented). RetryRewardManager listens to attempt an immediate redemption
+    /// (model A: a token earned pre-loss buys the retry back at once).
+    /// </summary>
+    public event System.Action OnRetryConsumed;
+
     // Treat this as "campaign purchased / rest unlocked"
     public bool Level2Unlocked => autoUnlockForTesting || level2Unlocked;
 
@@ -655,6 +669,27 @@ public class GameMgr : MonoBehaviour, IGame
         ResetAllEnemies();
 
         Debug.Log($"[GameMgr] Retry {retryCount}/{maxRetries}");
+
+        // A retry was effectively consumed → let the reward system buy it back immediately
+        // if a token is in reserve (model A). Fired only on the success path.
+        OnRetryConsumed?.Invoke();
+
+        return true;
+    }
+
+    /// <summary>
+    /// Additive hook for the retry-reward feature. Restores one previously-consumed retry
+    /// (retryCount--). retryCount is clamped at 0, so RetriesRemaining can never exceed maxRetries
+    /// — the ceiling is enforced here. Returns true only if a retry was actually restored.
+    /// Does NOT touch the scoring system.
+    /// </summary>
+    public bool GrantRetryReward()
+    {
+        if (retryCount <= 0)
+            return false; // already at max retries — nothing to restore
+
+        retryCount--;
+        Debug.Log($"[GameMgr] Retry reward granted → consumed {retryCount}/{maxRetries} ({RetriesRemaining} remaining)");
         return true;
     }
 

@@ -115,13 +115,9 @@ namespace Assets.Scripts.Characteres.WarriorController
                 PlayAttack1MissSfx();
             }
 
-            // 7. Scoring and Crowd Feedback for multi-hits
-            if (valid >= 2)
-            {
-                Vector2 avgHp = sumHitPoints / valid;
-                GetComponent<Assets.Scripts.Scoring.SpectacularActionScorer>()
-                    ?.NotifyCrowdHit(valid, avgHp);
-            }
+            // 7. Crowd-hit scoring rule changed: enemy kills now grant score per enemy TYPE
+            //    (see Enemy.OnDeath / Enemy.ScoreValue). The old generic "Crowd hit" bonus popup
+            //    is intentionally no longer awarded here.
         }
 
         private Vector3 GetHitFxPosition(Enemy enemy, HitFxPoint point)
@@ -258,12 +254,9 @@ namespace Assets.Scripts.Characteres.WarriorController
                     KnockbackEnemiesInRange(0.35f, enemy, 10);
                 }
 
-                if (valid >= 2)
-                {
-                    Vector2 avgHp = sumHp / valid;
-                    GetComponent<Assets.Scripts.Scoring.SpectacularActionScorer>()
-                        ?.NotifyCrowdHit(valid, avgHp);
-                }
+                // Crowd-hit scoring rule changed: enemy kills now grant score per enemy TYPE
+                // (see Enemy.OnDeath / Enemy.ScoreValue). The old generic "Crowd hit" bonus
+                // popup is intentionally no longer awarded here.
             }
 
             StartCoroutine(TrackSlashPosition(slash));

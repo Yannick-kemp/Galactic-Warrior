@@ -723,7 +723,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 09aa693dffa2d9c4db90ab8aac8b492a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  cleanTransferPoints: 25
+  cleanTransferPoints: 5
   crowdHitPoints: 20
   crowdHitExtraPerEnemy: 8
   maxTransferTime: 1.6

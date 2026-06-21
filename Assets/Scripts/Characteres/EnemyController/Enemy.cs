@@ -126,6 +126,27 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private EnemyType enemyType;
         public EnemyType EnemyType => enemyType;
 
+        [Header("Score Reward")]
+        [Tooltip("Points accordés au joueur quand cet ennemi est tué. Laisser à -1 pour utiliser " +
+                 "la valeur par défaut du type (Zalayty 20, Raka 30, M97 15, Morvex 5, autres 10).")]
+        [SerializeField] private int scoreValue = -1;
+
+        /// <summary>Points granted when this enemy is killed. Per-instance override if >= 0,
+        /// otherwise the per-type default. Editable in the Inspector on each enemy/prefab.</summary>
+        public int ScoreValue => scoreValue >= 0 ? scoreValue : DefaultScoreForType(enemyType);
+
+        private static int DefaultScoreForType(EnemyType type)
+        {
+            switch (type)
+            {
+                case EnemyType.Zalayty: return 20;
+                case EnemyType.Raka:    return 30;
+                case EnemyType.M97:     return 15;
+                case EnemyType.Morvex:  return 5;
+                default:                return 10; // fallback for unlisted types
+            }
+        }
+
         [Header("Boss")]
         [SerializeField] private bool isBoss = false;
         [SerializeField] private string bossDisplayName = "";
@@ -661,6 +682,16 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                         victim = gameObject
                     });
                 }
+            }
+
+            // Score-by-type reward: killing a regular enemy grants points based on its type.
+            // ScoreManager.Add raises OnPointsAdded, which makes SpectaclePopupSpawner show the
+            // "+points" popup automatically — no separate popup call needed. Bosses are excluded
+            // (they have their own level-complete flow). Awarded once thanks to the _deathStarted guard.
+            if (!IsBoss)
+            {
+                Assets.Scripts.Scoring.ScoreManager.Instance?.Add(
+                    ScoreValue, enemyType.ToString(), transform.position);
             }
 
             StartCoroutine(DeathSequence());

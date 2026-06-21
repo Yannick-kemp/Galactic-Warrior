@@ -5019,6 +5019,14 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0.03570753
       objectReference: {fileID: 0}
+    - target: {fileID: 8300223031057645311, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
+      propertyPath: crowdHitPoints
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8300223031057645311, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
+      propertyPath: crowdHitExtraPerEnemy
+      value: 10
+      objectReference: {fileID: 0}
     - target: {fileID: 8386229237362371064, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
       propertyPath: m_LocalRotation.w
       value: 0.99994314
@@ -20872,6 +20880,53 @@ Transform:
   m_Children: []
   m_Father: {fileID: 8181523266012156528}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1231010938
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1231010939}
+  - component: {fileID: 1231010940}
+  m_Layer: 0
+  m_Name: RetryMgr
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1231010939
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1231010938}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1044910317}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1231010940
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1231010938}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: be628242c759571408442b024701a46b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  pointsPerRetry: 350
+  retryGainedText: RETRY +1
+  popupSpawner: {fileID: 0}
 --- !u!4 &1231837152 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5757980597610787596, guid: 1e41e7db7d507fa449f055c12d0973ea, type: 3}
@@ -37762,6 +37817,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 6986745237680299719, guid: 619a767c9bbe65d4da83c79b00617bf7, type: 3}
       insertIndex: 4
       addedObject: {fileID: 517833831}
+    - targetCorrespondingSourceObject: {fileID: 6986745237680299719, guid: 619a767c9bbe65d4da83c79b00617bf7, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1231010939}
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 619a767c9bbe65d4da83c79b00617bf7, type: 3}
 --- !u!114 &8478474155003979102

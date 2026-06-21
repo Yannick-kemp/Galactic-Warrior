@@ -358,8 +358,11 @@ MonoBehaviour:
   meleeHitDistance: 0.65
   useWorldYDeathFallback: 1
   worldDeathY: -30
+  groundBound: 0
+  groundBoundSeatTolerance: 0.06
   targetAnimationName: AttackAnimation
   enemyType: 4
+  scoreValue: 5
   isBoss: 0
   bossDisplayName: 
   totalFramesInAnimation: 16
@@ -367,10 +370,20 @@ MonoBehaviour:
   disableAttackWhenHitSeconds: 0.2
   hitReaction: {fileID: 11400000, guid: b0489fa6803d09d4695c398286aa2bfa, type: 2}
   patrolEdgeArriveThreshold: 0.12
+  preventWarriorBodyMomentumPush: 1
+  warriorBodyPushRestoreStrength: 1
+  maxAllowedBodyPushDistance: 0.03
+  warriorBodyPushContactMemory: 0.1
+  warriorBodyPushMaxCorrectionPerStep: 0.2
+  preventWarriorBodyHorizontalPush: 1
+  preventWarriorBodyVerticalLift: 1
+  warriorBodyLiftAllowance: 0.04
+  cancelWarriorBodyPushVelocity: 1
   useGroundCheckPointForPatrolEdge: 1
   patrolEdgeAheadProbeDistance: 0.55
   patrolEdgeRayExtraLength: 0.2
   patrolEdgeBoundsSkin: 0.02
+  participatesInWarriorTopPingPongEscape: 1
   laserPrefab: {fileID: 0}
   laserActivationDelay: 1.5
   gunAimPivot: {fileID: 3501617098948179811}
@@ -427,6 +440,20 @@ MonoBehaviour:
   platformSurfaceTopTolerance: 0.35
   platformSurfaceBottomTolerance: -0.08
   zeroNegativeVerticalVelocityOnStick: 1
+  laserRequiresWarriorGrounded: 1
+  laserMinWarriorGroundPoints: 1
+  stopLaserWhenWarriorJumps: 1
+  enableM97MovingLiftAntiTunnel: 1
+  forceM97ContinuousCollision: 1
+  m97LiftSeatOffset: 0.025
+  m97LiftHorizontalSkin: 0.025
+  m97LiftMaxRecoverGap: 0.65
+  m97LiftMaxRecoverSink: 0.35
+  m97LiftDynamicPadding: 0.08
+  m97LiftSupportGraceTime: 0.25
+  m97LiftHorizontalSearchPadding: 0.2
+  m97LiftZeroVerticalVelocityOnSeat: 1
+  m97LiftHardSnapInEmergency: 1
   preFlipBeforeMuzzleWhileDodging: 1
   preFlipMuzzleDistance: 0.45
   preFlipLookaheadTime: 0.1
