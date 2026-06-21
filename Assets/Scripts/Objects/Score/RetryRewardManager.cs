@@ -36,6 +36,10 @@ namespace Assets.Scripts.Scoring
         [SerializeField] private string retryGainedText = "RETRY +1";
         [Tooltip("Spawner de popup réutilisé pour l'animation. Laissé vide → résolu automatiquement à l'exécution.")]
         [SerializeField] private SpectaclePopupSpawner popupSpawner;
+        [Tooltip("VFX joué une fois à chaque retry racheté, en plus du popup (ex. HearthAnimation.prefab). Optionnel.")]
+        [SerializeField] private GameObject retryGainedVfxPrefab;
+        [Tooltip("Durée de vie de secours du VFX si aucun ParticleSystem n'est trouvé pour la déduire.")]
+        [SerializeField] private float retryGainedVfxFallbackLifetime = 2f;
 
         // Redeem-credit state (per-run, mirrors the score/retry lifecycle — no disk persistence).
         private int _redeemTokens;
@@ -174,6 +178,30 @@ namespace Assets.Scripts.Scoring
                 Debug.LogWarning("[RetryRewardManager] No SpectaclePopupSpawner found → 'retry gained' " +
                                  "animation could not play. Add one to the gameplay UI canvas.");
             }
+
+            PlayRetryGainedVfx(worldPos);
+        }
+
+        /// <summary>Plays the assigned VFX prefab (e.g. HearthAnimation) once at the feedback
+        /// position, in addition to the popup, then auto-destroys it after the particle lifetime.</summary>
+        private void PlayRetryGainedVfx(Vector2 worldPos)
+        {
+            if (retryGainedVfxPrefab == null) return;
+
+            GameObject go = Instantiate(retryGainedVfxPrefab);
+            // Keep the prefab's own rotation/scale (the heart VFX is authored facing a given way);
+            // only move it to the feedback world position, preserving its original z.
+            go.transform.position = new Vector3(worldPos.x, worldPos.y, go.transform.position.z);
+
+            float life = retryGainedVfxFallbackLifetime;
+            var ps = go.GetComponentInChildren<ParticleSystem>();
+            if (ps != null)
+            {
+                var main = ps.main;
+                life = main.duration + main.startLifetime.constantMax;
+            }
+
+            Destroy(go, Mathf.Max(0.1f, life));
         }
 
         private Vector2 GetWarriorWorldPos()

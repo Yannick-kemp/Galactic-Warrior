@@ -20924,9 +20924,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be628242c759571408442b024701a46b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  pointsPerRetry: 350
+  pointsPerRetry: 100
   retryGainedText: RETRY +1
   popupSpawner: {fileID: 0}
+  retryGainedVfxPrefab: {fileID: 1302347887182968501, guid: e2243148c9638b847bbc7e2d9f92328b, type: 3}
+  retryGainedVfxFallbackLifetime: 2
 --- !u!4 &1231837152 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5757980597610787596, guid: 1e41e7db7d507fa449f055c12d0973ea, type: 3}
