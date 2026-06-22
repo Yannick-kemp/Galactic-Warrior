@@ -1,5 +1,54 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!1 &173450001416215
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 8611869040810693507}
+  - component: {fileID: 5863399091284435052}
+  m_Layer: 0
+  m_Name: ZoneCullingMgr
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &8611869040810693507
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 173450001416215}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 6986745237680299719}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &5863399091284435052
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 173450001416215}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 22d811f3534f7f44695fd0d3d002fdfa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  cullingCheckInterval: 0.15
+  enterMarginScreens: 0.5
+  exitMarginScreens: 1
+  warriorOverride: {fileID: 0}
+  drawDebugGizmos: 0
 --- !u!1 &41004917076605230
 GameObject:
   m_ObjectHideFlags: 0
@@ -44,6 +93,55 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1f3341403caaf3c4680fc71f48f360e1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!1 &556613731897892546
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5785973013533210025}
+  - component: {fileID: 3114358943382417822}
+  m_Layer: 0
+  m_Name: RetryMgr
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5785973013533210025
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 556613731897892546}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 6986745237680299719}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &3114358943382417822
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 556613731897892546}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: be628242c759571408442b024701a46b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  pointsPerRetry: 100
+  retryGainedText: RETRY +1
+  popupSpawner: {fileID: 0}
+  retryGainedVfxPrefab: {fileID: 1302347887182968501, guid: e2243148c9638b847bbc7e2d9f92328b, type: 3}
+  retryGainedVfxFallbackLifetime: 2
 --- !u!1 &1748421786834664171
 GameObject:
   m_ObjectHideFlags: 0
@@ -77,59 +175,11 @@ Transform:
   - {fileID: 9059210628775041544}
   - {fileID: 4090866436044136636}
   - {fileID: 7355935727548128657}
-  - {fileID: 5637582862993651041}
+  - {fileID: 8611869040810693507}
   - {fileID: 8295159550331894253}
+  - {fileID: 5785973013533210025}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1799850271414027251
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 5637582862993651041}
-  - component: {fileID: 7958665008046920718}
-  m_Layer: 0
-  m_Name: ZoneCullingMgr
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &5637582862993651041
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1799850271414027251}
-  serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 6986745237680299719}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &7958665008046920718
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1799850271414027251}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 22d811f3534f7f44695fd0d3d002fdfa, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  cullingCheckInterval: 0.15
-  enterMarginScreens: 0.5
-  exitMarginScreens: 1
-  warriorOverride: {fileID: 0}
-  drawDebugGizmos: 0
 --- !u!1 &4175431052885113756
 GameObject:
   m_ObjectHideFlags: 0

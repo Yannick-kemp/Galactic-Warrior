@@ -156,7 +156,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1689199374527633482}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0.03570825, w: -0.9993623}
+  m_LocalRotation: {x: -0, y: -0, z: -0.03570753, w: -0.9993623}
   m_LocalPosition: {x: -0.7, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -456,6 +456,8 @@ MonoBehaviour:
   enemyTopTrapFallGravity: 3.5
   enemyTopTrapMinDownVelocity: 1.25
   notifyEnemiesToSideStepOnTopTrap: 1
+  enableLandBetweenEnemies: 1
+  landBetweenEnemiesRaycastMaxDistance: 6
   enableSingleEnemyTopStuckEscape: 1
   singleEnemyTopStuckTime: 0.3
   enableEnemyOverlapRecovery: 1
@@ -724,8 +726,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   cleanTransferPoints: 5
-  crowdHitPoints: 20
-  crowdHitExtraPerEnemy: 8
+  crowdHitPoints: 1
+  crowdHitExtraPerEnemy: 10
   maxTransferTime: 1.6
   minAirTime: 0.08
   minVerticalGain: 0.1
@@ -780,7 +782,7 @@ AudioSource:
   SpatializePostEffects: 0
   Priority: 128
   DopplerLevel: 1
-  MinDistance: 1
+  MinDistance: 6.6508255
   MaxDistance: 500
   Pan2D: 0
   rolloffMode: 0
@@ -1084,7 +1086,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3671824476123847177}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0.04636238, w: -0.99892473}
+  m_LocalRotation: {x: 0, y: 0, z: 0.046361662, w: -0.99892473}
   m_LocalPosition: {x: -0.43, y: 0.04, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
