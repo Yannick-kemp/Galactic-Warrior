@@ -1724,6 +1724,12 @@ public class GameMgr : MonoBehaviour, IGame
         if (warrior == null)
             return;
 
+        // A respawn / checkpoint / forced-retry teleport can target a position inside a zone that is
+        // currently culled (off-camera), whose platform colliders are disabled. Bring that zone back
+        // to life BEFORE seating the Warrior, otherwise he lands on a disabled collider and drops
+        // through it. The regular cull pass keeps the zone active afterwards while he stands in it.
+        ZoneCullingManager.Instance?.EnsureZoneActiveAt(respawnPosition);
+
         // Never parent the Warrior to a moving platform here.
         // MovingVerticalPlatform carries riders with its own delta/rider system.
         if (warrior.transform.parent != _initialSpawnParent)

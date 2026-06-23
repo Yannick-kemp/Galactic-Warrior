@@ -32,7 +32,20 @@ namespace Assets.Scripts.Characteres.WarriorController
         [Header("Attack3 Safety")]
         [SerializeField, Min(0.2f)] private float attack3FailsafeSeconds = 1.25f;
 
+        [Tooltip("Watchdog grace: if a cast flag stays set while the Attack3 animation is NOT actually playing for this long, the cast is treated as orphaned (interrupted before AE_EndAttack3) and force-finished, so the hidden Warrior sprite can never stay stuck invisible. Runs every Update, independent of the failsafe coroutine.")]
+        [SerializeField, Min(0.05f)] private float castOrphanGraceSeconds = 0.4f;
+
         private Coroutine _attack3FailsafeRoutine;
+
+        // Wall-clock instant at which a cast flag was first seen "orphaned"
+        // (flag set but the Attack3 animation not playing). -1 = not orphaned.
+        private float _castOrphanSince = -1f;
+
+        // Set true by Hashagar while it visually holds (hides) the Warrior during its Attack2
+        // grab. The Attack3 sprite watchdog below must NOT re-enable the default sprite while
+        // this is true, otherwise Hashagar's per-frame hide is overwritten every Update and the
+        // Warrior never disappears. Hashagar-only: does not touch Hivernox / Attack3 paths.
+        public bool IsExternallyHiddenByHashagar { get; set; }
 
         private bool _iceBallArmed;
         private string _iceBallRelicId;
@@ -86,13 +99,76 @@ namespace Assets.Scripts.Characteres.WarriorController
         private void EnsureDefaultWarriorSpriteVisibleWhenNotCasting()
         {
             if (_frozenByHivernox) return;
-            if (_attack3Casting || _iceBallShotPending) return;   // a real cast owns the sprite
+
+            // Hashagar owns the hide while it holds the Warrior during its Attack2 grab.
+            // Without this guard the watchdog re-enables the default sprite every frame and
+            // the Warrior never disappears during HashagarMonster.HandleAttack2HoldByFrame.
+            if (IsExternallyHiddenByHashagar) return;
+
             if (defaultWarriorSpriteRenderer == null) return;
+
+            bool castFlagged = _attack3Casting || _iceBallShotPending;
+
+            if (castFlagged)
+            {
+                // A real cast legitimately owns (hides) the sprite ONLY while its Attack3
+                // animation is actually playing. AttackAnimation3Display() sets isAttacking3=true
+                // for the whole cast, and every interrupt (jump, wait, losing balance, run...)
+                // clears it. So "flag set but isAttacking3 not playing" means the cast was
+                // interrupted before AE_EndAttack3 fired and the sprite-restore was skipped,
+                // leaving the Warrior invisible-but-fully-functional (still receiving inputs).
+                if (IsAttack3CastAnimationPlaying())
+                {
+                    _castOrphanSince = -1f;
+                    return; // genuine cast in progress: leave the sprite hidden
+                }
+
+                if (_castOrphanSince < 0f)
+                    _castOrphanSince = Time.unscaledTime;
+
+                // Short grace absorbs the cast-startup transition before treating it as orphaned.
+                if (Time.unscaledTime - _castOrphanSince < castOrphanGraceSeconds)
+                    return;
+
+                // Orphaned cast. Mirror the failsafe's restore-movement policy so this recovery
+                // stays a strict superset of existing behavior (EndAttack3Lock also re-checks
+                // that no external lock such as Hivernox / stone repulse owns the Warrior).
+                bool restoreMovement =
+                    !IsHardActionLocked &&
+                    !_frozenByHivernox &&
+                    CanAttackWarrior &&
+                    !CanDie &&
+                    !IsDeadOrDying;
+
+                ForceFinishAttack3Cast("orphaned cast watchdog (sprite stuck hidden)", restoreMovement);
+                _castOrphanSince = -1f;
+                return;
+            }
+
+            _castOrphanSince = -1f;
+
             if (defaultWarriorSpriteRenderer.enabled) return;     // already visible
 
             // Not casting, not frozen, but the sprite is off -> a cast-exit restore was missed.
             ShowDefaultWarriorVisuals();
             HideAttack3Body();
+        }
+
+        private bool IsAttack3CastAnimationPlaying()
+        {
+            if (animator == null)
+                return false;
+
+            // Primary, lag-free signal: AttackAnimation3Display() sets this true for the
+            // entire cast; interrupts clear it.
+            if (HasBoolParam("isAttacking3") && animator.GetBool("isAttacking3"))
+                return true;
+
+            // Conservative secondary: an Attack-tagged state currently/next playing.
+            // Keeps the watchdog from firing on any genuine attack animation in flight.
+            var current = animator.GetCurrentAnimatorStateInfo(0);
+            var next = animator.GetNextAnimatorStateInfo(0);
+            return current.IsTag("Attack") || next.IsTag("Attack");
         }
 
         private void ShowAttack3Body()

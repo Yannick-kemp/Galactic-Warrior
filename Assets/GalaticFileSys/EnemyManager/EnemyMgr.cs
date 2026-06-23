@@ -321,6 +321,27 @@ public class EnemyMgr : MonoBehaviour
         return SpawnEnemyByPrefab(prefab, position, type, overrides, true, bossName, null);
     }
 
+    /// <summary>
+    /// Parents a freshly spawned enemy under its owner spawn point so it lives inside the SAME
+    /// ZoneCullable as the platform it stands on, and therefore culls atomically with that platform.
+    /// Without this the enemy is Instantiated at the scene root and is never culled, while its
+    /// platform (inside a zone) IS deactivated when off-screen -> the enemy loses its now-disabled
+    /// support collider and falls/tunnels into the void (Enemy.ClampGroundBoundToSurface releases
+    /// the ground-bound Y-lock as soon as the platform GameObject becomes inactive).
+    /// Bosses intentionally stay at the root (never culled): their fight must never pause.
+    /// </summary>
+    private void ParentSpawnedEnemyToOwnerZone(Enemy enemy, EnemySpawnPoint ownerSpawnPoint)
+    {
+        if (enemy == null || ownerSpawnPoint == null)
+            return;
+
+        if (enemy.IsBoss)
+            return;
+
+        // worldPositionStays:true keeps the world position/rotation set by the Instantiate above.
+        enemy.transform.SetParent(ownerSpawnPoint.transform, worldPositionStays: true);
+    }
+
     private Enemy SpawnEnemyByPrefab(
         GameObject prefab,
         Vector3 position,
@@ -352,6 +373,8 @@ public class EnemyMgr : MonoBehaviour
 
         enemy.SetBoss(finalIsBoss, finalBossName);
         enemy.SetOwnerSpawnPoint(ownerSpawnPoint);
+
+        ParentSpawnedEnemyToOwnerZone(enemy, ownerSpawnPoint);
 
         InitializeSpawnedEnemy(enemy, overrides);
         return enemy;
@@ -473,6 +496,8 @@ public class EnemyMgr : MonoBehaviour
 
         enemy.SetBoss(finalIsBoss, finalBossName);
         enemy.SetOwnerSpawnPoint(ownerSpawnPoint);
+
+        ParentSpawnedEnemyToOwnerZone(enemy, ownerSpawnPoint);
 
         InitializeSpawnedEnemy(enemy, overrides);
 
@@ -612,6 +637,8 @@ public class EnemyMgr : MonoBehaviour
 
             enemy.SetSpawnOverrides(overrides);
             enemy.SetOwnerSpawnPoint(ownerSpawnPoint);
+
+            ParentSpawnedEnemyToOwnerZone(enemy, ownerSpawnPoint);
 
             if (enemy.IsBoss)
             {

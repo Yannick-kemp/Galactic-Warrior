@@ -59,6 +59,11 @@ Builds/
 *.apk
 *.aab
 
+# Android release signing — NEVER commit the keystore or its passwords
+*.keystore
+*.jks
+keystore.properties
+
 # Ignore specific user settings
 *.log
 *.stacktrace
