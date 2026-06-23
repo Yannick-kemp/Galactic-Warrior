@@ -347,7 +347,7 @@ MonoBehaviour:
   dissolveMaterial: {fileID: 2100000, guid: 44af3d19a88f6354ea8e26371d9569d1, type: 2}
   dissolveDuration: 0.8
   stepBackDistance: 0
-  rayLength: 0
+  rayLength: 0.8
   xEdge: 0
   deathSfxClip: {fileID: 8300000, guid: 479fae5d961d96940b3ff8fdce2a0454, type: 3}
   deathSfxVolume: 1

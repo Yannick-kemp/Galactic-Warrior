@@ -1935,7 +1935,18 @@ public class M97Monster : Enemy
                 : (Vector2)transform.position;
 
             targetPosition.y = targetY;
-            targetPosition.x = ClampM97XToLiftSurface(targetPosition.x, platformBounds, bodyBounds);
+
+            // Preserve the character's intended horizontal movement. This routine seat runs
+            // every FixedUpdate while M97 rides the lift; writing the *current* X here would
+            // cancel the patrol coroutine's pending MovePosition each physics step and pin
+            // M97 horizontally on the platform. When a fresh core-move request exists (the
+            // patrol/chase is actively moving), seat to that requested X instead so the
+            // anti-tunnel layer only owns Y and never fights horizontal travel.
+            float seatX = targetPosition.x;
+            if (TryGetCoreMoveRequestForRecentStep(out Vector2 requestedCoreMove))
+                seatX = requestedCoreMove.x;
+
+            targetPosition.x = ClampM97XToLiftSurface(seatX, platformBounds, bodyBounds);
 
             MarkIntentionalEnemyDisplacement(Time.fixedDeltaTime * 4f);
 

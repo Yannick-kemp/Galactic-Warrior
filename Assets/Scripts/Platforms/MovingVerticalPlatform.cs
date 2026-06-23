@@ -1,5 +1,6 @@
 ﻿using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Characteres.WarriorController;
+using Assets.Scripts.Tools;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -600,27 +601,27 @@ namespace Assets.Scripts.Platforms
 
             if (IsPlatformIgnoredByCharacter(rider))
             {
-                Debug.Log("[LiftDetach] platform ignored for " + rider.name);
+                GwLog.Verbose("[LiftDetach] platform ignored for " + rider.name);
                 return false;
             }
 
 
             if (rider.rigidbody2 != null && rider.rigidbody2.linearVelocity.y > jumpOffVelocity)
             {
-                Debug.Log("[LiftDetach] upward velocity too high: " + rider.rigidbody2.linearVelocity.y);
+                GwLog.Verbose("[LiftDetach] upward velocity too high: " + rider.rigidbody2.linearVelocity.y);
                 return false;
             }
 
             if (!IsHorizontallyOverPlatform(support))
             {
-                Debug.Log("[LiftDetach] not horizontally over platform for " + rider.name);
+                GwLog.Verbose("[LiftDetach] not horizontally over platform for " + rider.name);
                 return false;
             }
 
             bool bottomCloseToTop = IsBottomCloseToPlatformTop(support);
             if (!bottomCloseToTop)
             {
-                Debug.Log("[LiftDetach] bottom not close to platform top");
+                GwLog.Verbose("[LiftDetach] bottom not close to platform top");
                 return false;
             }
 
@@ -628,7 +629,7 @@ namespace Assets.Scripts.Platforms
             // Landing confirmation is done by OnCollisionEnter2D / OnCollisionStay2D.
             if (rider is ZalaytyMonster && rider.activesJumpCoroutine != null)
             {
-                Debug.Log("[LiftDetach] Zalayty active jump coroutine for " + rider.name);
+                GwLog.Verbose("[LiftDetach] Zalayty active jump coroutine for " + rider.name);
                 return false;
             }
 
@@ -639,7 +640,7 @@ namespace Assets.Scripts.Platforms
 
             if (rider.IsJumping)
             {
-                Debug.Log("[LiftDetach] IsJumping true for " + rider.name);
+                GwLog.Verbose("[LiftDetach] IsJumping true for " + rider.name);
                 return false;
             }
 

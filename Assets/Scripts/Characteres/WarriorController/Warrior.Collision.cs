@@ -589,13 +589,17 @@ namespace Assets.Scripts.Characteres.WarriorController
                     return true;
                 }
 
-                // If this was the last known nearby enemy top, let Warrior bounce from it once,
-                // then ignore all nearby enemies so the jump can finish as a safe landing.
+                // Chain exhausted: each nearby enemy top has been used once as a bounce pad and
+                // there is no safe land left. New rule — prefer dropping the Warrior straight onto
+                // the ground BETWEEN the two bracketing enemies instead of one more final bounce.
+                // Falls back to the final bounce (which uses the current enemy top as a landing
+                // aid) only when there is no two-sided bracket or a hole sits between the enemies.
                 if (IsLatestRegisteredEnemyUnique(enemy, nearbyEnemies) &&
                     touchedAtLeastTwoDifferentEnemies &&
                     !hasUnbouncedNearbyEnemy)
                 {
-                    FinishEnemyTopBounceChainWithFinalBounce(enemy, nearbyEnemies);
+                    if (!TryLandBetweenBracketingEnemies(nearbyEnemies))
+                        FinishEnemyTopBounceChainWithFinalBounce(enemy, nearbyEnemies);
                     return true;
                 }
 

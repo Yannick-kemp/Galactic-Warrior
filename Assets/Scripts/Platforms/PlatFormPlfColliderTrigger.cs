@@ -1,4 +1,5 @@
 ﻿using Assets.Scripts.Characteres.WarriorController;
+using Assets.Scripts.Tools;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -222,7 +223,7 @@ namespace Assets.Scripts.Platforms
 
             if (IsZalaytyJumpDownLocked(character))
             {
-                Debug.Log("Zalayty jump-down source platform still locked on trigger stay for " + character.name);
+                GwLog.Verbose("Zalayty jump-down source platform still locked on trigger stay for " + character.name);
                 SetIgnoreForCharacter(character, true);
                 StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
                 return;
@@ -230,7 +231,7 @@ namespace Assets.Scripts.Platforms
 
             if (IsSourceFallThroughLocked(character))
             {
-                Debug.Log("Source fall-through still locked on trigger stay for " + character.name);
+                GwLog.Verbose("Source fall-through still locked on trigger stay for " + character.name);
                 SetIgnoreForCharacter(character, true);
                 return;
             }
@@ -282,7 +283,7 @@ namespace Assets.Scripts.Platforms
                     SetIgnoreForCharacter(character, false);
                 else
                 {
-                    Debug.Log("Not landing on top yet for " + character.name + ", keeping platform ignored");
+                    GwLog.Verbose("Not landing on top yet for " + character.name + ", keeping platform ignored");
                     SetIgnoreForCharacter(character, true);
                 }
 
@@ -418,7 +419,7 @@ namespace Assets.Scripts.Platforms
             {
                 if (IsZalaytyJumpDownLocked(character))
                 {
-                    Debug.Log("Zalayty jump-down source platform still locked on collision stay for " + character.name);
+                    GwLog.Verbose("Zalayty jump-down source platform still locked on collision stay for " + character.name);
                     SetIgnoreForCharacter(character, true);
                     StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
                     return;
@@ -426,7 +427,7 @@ namespace Assets.Scripts.Platforms
 
                 if (IsSourceFallThroughLocked(character))
                 {
-                    Debug.Log("Source fall-through still locked on collision stay for " + character.name);
+                    GwLog.Verbose("Source fall-through still locked on collision stay for " + character.name);
                     SetIgnoreForCharacter(character, true);
                     StartRestoreSourceFallThroughWhenFullyClear(character);
                     return;
@@ -765,7 +766,7 @@ namespace Assets.Scripts.Platforms
 
             if (IsZalaytyJumpDownLocked(character))
             {
-                Debug.Log("Zalayty jump-down still locked for " + character.name);
+                GwLog.Verbose("Zalayty jump-down still locked for " + character.name);
                 SetIgnoreForCharacter(character, true);
                 StartRestoreZalaytyJumpDownWhenBodyClear((ZalaytyMonster)character);
                 return false;
@@ -780,7 +781,7 @@ namespace Assets.Scripts.Platforms
                 // physical fall.
                 if (IsSourceFallThroughStillUnsafe(character))
                 {
-                    Debug.Log("Source fall-through still unsafe for " + character.name);
+                    GwLog.Verbose("Source fall-through still unsafe for " + character.name);
                     SetIgnoreForCharacter(character, true);
                     StartRestoreSourceFallThroughWhenFullyClear(character);
                     return false;
@@ -860,7 +861,7 @@ namespace Assets.Scripts.Platforms
                 if (!IsSourceFallThroughStillUnsafe(character))
                     break;
 
-                Debug.Log("Source fall-through still unsafe for " + character.name);
+                GwLog.Verbose("Source fall-through still unsafe for " + character.name);
                 SetIgnoreForCharacter(character, true);
                 yield return new WaitForFixedUpdate();
             }
@@ -1398,7 +1399,7 @@ namespace Assets.Scripts.Platforms
 
             if (ShouldKeepNaturalJumpPath(character))
             {
-                Debug.Log("Keeping natural jump path on collision stay for " + character.name);
+                GwLog.Verbose("Keeping natural jump path on collision stay for " + character.name);
                 SetIgnoreForCharacter(character, true);
                 return;
             }
@@ -1412,7 +1413,7 @@ namespace Assets.Scripts.Platforms
                     SetIgnoreForCharacter(character, false);
                 else
                 {
-                    Debug.Log("Edge jump pass-through for " + character.name);
+                    GwLog.Verbose("Edge jump pass-through for " + character.name);
                     SetIgnoreForCharacter(character, true);
                 }
 
