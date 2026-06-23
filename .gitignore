@@ -45,13 +45,18 @@ Thumbs.db
 .vscode/
 .idea/
 
-# TextMeshPro generated files
-*.asset
+# NOTE: do NOT add "*.asset" here. That glob excludes ALL Unity .asset files —
+# ProjectSettings (Tags/Layers, Physics2D matrix, Input) and every ScriptableObject —
+# which breaks cross-machine sync (scenes reference config that never travels).
+# Unity .asset files are meant to be committed.
 
 # JetBrains Rider and IDE files
 .idea/
 *.idea/
 *.iml
+
+# Per-user editor state — never commit (machine-specific, may hold credentials)
+/UserSettings/
 
 # Exclude build artifacts
 Build/
@@ -83,7 +88,8 @@ keystore.properties
 
 *.mp4
 
-packages-lock.json
+# NOTE: do NOT ignore packages-lock.json — commit it so the whole team resolves
+# the exact same package versions (avoids "works on my machine" package drift).
 
  
  

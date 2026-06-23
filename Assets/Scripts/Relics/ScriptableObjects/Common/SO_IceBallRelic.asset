@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 59322258ffb94044293e95fa620a923a, type: 3}
+  m_Name: SO_IceBallRelic
+  m_EditorClassIdentifier: 
+  relicId: relic_IceBall
+  relicName: 
+  description: 
+  icon: {fileID: 0}
+  isConsumable: 1
+  showCountInUI: 1
+  projectilePrefab: {fileID: 3960047783011273970, guid: 88b5785fdfe56294cb949d76a7e677c7, type: 3}
+  projectileSpeed: 12
+  damage: 12
+  stunSeconds: 0.35
+  lifeTime: 2.5
+  spawnLocalOffset: {x: 0.65, y: 0.45, z: 0}
