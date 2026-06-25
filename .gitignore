@@ -64,6 +64,7 @@ Builds/
 Artefacs/       
 *.apk
 *.aab
+*.symbols.zip
 
 # Android release signing — NEVER commit the keystore or its passwords
 *.keystore
