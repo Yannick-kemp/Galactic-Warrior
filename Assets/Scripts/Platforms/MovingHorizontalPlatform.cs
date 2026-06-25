@@ -126,6 +126,7 @@ namespace Assets.Scripts.Platforms
 
         private bool _goingRight = true;
         private float _waitTimer;
+        private bool _pathPositionsBuilt;
 
         private Vector2 _lastPlatformDelta;
         private float _lastPlatformDeltaFixedTime = -999f;
@@ -1065,6 +1066,36 @@ namespace Assets.Scripts.Platforms
 
             _leftPos = new Vector2(_startPos.x + minOffset, _startPos.y);
             _rightPos = new Vector2(_startPos.x + maxOffset, _startPos.y);
+            _pathPositionsBuilt = true;
+        }
+
+        /// <summary>
+        /// Returns the collider bounds widened over the full horizontal travel range so the
+        /// A* graph treats an edge to/from this lift as reachable for the whole motion cycle,
+        /// not only while the lift is at the near end of its course.
+        /// </summary>
+        public override Bounds GetReachabilityBounds()
+        {
+            Bounds b = base.GetReachabilityBounds();
+
+            if (!_pathPositionsBuilt || platformCollider == null)
+                return b;
+
+            // _leftPos / _rightPos are the platform CENTER extremes; the collider keeps a
+            // constant horizontal offset from the center (no rotation), so the swept AABB
+            // is the current bounds expanded by the remaining travel on each side.
+            float centerX = transform.position.x;
+            float leftExpand = Mathf.Max(0f, centerX - _leftPos.x);
+            float rightExpand = Mathf.Max(0f, _rightPos.x - centerX);
+
+            Vector3 min = b.min;
+            Vector3 max = b.max;
+            min.x -= leftExpand;
+            max.x += rightExpand;
+
+            Bounds swept = new Bounds();
+            swept.SetMinMax(min, max);
+            return swept;
         }
 
         private void OnValidate()

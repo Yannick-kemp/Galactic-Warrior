@@ -16568,7 +16568,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2ae68b301305efd4c88b6dfd379f5da7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  boundsCollider: {fileID: 0}
+  boundsCollider: {fileID: 662765550}
   disableColliderAtRuntime: 1
   neverCull: 0
 --- !u!1001 &666670088
@@ -47413,15 +47413,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5933938695564733984, guid: 6356b44f168adeb4e8e26455bca33986, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 1.57
+      value: 1.78
       objectReference: {fileID: 0}
     - target: {fileID: 5933938695564733984, guid: 6356b44f168adeb4e8e26455bca33986, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -0.23
+      value: 0.8
       objectReference: {fileID: 0}
     - target: {fileID: 7061102930870466235, guid: 6356b44f168adeb4e8e26455bca33986, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 8.04
+      value: 7.76
       objectReference: {fileID: 0}
     - target: {fileID: 7061102930870466235, guid: 6356b44f168adeb4e8e26455bca33986, type: 3}
       propertyPath: m_LocalPosition.y

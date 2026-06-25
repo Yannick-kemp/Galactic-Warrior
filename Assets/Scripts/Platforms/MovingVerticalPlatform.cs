@@ -72,6 +72,35 @@ namespace Assets.Scripts.Platforms
         public Vector2 LastLiftDelta => _lastLiftDelta;
 
         /// <summary>
+        /// Returns the collider bounds widened over the full vertical travel range so the
+        /// A* graph treats an edge to/from this lift as reachable for the whole motion cycle,
+        /// not only while the lift is at one end of its course.
+        /// </summary>
+        public override Bounds GetReachabilityBounds()
+        {
+            Bounds b = base.GetReachabilityBounds();
+
+            if (platformCollider == null || _worldMaxY <= _worldMinY)
+                return b;
+
+            // _worldMinY / _worldMaxY are the platform CENTER extremes; the collider keeps a
+            // constant vertical offset from the center, so the swept AABB is the current
+            // bounds expanded by the remaining travel above and below.
+            float centerY = transform.position.y;
+            float downExpand = Mathf.Max(0f, centerY - _worldMinY);
+            float upExpand = Mathf.Max(0f, _worldMaxY - centerY);
+
+            Vector3 min = b.min;
+            Vector3 max = b.max;
+            min.y -= downExpand;
+            max.y += upExpand;
+
+            Bounds swept = new Bounds();
+            swept.SetMinMax(min, max);
+            return swept;
+        }
+
+        /// <summary>
         /// True while this lift is actively carrying the given character as a registered rider.
         /// This is the authoritative "grounded on the lift" signal: it stays valid even while the
         /// platform descends and the rider's foot ground points momentarily float a hair above the

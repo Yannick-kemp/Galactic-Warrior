@@ -111,8 +111,12 @@ public class PlatformGraphAStar : MonoBehaviour
         a.RefreshGeometry();
         b.RefreshGeometry();
 
-        Bounds A = a.Bounds;
-        Bounds B = b.Bounds;
+        // Use the swept-travel envelope (motion platforms widen this). For static
+        // platforms it equals the current collider bounds, so this is a no-op there.
+        // This keeps edges to/from moving platforms stable across the whole motion
+        // cycle instead of flickering with the platform's instantaneous position.
+        Bounds A = a.ReachabilityBounds;
+        Bounds B = b.ReachabilityBounds;
 
         // Horizontal gap between platform edges
         float gapX = 0f;
@@ -269,6 +273,10 @@ public class PlatformNode
     public Bounds Bounds;
     public Vector2 TopCenter;
 
+    // Bounds used only by the reachability test. For motion platforms this is the full
+    // swept envelope of their travel; for static platforms it equals Bounds.
+    public Bounds ReachabilityBounds;
+
     public List<PlatformNode> Neighbors = new List<PlatformNode>();
 
     public PlatformNode Parent;
@@ -288,6 +296,7 @@ public class PlatformNode
         {
             Bounds = Platform.platformCollider.bounds;
             TopCenter = new Vector2(Bounds.center.x, Bounds.max.y);
+            ReachabilityBounds = Platform.GetReachabilityBounds();
         }
     }
 }

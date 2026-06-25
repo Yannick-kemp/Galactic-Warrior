@@ -14,12 +14,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_PixelRect:
     serializedVersion: 2
-    x: 0
+    x: 1920
     y: 43
     width: 1920
     height: 989
   m_ShowMode: 4
-  m_Title: Inspector
+  m_Title: Game
   m_RootView: {fileID: 6}
   m_MinSize: {x: 875, y: 300}
   m_MaxSize: {x: 10000, y: 10000}
@@ -399,7 +399,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 1
     m_Folders:
-    - Assets/GalaticFileSys/GameComponents/GameObjects/StaticObjects/BackgroundElements/Layer1
+    - Assets/GalaticFileSys/PrefabFactory/WarriorAsset
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -409,17 +409,17 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/GalaticFileSys/GameComponents/GameObjects/StaticObjects/BackgroundElements/Layer1
+  - Assets/GalaticFileSys/PrefabFactory/WarriorAsset
   m_LastFoldersGridSize: 16
   m_LastProjectPath: C:\Users\yannk\Documents\Galactic-Warrior
   m_LockTracker:
     m_IsLocked: 0
   m_LastLocalAssetsSearchArea: 1
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 120}
-    m_SelectedIDs: 5ef00000
-    m_LastClickedID: 61534
-    m_ExpandedIDs: 00000000aaef0000
+    scrollPos: {x: 0, y: 952}
+    m_SelectedIDs: 00bf0100
+    m_LastClickedID: 114432
+    m_ExpandedIDs: 000000009cfc0000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -448,7 +448,7 @@ MonoBehaviour:
     scrollPos: {x: 0, y: 0}
     m_SelectedIDs: 
     m_LastClickedID: 0
-    m_ExpandedIDs: 00000000aaef0000
+    m_ExpandedIDs: 000000009cfc0000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -476,8 +476,8 @@ MonoBehaviour:
   m_ListAreaState:
     m_SelectedInstanceIDs: 
     m_LastClickedInstanceID: 0
-    m_HadKeyboardFocusLastEvent: 0
-    m_ExpandedInstanceIDs: c623000064e4000052d9000060b0080068b008009ab008000000000064e1090010de00006e260b000ede000056e90000dedc0000
+    m_HadKeyboardFocusLastEvent: 1
+    m_ExpandedInstanceIDs: c623000064e4000052d9000060b0080068b008009ab008000000000064e1090010de00006e260b000ede000056e90000dedc00008ce30000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -549,7 +549,7 @@ MonoBehaviour:
     m_ControlHash: -371814159
     m_PrefName: Preview_InspectorPreview
   m_LastInspectedObjectInstanceID: -1
-  m_LastVerticalScrollValue: 219
+  m_LastVerticalScrollValue: 0
   m_GlobalObjectId: 
   m_InspectorMode: 0
   m_LockTracker:
@@ -596,7 +596,7 @@ MonoBehaviour:
       scrollPos: {x: 0, y: 0}
       m_SelectedIDs: 
       m_LastClickedID: 0
-      m_ExpandedIDs: 04fbffff
+      m_ExpandedIDs: 289afdff409ffdfff49ffdff2aa5fdff56a7fdff36a8fdff6aa8fdff14aefdffc6b0fdffd8bbfdffeebbfdff5abcfdffdcc3fdffe2c3fdffe8c3fdfff2c3fdfffcc3fdffd8c7fdff2acafdff8ad4fdff0e01feff7606feff1816feff423afeff6ab9feffdad2fefff2d2feff24f9feff2a1affff5a3dffff4e47ffff4e48ffff0056ffff1856ffff6e7cffff689dffff8cc0ffff74caffff6ecbffffe6faffff166f010086ae0100dcae0100faaf0100fab00100f8b1010006b201000eb2010032b3010076b30100e6b30100f4b3010048b401007ab4010088b5010076b6010084b60100ccb60100ea450200884802004ea1020092a3020072a40200e4a80200a0ac0200
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 
@@ -1242,9 +1242,9 @@ MonoBehaviour:
   m_AudioPlay: 0
   m_DebugDrawModesUseInteractiveLightBakingData: 0
   m_Position:
-    m_Target: {x: 81.49245, y: 29.76387, z: 0}
+    m_Target: {x: -809.09314, y: 91.062775, z: -0.31771442}
     speed: 2
-    m_Value: {x: 81.49245, y: 29.76387, z: 0}
+    m_Value: {x: -809.09314, y: 91.062775, z: -0.31771442}
   m_RenderMode: 0
   m_CameraMode:
     drawMode: 0
@@ -1294,9 +1294,9 @@ MonoBehaviour:
     speed: 2
     m_Value: {x: 0, y: 0, z: 0, w: 1}
   m_Size:
-    m_Target: 13.976044
+    m_Target: 58.4588
     speed: 2
-    m_Value: 13.976044
+    m_Value: 58.4588
   m_Ortho:
     m_Target: 1
     speed: 2

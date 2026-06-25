@@ -2589,6 +2589,22 @@ public class ZalaytyMonster : Enemy
         StopMoveTowardCoroutine();
         ExitWaitAnimation();
 
+        // A moving source/destination platform may have shifted while Zalayty walked to his
+        // takeoff edge. Refresh both bounds so the landing point and the reach test use the
+        // platforms' CURRENT positions, not the snapshot taken when the transition started.
+        if (sourcePlatform != null && sourcePlatform.platformCollider != null)
+            curB = sourcePlatform.platformCollider.bounds;
+        nextB = nextPlatform.platformCollider.bounds;
+
+        // The A* graph keeps a moving platform on the route using its full swept travel
+        // envelope, but the actual leap must only commit while the destination is CURRENTLY
+        // within Zalayty's horizontal reach. Otherwise he would jump toward a moving platform
+        // sitting at its far extreme and fall (often over a pit). If it is still out of reach,
+        // abort this attempt and stay grounded at the edge; the follow loop retries and jumps
+        // as soon as the platform comes back within range.
+        if (!IsHorizontalGapCurrentlyJumpable(curB, nextB))
+            yield break;
+
         // 2) Landing X:
         // - going down: use your ChooseBestLocationForTransition (fixed + clamped)
         // - going up/side: still bias toward warrior X
@@ -2708,6 +2724,24 @@ public class ZalaytyMonster : Enemy
 
         if (HasSafelyLandedOnPlatform(nextPlatform))
             RestoreIgnoredWarriorPlatformJumpCollisions();
+    }
+
+    /// <summary>
+    /// True when the horizontal edge-to-edge gap between the source and destination platforms
+    /// is currently within Zalayty's jump reach. Mirrors the gap rule used by
+    /// <see cref="PlatformGraphAStar"/>.IsReachable, but evaluated on LIVE bounds at the moment
+    /// of the leap so a moving destination is only jumped to while it is actually close.
+    /// Vertical limits are intentionally ignored (Zalayty uses <c>ignoreVerticalLimits</c>).
+    /// </summary>
+    private bool IsHorizontalGapCurrentlyJumpable(Bounds curB, Bounds nextB)
+    {
+        float gapX = 0f;
+
+        if (nextB.min.x > curB.max.x) gapX = nextB.min.x - curB.max.x;       // destination is right
+        else if (curB.min.x > nextB.max.x) gapX = curB.min.x - nextB.max.x;  // destination is left
+        // Overlapping in X => gapX stays 0.
+
+        return gapX <= zalaytyHorizontalGap;
     }
 
     private Side ChooseBestSideForTransition(Bounds curB, Bounds nextB, float desiredX)
