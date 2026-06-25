@@ -21,10 +21,17 @@ public class WarriorHudUI : MonoBehaviour
 
     [SerializeField] private float sprintCooldownTotal = 6f;
     [SerializeField] private float attack2CooldownTotal = 6f;
-    [SerializeField] private float shieldCooldownTotal = 8f; 
+    [SerializeField] private float shieldCooldownTotal = 8f;
+
+    [Header("Retries")]
+    [SerializeField] private TMP_Text retriesText;
+    [SerializeField] private Image heartIcon;            // optionnel (grise le cœur à 0)
+    [SerializeField] private Color heartNormalColor = Color.white;
+    [SerializeField] private Color heartEmptyColor = new Color(1f, 1f, 1f, 0.3f);
 
     // cached values to avoid useless rebuild requests
     private float _lastShieldCd = -1f;
+    private int _lastRetries = -1;
 
     private float _lastHp = -1f;
     //private float _lastShield = -1f;
@@ -117,6 +124,19 @@ public class WarriorHudUI : MonoBehaviour
             {
                 _lastAtk2Cd = atk201;
                 attack2CdFill.fillAmount = atk201;
+            }
+        }
+
+        // Retries (cœur sous le portrait) — lecture directe de la source de vérité
+        if (retriesText != null && GameMgr.Instance != null)
+        {
+            int remaining = GameMgr.Instance.RetriesRemaining;
+            if (remaining != _lastRetries)
+            {
+                _lastRetries = remaining;
+                retriesText.text = $"{remaining}/{GameMgr.Instance.MaxRetries}";
+                if (heartIcon != null)
+                    heartIcon.color = remaining > 0 ? heartNormalColor : heartEmptyColor;
             }
         }
 

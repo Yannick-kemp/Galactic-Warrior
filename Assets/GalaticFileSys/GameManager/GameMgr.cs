@@ -15,6 +15,9 @@ public class GameMgr : MonoBehaviour, IGame
     [SerializeField] private int maxRetries = 3;
 
     private int retryCount = 0;
+    // True between a death and its resolution (revive or game over). Guards the retry-consume so a
+    // single death only costs one life, even though HandleWarriorDead fires twice (StartDeath + EndDeath).
+    private bool _deathConsumed;
     private Vector3 lastDeathPosition;
     public bool IsRestarting { get; private set; }
     public static GameMgr Instance { get; private set; }
@@ -490,6 +493,15 @@ public class GameMgr : MonoBehaviour, IGame
             e.StopMoveTowardCoroutine();
         }
 
+        // A death costs one life immediately so the HUD and the Game-Over overlay both read the
+        // post-death count: RetriesRemaining hits 0 exactly when it's a real game over (no extra death).
+        // Guarded: HandleWarriorDead is called twice per death (StartDeath + EndDeath) → consume once.
+        if (!_deathConsumed)
+        {
+            _deathConsumed = true;
+            retryCount = Mathf.Min(retryCount + 1, maxRetries);
+        }
+
         UIManager.Instance?.ShowGameOver();
     }
 
@@ -543,17 +555,13 @@ public class GameMgr : MonoBehaviour, IGame
 
     public bool TryRetryFromDeath()
     {
+        // The life was already consumed at death (HandleWarriorDead). If none remain → real game over.
         if (retryCount >= maxRetries)
             return false;
 
-        retryCount++;
-
         Warrior warrior = WarriorInstance;
         if (warrior == null)
-        {
-            retryCount--;
             return false;
-        }
 
         ResetMeteorHazards(true);
 
@@ -657,7 +665,6 @@ public class GameMgr : MonoBehaviour, IGame
         if (!revived)
         {
             Debug.LogWarning("[GameMgr] Retry failed: warrior was not in death state.");
-            retryCount--;
             return false;
         }
 
@@ -669,6 +676,9 @@ public class GameMgr : MonoBehaviour, IGame
         ResetAllEnemies();
 
         Debug.Log($"[GameMgr] Retry {retryCount}/{maxRetries}");
+
+        // This death is resolved → the next death will consume a fresh life.
+        _deathConsumed = false;
 
         // A retry was effectively consumed → let the reward system buy it back immediately
         // if a token is in reserve (model A). Fired only on the success path.
@@ -1209,6 +1219,7 @@ public class GameMgr : MonoBehaviour, IGame
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
         IsRestarting = false;
+        _deathConsumed = false; // fresh warrior spawns alive → no unresolved death
 
         ExitForcedRetryZone();
 
@@ -1293,6 +1304,7 @@ public class GameMgr : MonoBehaviour, IGame
         SceneManager.sceneLoaded -= OnSceneLoadedAfterRevive;
 
         retryCount = 0;
+        _deathConsumed = false;
         IsRestarting = false;
 
         ExitForcedRetryZone();
@@ -1348,6 +1360,7 @@ public class GameMgr : MonoBehaviour, IGame
     private void ResetMenuLaunchState()
     {
         retryCount = 0;
+        _deathConsumed = false;
         ResetTransientCheckpoint();
         _initialSpawnPosition = Vector3.zero;
         _initialSpawnParent = null;
