@@ -343,6 +343,124 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         #endregion
 
+        #region Enemy Body-Push Velocity Clamp (Anti Violent Repulse)
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // Root cause of the "violent repulsion when hit by a MOVING enemy":
+        // Enemies and the Warrior are both Dynamic Rigidbody2D. Enemies are scripted movers
+        // (RequestCoreMovePosition -> MovePosition + SyncTransforms, driven every Update frame).
+        // When a patrolling/chasing enemy walks its body collider into the grounded Warrior, the
+        // physics solver depenetrates the overlap at the next Simulate and EJECTS the Warrior. The
+        // deeper the per-step overlap (faster enemy), the more violent the launch. Zeroing the
+        // enemy's linearVelocity (NeutralizeImplicitMoveVelocity) does NOT fix this: the launch is a
+        // position-based depenetration response, not transferred linear momentum.
+        //
+        // This guardian kills the symptom on the Warrior side: while the Warrior is GROUNDED, in
+        // body contact with an enemy, and NOT in any intentional body-owning state (bounce, jump arc,
+        // sprint, hit-stun, knockback, stone-repulse, death, attack, boss-cancel, Zalayty absorber),
+        // it caps the spurious velocity the solver injected so a depenetration impulse can never fling
+        // him. The Warrior's own grounded movement is MovePosition-driven (not velocity-driven), so
+        // clamping linearVelocity here does not affect normal navigation, jumps, or falls.
+        // ─────────────────────────────────────────────────────────────────────────────
+
+        [Header("Enemy Body-Push Velocity Clamp (Anti Violent Repulse)")]
+        [Tooltip("Master switch. While grounded and touching an enemy body, caps the velocity the physics solver injects when an enemy walks into the Warrior, preventing the violent depenetration launch.")]
+        [SerializeField] private bool enableEnemyBodyPushVelocityClamp = true;
+
+        [Tooltip("Extra padding (meters) around the Warrior collider when testing for enemy body contact.")]
+        [SerializeField, Min(0f)] private float enemyBodyPushContactPad = 0.04f;
+
+        [Tooltip("Distance (meters) at or below which an enemy body collider counts as 'in contact' for the clamp. Slightly above the physics skin.")]
+        [SerializeField, Min(0f)] private float enemyBodyPushContactThreshold = 0.03f;
+
+        [Tooltip("Maximum horizontal speed (m/s) the Warrior may keep while a moving enemy presses against him. Spurious solver velocity above this is clamped. Keep low; grounded movement is MovePosition-driven so this never throttles normal play.")]
+        [SerializeField, Min(0f)] private float enemyBodyPushMaxHorizontalSpeed = 0.75f;
+
+        [Tooltip("ON = also cancel any upward velocity the depenetration injected while grounded and in enemy contact, so an enemy can never pop the Warrior into the air.")]
+        [SerializeField] private bool enemyBodyPushClampUpwardPop = true;
+
+        private void ClampEnemyBodyPushVelocity()
+        {
+            if (!enableEnemyBodyPushVelocityClamp) return;
+            if (collider2 == null || rigidbody2 == null || enemyLayer.value == 0) return;
+
+            // Respect every window where another system intentionally owns / launches the body.
+            // These mirror EnforceEnemyOverlapRecovery so the clamp never fights an intended motion.
+            if (_postBounceActive) return;
+            if (_sprintActive) return;
+            if (IsHardActionLocked) return;
+            if (_hitReactRoutine != null) return;
+            if (IsAnyAttackPlaying()) return;
+            if (Time.time <= _suppressEnemyOverlapBounceUntil) return;
+            if (activesJumpCoroutine != null) return;
+            if (_zalaytyBodyImpactAbsorbActive) return;
+
+            // The violent repulse case is a grounded Warrior being rammed laterally. While airborne
+            // we must preserve gravity/edge-fall horizontal velocity, so the clamp only acts grounded.
+            if (CountGroundPoints() <= 0) return;
+
+            if (!_overlapRecoveryFilterReady)
+            {
+                _overlapRecoveryFilter = new ContactFilter2D
+                {
+                    useTriggers = false,
+                    useLayerMask = true
+                };
+                _overlapRecoveryFilter.SetLayerMask(enemyLayer);
+                _overlapRecoveryFilterReady = true;
+            }
+
+            Bounds b = collider2.bounds;
+            Vector2 size = (Vector2)b.size + new Vector2(enemyBodyPushContactPad, enemyBodyPushContactPad);
+
+            int count = Physics2D.OverlapBox(b.center, size, 0f, _overlapRecoveryFilter, _overlapRecoveryBuffer);
+            if (count <= 0) return;
+
+            bool touchingEnemyBody = false;
+            for (int i = 0; i < count; i++)
+            {
+                Collider2D hit = _overlapRecoveryBuffer[i];
+                if (hit == null || hit == collider2) continue;
+
+                Enemy enemy = hit.GetComponentInParent<Enemy>();
+                if (enemy == null) continue;
+
+                ColliderDistance2D cd = collider2.Distance(hit);
+                if (!cd.isValid) continue;
+
+                if (cd.isOverlapped || cd.distance <= enemyBodyPushContactThreshold)
+                {
+                    touchingEnemyBody = true;
+                    break;
+                }
+            }
+
+            if (!touchingEnemyBody) return;
+
+            Vector2 v = rigidbody2.linearVelocity;
+            bool changed = false;
+
+            if (Mathf.Abs(v.x) > enemyBodyPushMaxHorizontalSpeed)
+            {
+                v.x = Mathf.Sign(v.x) * enemyBodyPushMaxHorizontalSpeed;
+                changed = true;
+            }
+
+            // A grounded Warrior in enemy contact has no legitimate source of upward velocity
+            // (input jumps run through the jump coroutine, gated above), so any positive vy here is
+            // the depenetration popping him up. Cancel it when enabled.
+            if (enemyBodyPushClampUpwardPop && v.y > 0f)
+            {
+                v.y = 0f;
+                changed = true;
+            }
+
+            if (changed)
+                rigidbody2.linearVelocity = v;
+        }
+
+        #endregion
+
         #region Collision / Bounce / Contact Blocking
 
         private void OnCollisionEnter2D(Collision2D collision)

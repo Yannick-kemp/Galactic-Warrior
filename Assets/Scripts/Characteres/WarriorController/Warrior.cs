@@ -440,6 +440,12 @@ namespace Assets.Scripts.Characteres.WarriorController
             // already active, so it must run before the post-bounce early-return below.
            EnforceEnemyOverlapRecovery();
 
+            // Anti violent-repulse: cap the spurious velocity the physics solver injects when a
+            // moving enemy walks its Dynamic body into the grounded Warrior (depenetration launch).
+            // Runs after the overlap backstop and before the post-bounce early-return so it also
+            // applies on frames where no bounce is active.
+            ClampEnemyBodyPushVelocity();
+
             if (!_postBounceActive)
                 return;
 
