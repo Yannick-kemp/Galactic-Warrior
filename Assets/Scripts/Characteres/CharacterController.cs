@@ -117,8 +117,15 @@ public class CharacterController : Character, ICharacterController
     // impulse onto the Warrior on contact.
     protected virtual bool NeutralizeImplicitMoveVelocity => false;
 
+    // Last chance for a subclass to clamp a scripted move target before it is committed.
+    // Enemies override this to stop their MovePosition from penetrating the Warrior's body
+    // (the deep overlap is what Unity's solver depenetrates into a violent launch). Default: no-op.
+    protected virtual Vector2 AdjustRequestedCoreMovePosition(Vector2 desiredPosition) => desiredPosition;
+
     protected void RequestCoreMovePosition(Vector2 position)
     {
+        position = AdjustRequestedCoreMovePosition(position);
+
         _lastCoreMoveRequestPosition = position;
         _lastCoreMoveRequestFrame = Time.frameCount;
         _lastCoreMoveRequestTime = Time.time;

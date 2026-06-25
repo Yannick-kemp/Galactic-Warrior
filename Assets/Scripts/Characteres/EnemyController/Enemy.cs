@@ -247,6 +247,16 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [Tooltip("ON = clears enemy Rigidbody2D velocity along the Warrior push direction while body contact is active.")]
         [SerializeField] private bool cancelWarriorBodyPushVelocity = true;
 
+        [Header("Warrior Body Penetration Guard (Anti Violent Repulse)")]
+        [Tooltip("ON = this enemy's scripted movement (patrol/chase) is clamped to STOP at contact with the Warrior's body instead of driving its collider into him. The deep overlap is what Unity's solver depenetrates into a violent launch; preventing the overlap removes the launch whether the Warrior is grounded or airborne. Disable only for bosses that intentionally body-ram.")]
+        [SerializeField] private bool preventWarriorBodyPenetration = true;
+
+        [Tooltip("Small skin (meters) kept between the enemy body and the Warrior when a move is clamped at contact. Keep slightly above the physics skin.")]
+        [SerializeField, Min(0f)] private float warriorBodyPenetrationSkin = 0.02f;
+
+        [Tooltip("Only clamp when the Warrior body is within this distance of the enemy body. Beyond it the move is never altered (cheap early-out for far patrol).")]
+        [SerializeField, Min(0f)] private float warriorBodyPenetrationCheckRange = 0.75f;
+
         private Vector2 _warriorBodyPushPhysicsStepStart;
         private bool _hasWarriorBodyPushPhysicsStepStart;
 
@@ -284,6 +294,75 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             float d = (seconds > 0f) ? seconds : disableAttackWhenHitSeconds;
             _attackDisabledUntil = Mathf.Max(_attackDisabledUntil, Time.time + d);
+        }
+
+        // Anti violent-repulse (root-cause side): clamp this enemy's scripted move target so its
+        // body collider never penetrates the Warrior. The deep overlap a fast scripted mover would
+        // otherwise create is exactly what Unity's 2D solver depenetrates into a violent launch of
+        // the Warrior. By stopping the move at contact (minus a small skin) no overlap is ever
+        // produced, so there is nothing to eject — regardless of whether the Warrior is grounded or
+        // airborne. Only the component of the move that points INTO the Warrior is removed; movement
+        // parallel to the contact and away from him (patrol along the surface, platform-follow Y,
+        // SmoothStepBack — which bypasses this anyway) is preserved.
+        protected override Vector2 AdjustRequestedCoreMovePosition(Vector2 desiredPosition)
+        {
+            if (!preventWarriorBodyPenetration || rigidbody2 == null)
+                return desiredPosition;
+
+            if (IsDeadOrDying)
+                return desiredPosition;
+
+            Collider2D body = (NormalCollider != null && NormalCollider.enabled && !NormalCollider.isTrigger)
+                ? NormalCollider
+                : collider2;
+
+            if (body == null || !body.enabled || body.isTrigger)
+                return desiredPosition;
+
+            Warrior w = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
+            if (w == null || w.collider2 == null || !w.collider2.enabled)
+                return desiredPosition;
+
+            // Sprint dodge intentionally lets the Warrior pass through enemies (colliders are
+            // IgnoreCollision'd), so there is no penetration to prevent — don't fight it.
+            if (w.IsDodging)
+                return desiredPosition;
+
+            Vector2 from = rigidbody2.position;
+            Vector2 delta = desiredPosition - from;
+            if (delta.sqrMagnitude < 1e-10f)
+                return desiredPosition;
+
+            ColliderDistance2D cd = Physics2D.Distance(body, w.collider2);
+            if (!cd.isValid)
+                return desiredPosition;
+
+            float gap = cd.distance; // signed: > 0 separated, < 0 overlapping
+
+            if (gap > warriorBodyPenetrationCheckRange)
+                return desiredPosition; // too far to matter this frame
+
+            // Direction from the enemy body toward the Warrior body. Use the closest-point vector
+            // while separated (accurate contact axis); fall back to center-to-center when overlapping
+            // or degenerate.
+            Vector2 towardWarrior = (gap > 0f) ? (cd.pointB - cd.pointA) : Vector2.zero;
+            if (towardWarrior.sqrMagnitude < 1e-10f)
+                towardWarrior = (Vector2)w.collider2.bounds.center - (Vector2)body.bounds.center;
+            if (towardWarrior.sqrMagnitude < 1e-10f)
+                return desiredPosition;
+            towardWarrior.Normalize();
+
+            float closing = Vector2.Dot(delta, towardWarrior); // > 0 means moving toward the Warrior
+            if (closing <= 0f)
+                return desiredPosition; // moving away / parallel: never clamp
+
+            float allowed = Mathf.Max(0f, gap - warriorBodyPenetrationSkin);
+            if (closing <= allowed)
+                return desiredPosition; // move stays clear of contact
+
+            // Remove only the excess component that would drive the body into the Warrior.
+            delta -= towardWarrior * (closing - allowed);
+            return from + delta;
         }
 
         protected virtual void FixedUpdate()
