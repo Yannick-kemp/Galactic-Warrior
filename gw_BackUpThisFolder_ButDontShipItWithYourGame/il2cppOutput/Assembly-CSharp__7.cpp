@@ -2552,6 +2552,8 @@ struct ZalaytyMonster_t973AC012013D2C5598A73F91F5DFD316169AAF3A  : public Enemy_
 	bool ____samePlatformContactCombatLocked;
 	bool ____samePlatformContactAttackWasActive;
 	Coroutine_t85EA685566A254C23F3FD77AB5BDFFFF8799596B* ___followRoutine;
+	float ____spawnGravityScale;
+	bool ____started;
 	bool ___isOnEdgePlatform;
 	bool ___inRangeOrAttacking;
 	float ___warriorTopPressGraceTime;
@@ -2575,6 +2577,8 @@ struct ZalaytyMonster_t973AC012013D2C5598A73F91F5DFD316169AAF3A  : public Enemy_
 	float ___samePlatformMicroSeparationGraceTime;
 	float ___samePlatformMicroSeparationMaxVerticalGap;
 	float ___samePlatformMicroSeparationHorizontalSkin;
+	float ___samePlatformSeamTopYBand;
+	float ___samePlatformSeamMaxGapX;
 	bool ____missedMovingPlatformLandingRecoveryActive;
 	float ____forceAirborneAnimationUntil;
 	PlatFormColliderTrigger_t4ECA6A4F662A3D88F15CDB0B66EB64C2E2DF1EA8* ____lastReallyGroundedPlatform;
@@ -8592,7 +8596,7 @@ IL_001a:
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_5 = ___0_enemy;
 		NullCheck(L_5);
 		bool L_6;
-		L_6 = VirtualFuncInvoker0< bool >::Invoke(72, L_5);
+		L_6 = VirtualFuncInvoker0< bool >::Invoke(74, L_5);
 		if (L_6)
 		{
 			goto IL_0024;
@@ -8668,7 +8672,7 @@ IL_000b:
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_2 = ___0_enemy;
 		NullCheck(L_2);
 		Collider2D_t6A17BA7734600EF3F26588E9ED903617D5B8EB52* L_3;
-		L_3 = VirtualFuncInvoker0< Collider2D_t6A17BA7734600EF3F26588E9ED903617D5B8EB52* >::Invoke(73, L_2);
+		L_3 = VirtualFuncInvoker0< Collider2D_t6A17BA7734600EF3F26588E9ED903617D5B8EB52* >::Invoke(75, L_2);
 		il2cpp_codegen_runtime_class_init_inline(Object_tC12DECB6760A7F2CBF65D9DCF18D044C2D97152C_il2cpp_TypeInfo_var);
 		bool L_4;
 		L_4 = Object_op_Inequality_mD0BE578448EAA61948F25C32F8DD55AB1F778602(L_3, (Object_tC12DECB6760A7F2CBF65D9DCF18D044C2D97152C*)NULL, NULL);
@@ -8681,7 +8685,7 @@ IL_000b:
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_5 = ___0_enemy;
 		NullCheck(L_5);
 		Collider2D_t6A17BA7734600EF3F26588E9ED903617D5B8EB52* L_6;
-		L_6 = VirtualFuncInvoker0< Collider2D_t6A17BA7734600EF3F26588E9ED903617D5B8EB52* >::Invoke(73, L_5);
+		L_6 = VirtualFuncInvoker0< Collider2D_t6A17BA7734600EF3F26588E9ED903617D5B8EB52* >::Invoke(75, L_5);
 		return L_6;
 	}
 
@@ -10253,7 +10257,7 @@ IL_0010:
 	{
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_7 = V_1;
 		NullCheck(L_7);
-		VirtualActionInvoker1< Warrior_tCF382FDF8BE1AF9BDE52BF0954F020A2691F1C2F* >::Invoke(74, L_7, __this);
+		VirtualActionInvoker1< Warrior_tCF382FDF8BE1AF9BDE52BF0954F020A2691F1C2F* >::Invoke(76, L_7, __this);
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_8 = V_1;
 		NullCheck(L_8);
 		Component_SendMessage_m7CD6568BD5D93384C683CFF1E5088D17F20F3459(L_8, _stringLiteral3D79D526B5B30AA21282363CC2BCF5CAED241697, __this, 1, NULL);
@@ -13452,7 +13456,7 @@ IL_0017:
 		float L_15 = ___0_knockbackForce;
 		NullCheck(L_14);
 		float L_16;
-		L_16 = VirtualFuncInvoker1< float, float >::Invoke(67, L_14, L_15);
+		L_16 = VirtualFuncInvoker1< float, float >::Invoke(68, L_14, L_15);
 		NullCheck(L_13);
 		L_13->___stepBackDistance = L_16;
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_17 = ___1_enemy;
@@ -13482,7 +13486,7 @@ IL_0017:
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_25 = ___1_enemy;
 		NullCheck(L_25);
 		RuntimeObject* L_26;
-		L_26 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(56, L_25, (bool)0);
+		L_26 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(57, L_25, (bool)0);
 		G_B12_0 = L_26;
 		G_B12_1 = G_B10_0;
 		goto IL_008b;
@@ -13493,7 +13497,7 @@ IL_0084:
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_27 = ___1_enemy;
 		NullCheck(L_27);
 		RuntimeObject* L_28;
-		L_28 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(56, L_27, (bool)1);
+		L_28 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(57, L_27, (bool)1);
 		G_B12_0 = L_28;
 		G_B12_1 = G_B11_0;
 	}
@@ -13543,14 +13547,14 @@ IL_0092:
 		float L_42 = ___0_knockbackForce;
 		NullCheck(L_41);
 		float L_43;
-		L_43 = VirtualFuncInvoker1< float, float >::Invoke(67, L_41, L_42);
+		L_43 = VirtualFuncInvoker1< float, float >::Invoke(68, L_41, L_42);
 		NullCheck(L_40);
 		L_40->___stepBackDistance = L_43;
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_44 = ___1_enemy;
 		int32_t L_45 = ___2_damage;
 		NullCheck(L_44);
 		bool L_46;
-		L_46 = VirtualFuncInvoker1< bool, float >::Invoke(47, L_44, ((float)L_45));
+		L_46 = VirtualFuncInvoker1< bool, float >::Invoke(48, L_44, ((float)L_45));
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_47 = ___1_enemy;
 		int32_t L_48 = ___2_damage;
 		Warrior_NotifyEnemyHit_mBE1DDA1DBFAA711A32A5DF23271D07EBC8446065(__this, L_47, L_48, NULL);
@@ -13567,7 +13571,7 @@ IL_0092:
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_51 = ___1_enemy;
 		NullCheck(L_51);
 		RuntimeObject* L_52;
-		L_52 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(56, L_51, (bool)0);
+		L_52 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(57, L_51, (bool)0);
 		G_B17_0 = L_52;
 		G_B17_1 = G_B15_0;
 		goto IL_0108;
@@ -13578,7 +13582,7 @@ IL_0101:
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_53 = ___1_enemy;
 		NullCheck(L_53);
 		RuntimeObject* L_54;
-		L_54 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(56, L_53, (bool)1);
+		L_54 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(57, L_53, (bool)1);
 		G_B17_0 = L_54;
 		G_B17_1 = G_B16_0;
 	}
@@ -17254,7 +17258,7 @@ IL_0078:
 		L_6 = Object_op_Inequality_mD0BE578448EAA61948F25C32F8DD55AB1F778602(L_5, (Object_tC12DECB6760A7F2CBF65D9DCF18D044C2D97152C*)NULL, NULL);
 		if (!L_6)
 		{
-			goto IL_012e;
+			goto IL_013f;
 		}
 	}
 	{
@@ -17266,7 +17270,7 @@ IL_0078:
 		L_9 = Object_op_Inequality_mD0BE578448EAA61948F25C32F8DD55AB1F778602(L_8, (Object_tC12DECB6760A7F2CBF65D9DCF18D044C2D97152C*)NULL, NULL);
 		if (!L_9)
 		{
-			goto IL_012e;
+			goto IL_013f;
 		}
 	}
 	{
@@ -17276,7 +17280,7 @@ IL_0078:
 		L_11 = Object_op_Inequality_mD0BE578448EAA61948F25C32F8DD55AB1F778602(L_10, (Object_tC12DECB6760A7F2CBF65D9DCF18D044C2D97152C*)NULL, NULL);
 		if (!L_11)
 		{
-			goto IL_012e;
+			goto IL_013f;
 		}
 	}
 	{
@@ -17287,113 +17291,119 @@ IL_0078:
 		Bounds_t367E830C64BBF235ED8C3B2F8CF6254FDCAD39C3 L_14;
 		L_14 = Collider2D_get_bounds_m74F65CE702BA9D9EED05B870325B4FE3B2401B5E(L_13, NULL);
 		V_0 = L_14;
-		BoxCollider2D_tF860C7737FFB062CEC06577E0CD8364EEC1D4EDA* L_15 = ((Character_tAF47BB8D49829E1464C3692B366FC33C5B38CD61*)__this)->___collider2;
+		Transform_tB27202C6F4E36D225EE28A13E4D662BF99785DB1* L_15;
+		L_15 = Component_get_transform_m2919A1D81931E6932C7F06D4C2F0AB8DDA9A5371(__this, NULL);
 		NullCheck(L_15);
-		Bounds_t367E830C64BBF235ED8C3B2F8CF6254FDCAD39C3 L_16;
-		L_16 = Collider2D_get_bounds_m74F65CE702BA9D9EED05B870325B4FE3B2401B5E(L_15, NULL);
-		V_2 = L_16;
-		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_17;
-		L_17 = Bounds_get_extents_mFE6DC407FCE2341BE2C750CB554055D211281D25_inline((&V_2), NULL);
-		float L_18 = L_17.___y;
-		V_1 = L_18;
-		Transform_tB27202C6F4E36D225EE28A13E4D662BF99785DB1* L_19;
-		L_19 = Component_get_transform_m2919A1D81931E6932C7F06D4C2F0AB8DDA9A5371(__this, NULL);
-		NullCheck(L_19);
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_16;
+		L_16 = Transform_get_position_m69CD5FA214FDAE7BB701552943674846C220FDE1(L_15, NULL);
+		float L_17 = L_16.___y;
+		BoxCollider2D_tF860C7737FFB062CEC06577E0CD8364EEC1D4EDA* L_18 = ((Character_tAF47BB8D49829E1464C3692B366FC33C5B38CD61*)__this)->___collider2;
+		NullCheck(L_18);
+		Bounds_t367E830C64BBF235ED8C3B2F8CF6254FDCAD39C3 L_19;
+		L_19 = Collider2D_get_bounds_m74F65CE702BA9D9EED05B870325B4FE3B2401B5E(L_18, NULL);
+		V_2 = L_19;
 		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_20;
-		L_20 = Transform_get_position_m69CD5FA214FDAE7BB701552943674846C220FDE1(L_19, NULL);
-		float L_21 = L_20.___x;
-		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_22;
-		L_22 = Bounds_get_min_m465AC9BBE1DE5D8E8AD95AC19B9899068FEEBB13_inline((&V_0), NULL);
-		float L_23 = L_22.___x;
-		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_24;
-		L_24 = Bounds_get_max_m6446F2AB97C1E57CA89467B9DE52D4EB61F1CB09_inline((&V_0), NULL);
-		float L_25 = L_24.___x;
-		float L_26;
-		L_26 = Mathf_Clamp_mEB9AEA827D27D20FCC787F7375156AF46BB12BBF_inline(L_21, L_23, L_25, NULL);
+		L_20 = Bounds_get_min_m465AC9BBE1DE5D8E8AD95AC19B9899068FEEBB13_inline((&V_2), NULL);
+		float L_21 = L_20.___y;
+		V_1 = ((float)il2cpp_codegen_subtract(L_17, L_21));
+		Transform_tB27202C6F4E36D225EE28A13E4D662BF99785DB1* L_22;
+		L_22 = Component_get_transform_m2919A1D81931E6932C7F06D4C2F0AB8DDA9A5371(__this, NULL);
+		NullCheck(L_22);
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_23;
+		L_23 = Transform_get_position_m69CD5FA214FDAE7BB701552943674846C220FDE1(L_22, NULL);
+		float L_24 = L_23.___x;
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_25;
+		L_25 = Bounds_get_min_m465AC9BBE1DE5D8E8AD95AC19B9899068FEEBB13_inline((&V_0), NULL);
+		float L_26 = L_25.___x;
 		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_27;
 		L_27 = Bounds_get_max_m6446F2AB97C1E57CA89467B9DE52D4EB61F1CB09_inline((&V_0), NULL);
-		float L_28 = L_27.___y;
-		float L_29 = V_1;
-		Transform_tB27202C6F4E36D225EE28A13E4D662BF99785DB1* L_30;
-		L_30 = Component_get_transform_m2919A1D81931E6932C7F06D4C2F0AB8DDA9A5371(__this, NULL);
-		NullCheck(L_30);
-		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_31;
-		L_31 = Transform_get_position_m69CD5FA214FDAE7BB701552943674846C220FDE1(L_30, NULL);
-		float L_32 = L_31.___z;
-		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_33;
-		memset((&L_33), 0, sizeof(L_33));
-		Vector3__ctor_m376936E6B999EF1ECBE57D990A386303E2283DE0_inline((&L_33), L_26, ((float)il2cpp_codegen_add(((float)il2cpp_codegen_add(L_28, L_29)), (0.0500000007f))), L_32, NULL);
-		Warrior_set_LastSafePosition_m00690F46FF74C3C6E8321349765264BC1DBEEC44_inline(__this, L_33, NULL);
-		PlatFormColliderTrigger_t4ECA6A4F662A3D88F15CDB0B66EB64C2E2DF1EA8* L_34 = ___0_platform;
-		Warrior_IgnoreOldPlatformDuringExternalPushFall_m1774812B8FCC010064F67B06945A1E496263FFDB(__this, L_34, NULL);
+		float L_28 = L_27.___x;
+		float L_29;
+		L_29 = Mathf_Clamp_mEB9AEA827D27D20FCC787F7375156AF46BB12BBF_inline(L_24, L_26, L_28, NULL);
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_30;
+		L_30 = Bounds_get_max_m6446F2AB97C1E57CA89467B9DE52D4EB61F1CB09_inline((&V_0), NULL);
+		float L_31 = L_30.___y;
+		float L_32 = V_1;
+		Transform_tB27202C6F4E36D225EE28A13E4D662BF99785DB1* L_33;
+		L_33 = Component_get_transform_m2919A1D81931E6932C7F06D4C2F0AB8DDA9A5371(__this, NULL);
+		NullCheck(L_33);
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_34;
+		L_34 = Transform_get_position_m69CD5FA214FDAE7BB701552943674846C220FDE1(L_33, NULL);
+		float L_35 = L_34.___z;
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_36;
+		memset((&L_36), 0, sizeof(L_36));
+		Vector3__ctor_m376936E6B999EF1ECBE57D990A386303E2283DE0_inline((&L_36), L_29, ((float)il2cpp_codegen_add(((float)il2cpp_codegen_add(L_31, L_32)), (0.0500000007f))), L_35, NULL);
+		Warrior_set_LastSafePosition_m00690F46FF74C3C6E8321349765264BC1DBEEC44_inline(__this, L_36, NULL);
+		PlatFormColliderTrigger_t4ECA6A4F662A3D88F15CDB0B66EB64C2E2DF1EA8* L_37 = ___0_platform;
+		Warrior_IgnoreOldPlatformDuringExternalPushFall_m1774812B8FCC010064F67B06945A1E496263FFDB(__this, L_37, NULL);
 	}
 
-IL_012e:
+IL_013f:
 	{
-		Rigidbody2D_tBEBE9523CF4448544085AF46BF7E10AA499F320F* L_35 = ((Character_tAF47BB8D49829E1464C3692B366FC33C5B38CD61*)__this)->___rigidbody2;
+		Rigidbody2D_tBEBE9523CF4448544085AF46BF7E10AA499F320F* L_38 = ((Character_tAF47BB8D49829E1464C3692B366FC33C5B38CD61*)__this)->___rigidbody2;
 		il2cpp_codegen_runtime_class_init_inline(Object_tC12DECB6760A7F2CBF65D9DCF18D044C2D97152C_il2cpp_TypeInfo_var);
-		bool L_36;
-		L_36 = Object_op_Inequality_mD0BE578448EAA61948F25C32F8DD55AB1F778602(L_35, (Object_tC12DECB6760A7F2CBF65D9DCF18D044C2D97152C*)NULL, NULL);
-		if (!L_36)
+		bool L_39;
+		L_39 = Object_op_Inequality_mD0BE578448EAA61948F25C32F8DD55AB1F778602(L_38, (Object_tC12DECB6760A7F2CBF65D9DCF18D044C2D97152C*)NULL, NULL);
+		if (!L_39)
 		{
-			goto IL_01b5;
+			goto IL_01c6;
 		}
 	}
 	{
-		Rigidbody2D_tBEBE9523CF4448544085AF46BF7E10AA499F320F* L_37 = ((Character_tAF47BB8D49829E1464C3692B366FC33C5B38CD61*)__this)->___rigidbody2;
-		float L_38 = __this->___enemyExternalPushFallGravityScale;
-		NullCheck(L_37);
-		Rigidbody2D_set_gravityScale_mAFD1A72661304467D20971BBCAA7E04B418F80FD(L_37, L_38, NULL);
-		Rigidbody2D_tBEBE9523CF4448544085AF46BF7E10AA499F320F* L_39 = ((Character_tAF47BB8D49829E1464C3692B366FC33C5B38CD61*)__this)->___rigidbody2;
-		NullCheck(L_39);
-		Rigidbody2D_set_angularVelocity_mFC06FB14E69DD4847F27E614900D22317AA5A390(L_39, (0.0f), NULL);
 		Rigidbody2D_tBEBE9523CF4448544085AF46BF7E10AA499F320F* L_40 = ((Character_tAF47BB8D49829E1464C3692B366FC33C5B38CD61*)__this)->___rigidbody2;
+		float L_41 = __this->___enemyExternalPushFallGravityScale;
 		NullCheck(L_40);
-		Vector2_t1FD6F485C871E832B347AB2DC8CBA08B739D8DF7 L_41;
-		L_41 = Rigidbody2D_get_linearVelocity_m0130BA2A5A1A680CD9656EEEBC85939D823E3B9F(L_40, NULL);
-		V_3 = L_41;
-		float L_42 = ___1_direction;
-		float L_43 = __this->___enemyExternalPushFallMinXVelocity;
-		V_4 = ((float)il2cpp_codegen_multiply(L_42, L_43));
-		Vector2_t1FD6F485C871E832B347AB2DC8CBA08B739D8DF7 L_44 = V_3;
-		float L_45 = L_44.___x;
-		float L_46;
-		L_46 = fabsf(L_45);
-		float L_47 = V_4;
-		float L_48;
-		L_48 = fabsf(L_47);
-		if ((!(((float)L_46) < ((float)L_48))))
+		Rigidbody2D_set_gravityScale_mAFD1A72661304467D20971BBCAA7E04B418F80FD(L_40, L_41, NULL);
+		Rigidbody2D_tBEBE9523CF4448544085AF46BF7E10AA499F320F* L_42 = ((Character_tAF47BB8D49829E1464C3692B366FC33C5B38CD61*)__this)->___rigidbody2;
+		NullCheck(L_42);
+		Rigidbody2D_set_angularVelocity_mFC06FB14E69DD4847F27E614900D22317AA5A390(L_42, (0.0f), NULL);
+		Rigidbody2D_tBEBE9523CF4448544085AF46BF7E10AA499F320F* L_43 = ((Character_tAF47BB8D49829E1464C3692B366FC33C5B38CD61*)__this)->___rigidbody2;
+		NullCheck(L_43);
+		Vector2_t1FD6F485C871E832B347AB2DC8CBA08B739D8DF7 L_44;
+		L_44 = Rigidbody2D_get_linearVelocity_m0130BA2A5A1A680CD9656EEEBC85939D823E3B9F(L_43, NULL);
+		V_3 = L_44;
+		float L_45 = ___1_direction;
+		float L_46 = __this->___enemyExternalPushFallMinXVelocity;
+		V_4 = ((float)il2cpp_codegen_multiply(L_45, L_46));
+		Vector2_t1FD6F485C871E832B347AB2DC8CBA08B739D8DF7 L_47 = V_3;
+		float L_48 = L_47.___x;
+		float L_49;
+		L_49 = fabsf(L_48);
+		float L_50 = V_4;
+		float L_51;
+		L_51 = fabsf(L_50);
+		if ((!(((float)L_49) < ((float)L_51))))
 		{
-			goto IL_0190;
+			goto IL_01a1;
 		}
 	}
 	{
-		float L_49 = V_4;
-		(&V_3)->___x = L_49;
+		float L_52 = V_4;
+		(&V_3)->___x = L_52;
 	}
 
-IL_0190:
+IL_01a1:
 	{
-		Vector2_t1FD6F485C871E832B347AB2DC8CBA08B739D8DF7 L_50 = V_3;
-		float L_51 = L_50.___y;
-		if ((!(((float)L_51) > ((float)(-0.100000001f)))))
+		Vector2_t1FD6F485C871E832B347AB2DC8CBA08B739D8DF7 L_53 = V_3;
+		float L_54 = L_53.___y;
+		if ((!(((float)L_54) > ((float)(-0.100000001f)))))
 		{
-			goto IL_01a9;
+			goto IL_01ba;
 		}
 	}
 	{
 		(&V_3)->___y = (-0.100000001f);
 	}
 
-IL_01a9:
+IL_01ba:
 	{
-		Rigidbody2D_tBEBE9523CF4448544085AF46BF7E10AA499F320F* L_52 = ((Character_tAF47BB8D49829E1464C3692B366FC33C5B38CD61*)__this)->___rigidbody2;
-		Vector2_t1FD6F485C871E832B347AB2DC8CBA08B739D8DF7 L_53 = V_3;
-		NullCheck(L_52);
-		Rigidbody2D_set_linearVelocity_mD4C890DE3DF15ECAD0DC61675586C0D1998CC1BB(L_52, L_53, NULL);
+		Rigidbody2D_tBEBE9523CF4448544085AF46BF7E10AA499F320F* L_55 = ((Character_tAF47BB8D49829E1464C3692B366FC33C5B38CD61*)__this)->___rigidbody2;
+		Vector2_t1FD6F485C871E832B347AB2DC8CBA08B739D8DF7 L_56 = V_3;
+		NullCheck(L_55);
+		Rigidbody2D_set_linearVelocity_mD4C890DE3DF15ECAD0DC61675586C0D1998CC1BB(L_55, L_56, NULL);
 	}
 
-IL_01b5:
+IL_01c6:
 	{
 		CharacterController_JumpAnimationDisplay_m82449742540BD2FED27FEFD731FF1584DFD6CEA1(__this, NULL);
 		il2cpp_codegen_runtime_class_init_inline(Debug_t8394C7EEAECA3689C2C9B9DE9C7166D73596276F_il2cpp_TypeInfo_var);
@@ -18854,8 +18864,9 @@ IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void Warrior_LateUpdate_m91D61750FF81918A666B
 	float V_5 = 0.0f;
 	float V_6 = 0.0f;
 	float V_7 = 0.0f;
-	Bounds_t367E830C64BBF235ED8C3B2F8CF6254FDCAD39C3 V_8;
-	memset((&V_8), 0, sizeof(V_8));
+	float V_8 = 0.0f;
+	Bounds_t367E830C64BBF235ED8C3B2F8CF6254FDCAD39C3 V_9;
+	memset((&V_9), 0, sizeof(V_9));
 	float G_B16_0 = 0.0f;
 	{
 		bool L_0 = __this->____deathStarted;
@@ -18998,73 +19009,81 @@ IL_00cd:
 		Bounds_t367E830C64BBF235ED8C3B2F8CF6254FDCAD39C3 L_32;
 		L_32 = Collider2D_get_bounds_m74F65CE702BA9D9EED05B870325B4FE3B2401B5E(L_31, NULL);
 		V_3 = L_32;
-		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_33;
-		L_33 = Bounds_get_max_m6446F2AB97C1E57CA89467B9DE52D4EB61F1CB09_inline((&V_3), NULL);
-		float L_34 = L_33.___y;
-		BoxCollider2D_tF860C7737FFB062CEC06577E0CD8364EEC1D4EDA* L_35 = ((Character_tAF47BB8D49829E1464C3692B366FC33C5B38CD61*)__this)->___collider2;
-		NullCheck(L_35);
-		Bounds_t367E830C64BBF235ED8C3B2F8CF6254FDCAD39C3 L_36;
-		L_36 = Collider2D_get_bounds_m74F65CE702BA9D9EED05B870325B4FE3B2401B5E(L_35, NULL);
-		V_8 = L_36;
-		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_37;
-		L_37 = Bounds_get_extents_mFE6DC407FCE2341BE2C750CB554055D211281D25_inline((&V_8), NULL);
-		float L_38 = L_37.___y;
-		V_4 = ((float)il2cpp_codegen_add(((float)il2cpp_codegen_add(L_34, L_38)), (0.0199999996f)));
-		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_39;
-		L_39 = Bounds_get_min_m465AC9BBE1DE5D8E8AD95AC19B9899068FEEBB13_inline((&V_3), NULL);
-		float L_40 = L_39.___x;
-		float L_41 = __this->___platformSafeMargin;
-		V_5 = ((float)il2cpp_codegen_add(L_40, L_41));
-		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_42;
-		L_42 = Bounds_get_max_m6446F2AB97C1E57CA89467B9DE52D4EB61F1CB09_inline((&V_3), NULL);
-		float L_43 = L_42.___x;
-		float L_44 = __this->___platformSafeMargin;
-		V_6 = ((float)il2cpp_codegen_subtract(L_43, L_44));
-		float L_45 = V_5;
-		float L_46 = V_6;
-		if ((((float)L_45) <= ((float)L_46)))
+		Transform_tB27202C6F4E36D225EE28A13E4D662BF99785DB1* L_33;
+		L_33 = Component_get_transform_m2919A1D81931E6932C7F06D4C2F0AB8DDA9A5371(__this, NULL);
+		NullCheck(L_33);
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_34;
+		L_34 = Transform_get_position_m69CD5FA214FDAE7BB701552943674846C220FDE1(L_33, NULL);
+		float L_35 = L_34.___y;
+		BoxCollider2D_tF860C7737FFB062CEC06577E0CD8364EEC1D4EDA* L_36 = ((Character_tAF47BB8D49829E1464C3692B366FC33C5B38CD61*)__this)->___collider2;
+		NullCheck(L_36);
+		Bounds_t367E830C64BBF235ED8C3B2F8CF6254FDCAD39C3 L_37;
+		L_37 = Collider2D_get_bounds_m74F65CE702BA9D9EED05B870325B4FE3B2401B5E(L_36, NULL);
+		V_9 = L_37;
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_38;
+		L_38 = Bounds_get_min_m465AC9BBE1DE5D8E8AD95AC19B9899068FEEBB13_inline((&V_9), NULL);
+		float L_39 = L_38.___y;
+		V_4 = ((float)il2cpp_codegen_subtract(L_35, L_39));
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_40;
+		L_40 = Bounds_get_max_m6446F2AB97C1E57CA89467B9DE52D4EB61F1CB09_inline((&V_3), NULL);
+		float L_41 = L_40.___y;
+		float L_42 = V_4;
+		V_5 = ((float)il2cpp_codegen_add(((float)il2cpp_codegen_add(L_41, L_42)), (0.0199999996f)));
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_43;
+		L_43 = Bounds_get_min_m465AC9BBE1DE5D8E8AD95AC19B9899068FEEBB13_inline((&V_3), NULL);
+		float L_44 = L_43.___x;
+		float L_45 = __this->___platformSafeMargin;
+		V_6 = ((float)il2cpp_codegen_add(L_44, L_45));
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_46;
+		L_46 = Bounds_get_max_m6446F2AB97C1E57CA89467B9DE52D4EB61F1CB09_inline((&V_3), NULL);
+		float L_47 = L_46.___x;
+		float L_48 = __this->___platformSafeMargin;
+		V_7 = ((float)il2cpp_codegen_subtract(L_47, L_48));
+		float L_49 = V_6;
+		float L_50 = V_7;
+		if ((((float)L_49) <= ((float)L_50)))
 		{
-			goto IL_014a;
+			goto IL_015f;
 		}
 	}
 	{
-		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_47;
-		L_47 = Bounds_get_center_m5B05F81CB835EB6DD8628FDA24B638F477984DC3_inline((&V_3), NULL);
-		float L_48 = L_47.___x;
-		G_B16_0 = L_48;
-		goto IL_0163;
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_51;
+		L_51 = Bounds_get_center_m5B05F81CB835EB6DD8628FDA24B638F477984DC3_inline((&V_3), NULL);
+		float L_52 = L_51.___x;
+		G_B16_0 = L_52;
+		goto IL_0178;
 	}
 
-IL_014a:
+IL_015f:
 	{
-		Transform_tB27202C6F4E36D225EE28A13E4D662BF99785DB1* L_49;
-		L_49 = Component_get_transform_m2919A1D81931E6932C7F06D4C2F0AB8DDA9A5371(__this, NULL);
-		NullCheck(L_49);
-		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_50;
-		L_50 = Transform_get_position_m69CD5FA214FDAE7BB701552943674846C220FDE1(L_49, NULL);
-		float L_51 = L_50.___x;
-		float L_52 = V_5;
-		float L_53 = V_6;
-		float L_54;
-		L_54 = Mathf_Clamp_mEB9AEA827D27D20FCC787F7375156AF46BB12BBF_inline(L_51, L_52, L_53, NULL);
-		G_B16_0 = L_54;
+		Transform_tB27202C6F4E36D225EE28A13E4D662BF99785DB1* L_53;
+		L_53 = Component_get_transform_m2919A1D81931E6932C7F06D4C2F0AB8DDA9A5371(__this, NULL);
+		NullCheck(L_53);
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_54;
+		L_54 = Transform_get_position_m69CD5FA214FDAE7BB701552943674846C220FDE1(L_53, NULL);
+		float L_55 = L_54.___x;
+		float L_56 = V_6;
+		float L_57 = V_7;
+		float L_58;
+		L_58 = Mathf_Clamp_mEB9AEA827D27D20FCC787F7375156AF46BB12BBF_inline(L_55, L_56, L_57, NULL);
+		G_B16_0 = L_58;
 	}
 
-IL_0163:
+IL_0178:
 	{
-		V_7 = G_B16_0;
-		float L_55 = V_7;
-		float L_56 = V_4;
-		Transform_tB27202C6F4E36D225EE28A13E4D662BF99785DB1* L_57;
-		L_57 = Component_get_transform_m2919A1D81931E6932C7F06D4C2F0AB8DDA9A5371(__this, NULL);
-		NullCheck(L_57);
-		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_58;
-		L_58 = Transform_get_position_m69CD5FA214FDAE7BB701552943674846C220FDE1(L_57, NULL);
-		float L_59 = L_58.___z;
-		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_60;
-		memset((&L_60), 0, sizeof(L_60));
-		Vector3__ctor_m376936E6B999EF1ECBE57D990A386303E2283DE0_inline((&L_60), L_55, L_56, L_59, NULL);
-		__this->____lastSafePosition = L_60;
+		V_8 = G_B16_0;
+		float L_59 = V_8;
+		float L_60 = V_5;
+		Transform_tB27202C6F4E36D225EE28A13E4D662BF99785DB1* L_61;
+		L_61 = Component_get_transform_m2919A1D81931E6932C7F06D4C2F0AB8DDA9A5371(__this, NULL);
+		NullCheck(L_61);
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_62;
+		L_62 = Transform_get_position_m69CD5FA214FDAE7BB701552943674846C220FDE1(L_61, NULL);
+		float L_63 = L_62.___z;
+		Vector3_t24C512C7B96BBABAD472002D0BA2BDA40A5A80B2 L_64;
+		memset((&L_64), 0, sizeof(L_64));
+		Vector3__ctor_m376936E6B999EF1ECBE57D990A386303E2283DE0_inline((&L_64), L_59, L_60, L_63, NULL);
+		__this->____lastSafePosition = L_64;
 		return;
 	}
 }
@@ -27884,7 +27903,7 @@ IL_000a:
 		int32_t L_4 = __this->___stompDamage;
 		NullCheck(L_3);
 		bool L_5;
-		L_5 = VirtualFuncInvoker1< bool, float >::Invoke(47, L_3, ((float)L_4));
+		L_5 = VirtualFuncInvoker1< bool, float >::Invoke(48, L_3, ((float)L_4));
 		if (L_5)
 		{
 			goto IL_0091;
@@ -27943,7 +27962,7 @@ IL_0065:
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_18 = ___0_enemy;
 		NullCheck(L_18);
 		RuntimeObject* L_19;
-		L_19 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(56, L_18, (bool)0);
+		L_19 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(57, L_18, (bool)0);
 		G_B9_0 = L_19;
 		G_B9_1 = G_B7_0;
 		goto IL_008b;
@@ -27954,7 +27973,7 @@ IL_0084:
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_20 = ___0_enemy;
 		NullCheck(L_20);
 		RuntimeObject* L_21;
-		L_21 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(56, L_20, (bool)1);
+		L_21 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(57, L_20, (bool)1);
 		G_B9_0 = L_21;
 		G_B9_1 = G_B8_0;
 	}
@@ -28121,7 +28140,7 @@ IL_0090:
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_23 = ___0_enemy;
 		NullCheck(L_23);
 		RuntimeObject* L_24;
-		L_24 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(56, L_23, (bool)0);
+		L_24 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(57, L_23, (bool)0);
 		G_B16_0 = L_24;
 		G_B16_1 = G_B14_0;
 		goto IL_00b6;
@@ -28132,7 +28151,7 @@ IL_00af:
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_25 = ___0_enemy;
 		NullCheck(L_25);
 		RuntimeObject* L_26;
-		L_26 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(56, L_25, (bool)1);
+		L_26 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(57, L_25, (bool)1);
 		G_B16_0 = L_26;
 		G_B16_1 = G_B15_0;
 	}

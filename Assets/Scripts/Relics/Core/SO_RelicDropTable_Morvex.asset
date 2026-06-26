@@ -16,5 +16,8 @@ MonoBehaviour:
   entries:
   - pickupPrefab: {fileID: 621017492259733938, guid: 6b620ec863f38bf4bbbd45abc588bb24, type: 3}
     dropChance: 0.5
+    excludedScenes: []
   - pickupPrefab: {fileID: 5624782962912211176, guid: 68565800d1826814f9bcab0c4ef2e046, type: 3}
     dropChance: 0.2
+    excludedScenes:
+    - AgeOfIce

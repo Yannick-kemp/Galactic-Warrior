@@ -208,6 +208,7 @@ struct SelectableU5BU5D_t4160E135F02A40F75A63F787D36F31FEC6FE91A9;
 struct SingleU5BU5D_t89DEFE97BCEDB5857010E79ECE0F52CF6E93B87C;
 struct SpriteRendererU5BU5D_t0DEDE77D607814DC56F5AC6D7D80AA5A342ABF28;
 struct StackTraceU5BU5D_t32FBCB20930EAF5BAE3F450FF75228E5450DA0DF;
+struct StringU5BU5D_t7674CD946EC0CE7B3AE0BE70E6EE85F2ECD9F248;
 struct TMP_CharacterInfoU5BU5D_t297D56FCF66DAA99D8FEA7C30F9F3926902C5B99;
 struct TMP_ColorGradientU5BU5D_t2F65E8C42F268DFF33BB1392D94BCF5B5087308A;
 struct TransformU5BU5D_tBB9C5F5686CAE82E3D97D43DF0F3D68ABF75EC24;
@@ -680,6 +681,7 @@ struct ImageU5BU5D_t8869694C217655DA7B1315DC02C80F1308B78B78;
 struct ObjectU5BU5D_t8061030B0A12A55D5AD8652A20C922FE99450918;
 struct ParticleSystemU5BU5D_tC5E33DA557C9C2064085128B3530C5F04D48F6E6;
 struct SpriteRendererU5BU5D_t0DEDE77D607814DC56F5AC6D7D80AA5A342ABF28;
+struct StringU5BU5D_t7674CD946EC0CE7B3AE0BE70E6EE85F2ECD9F248;
 struct TransformU5BU5D_tBB9C5F5686CAE82E3D97D43DF0F3D68ABF75EC24;
 
 IL2CPP_EXTERN_C_BEGIN
@@ -844,6 +846,7 @@ struct RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91  : public Runtim
 {
 	GameObject_t76FEDD663AB33C991A9C9A23129337651094216F* ___pickupPrefab;
 	float ___dropChance;
+	StringU5BU5D_t7674CD946EC0CE7B3AE0BE70E6EE85F2ECD9F248* ___excludedScenes;
 };
 struct RelicRuntimeBase_tB80177A53F51E7966084AF236CE42EAEECF0E323  : public RuntimeObject
 {
@@ -1875,6 +1878,10 @@ struct RigidbodyConstraints2D_t50CD241C867A1A13EEE787DEA26477F147D8F484
 struct RuntimeTypeHandle_t332A452B8B6179E4469B69525D0FE82A88030F7B 
 {
 	intptr_t ___value;
+};
+struct StringComparison_tE14A55CCFA001A5AC85D754179BF2888F45CC94D 
+{
+	int32_t ___value__;
 };
 struct TMP_TextElementType_t51EE6662436732F22C6B599F5757B7F35F706342 
 {
@@ -3899,6 +3906,8 @@ struct ZalaytyMonster_t973AC012013D2C5598A73F91F5DFD316169AAF3A  : public Enemy_
 	bool ____samePlatformContactCombatLocked;
 	bool ____samePlatformContactAttackWasActive;
 	Coroutine_t85EA685566A254C23F3FD77AB5BDFFFF8799596B* ___followRoutine;
+	float ____spawnGravityScale;
+	bool ____started;
 	bool ___isOnEdgePlatform;
 	bool ___inRangeOrAttacking;
 	float ___warriorTopPressGraceTime;
@@ -3922,6 +3931,8 @@ struct ZalaytyMonster_t973AC012013D2C5598A73F91F5DFD316169AAF3A  : public Enemy_
 	float ___samePlatformMicroSeparationGraceTime;
 	float ___samePlatformMicroSeparationMaxVerticalGap;
 	float ___samePlatformMicroSeparationHorizontalSkin;
+	float ___samePlatformSeamTopYBand;
+	float ___samePlatformSeamMaxGapX;
 	bool ____missedMovingPlatformLandingRecoveryActive;
 	float ____forceAirborneAnimationUntil;
 	PlatFormColliderTrigger_t4ECA6A4F662A3D88F15CDB0B66EB64C2E2DF1EA8* ____lastReallyGroundedPlatform;
@@ -4496,6 +4507,40 @@ struct AnimatorControllerParameterU5BU5D_tAB05125F5DC0D98F59351CD7D8C9880DFFA8EA
 		return m_Items + index;
 	}
 	inline void SetAtUnchecked(il2cpp_array_size_t index, AnimatorControllerParameter_t1FA67485445446540D4F2857762C960AE6980E02* value)
+	{
+		m_Items[index] = value;
+		Il2CppCodeGenWriteBarrier((void**)m_Items + index, (void*)value);
+	}
+};
+struct StringU5BU5D_t7674CD946EC0CE7B3AE0BE70E6EE85F2ECD9F248  : public RuntimeArray
+{
+	ALIGN_FIELD (8) String_t* m_Items[1];
+
+	inline String_t* GetAt(il2cpp_array_size_t index) const
+	{
+		IL2CPP_ARRAY_BOUNDS_CHECK(index, (uint32_t)(this)->max_length);
+		return m_Items[index];
+	}
+	inline String_t** GetAddressAt(il2cpp_array_size_t index)
+	{
+		IL2CPP_ARRAY_BOUNDS_CHECK(index, (uint32_t)(this)->max_length);
+		return m_Items + index;
+	}
+	inline void SetAt(il2cpp_array_size_t index, String_t* value)
+	{
+		IL2CPP_ARRAY_BOUNDS_CHECK(index, (uint32_t)(this)->max_length);
+		m_Items[index] = value;
+		Il2CppCodeGenWriteBarrier((void**)m_Items + index, (void*)value);
+	}
+	inline String_t* GetAtUnchecked(il2cpp_array_size_t index) const
+	{
+		return m_Items[index];
+	}
+	inline String_t** GetAddressAtUnchecked(il2cpp_array_size_t index)
+	{
+		return m_Items + index;
+	}
+	inline void SetAtUnchecked(il2cpp_array_size_t index, String_t* value)
 	{
 		m_Items[index] = value;
 		Il2CppCodeGenWriteBarrier((void**)m_Items + index, (void*)value);
@@ -5247,6 +5292,7 @@ inline void HashSet_1__ctor_m90EA29D74B137C5317CDC485AA1D799F0B6726FF (HashSet_1
 	((  void (*) (HashSet_1_t4A2F2B74276D0AD3ED0F873045BD61E9504ECAE2*, const RuntimeMethod*))HashSet_1__ctor_m90EA29D74B137C5317CDC485AA1D799F0B6726FF_gshared)(__this, method);
 }
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void ScriptableObject__ctor_mD037FDB0B487295EA47F79A4DB1BF1846C9087FF (ScriptableObject_tB3BFDB921A1B1795B38A5417D3B97A89A140436A* __this, const RuntimeMethod* method) ;
+IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR bool String_Equals_mCC34895D0DB2AD440C9D8767032215BC86B5C48B (String_t* ___0_a, String_t* ___1_b, int32_t ___2_comparisonType, const RuntimeMethod* method) ;
 inline void List_1__ctor_m447372C1EF7141193B93090A77395B786C72C7BC (List_1_tB951CE80B58D1BF9650862451D8DAD8C231F207B* __this, const RuntimeMethod* method)
 {
 	((  void (*) (List_1_tB951CE80B58D1BF9650862451D8DAD8C231F207B*, const RuntimeMethod*))List_1__ctor_m7F078BB342729BDF11327FD89D7872265328F690_gshared)(__this, method);
@@ -5255,10 +5301,13 @@ inline int32_t List_1_get_Count_mB8607C8FF4795092829E179794346218F5641DEA_inline
 {
 	return ((  int32_t (*) (List_1_t7A865B4E2CB50426A7E223C9F4E13DFBD3AE94D9*, const RuntimeMethod*))List_1_get_Count_m4407E4C389F22B8CEC282C15D56516658746C383_gshared_inline)(__this, method);
 }
+IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR Scene_tA1DC762B79745EB5140F054C884855B922318356 SceneManager_GetActiveScene_m0B320EC4302F51A71495D1CCD1A0FF9C2ED1FDC8 (const RuntimeMethod* method) ;
+IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR String_t* Scene_get_name_m3C818DFA663E159274DAD823B780C7616C5E2A8C (Scene_tA1DC762B79745EB5140F054C884855B922318356* __this, const RuntimeMethod* method) ;
 inline RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* List_1_get_Item_mE42B06BF5FC683B5546ECE0E628473BE5B8C7693 (List_1_t7A865B4E2CB50426A7E223C9F4E13DFBD3AE94D9* __this, int32_t ___0_index, const RuntimeMethod* method)
 {
 	return ((  RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* (*) (List_1_t7A865B4E2CB50426A7E223C9F4E13DFBD3AE94D9*, int32_t, const RuntimeMethod*))List_1_get_Item_m33561245D64798C2AB07584C0EC4F240E4839A38_gshared)(__this, ___0_index, method);
 }
+IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR bool RelicDropEntry_IsBlockedInScene_mB7D2384A5E76F1A2284F918B0C36BDDB995A81A1 (RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* __this, String_t* ___0_sceneName, const RuntimeMethod* method) ;
 inline void List_1_Add_m43FBF207375C6E06B8C45ECE614F9B8008FB686E_inline (List_1_tB951CE80B58D1BF9650862451D8DAD8C231F207B* __this, GameObject_t76FEDD663AB33C991A9C9A23129337651094216F* ___0_item, const RuntimeMethod* method)
 {
 	((  void (*) (List_1_tB951CE80B58D1BF9650862451D8DAD8C231F207B*, GameObject_t76FEDD663AB33C991A9C9A23129337651094216F*, const RuntimeMethod*))List_1_Add_mEBCF994CC3814631017F46A387B1A192ED6C85C7_gshared_inline)(__this, ___0_item, method);
@@ -19508,6 +19557,75 @@ IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void RelicDropSource__ctor_m57E364643DEC21DDD
 #pragma clang diagnostic ignored "-Winvalid-offsetof"
 #pragma clang diagnostic ignored "-Wunused-variable"
 #endif
+IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR bool RelicDropEntry_IsBlockedInScene_mB7D2384A5E76F1A2284F918B0C36BDDB995A81A1 (RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* __this, String_t* ___0_sceneName, const RuntimeMethod* method) 
+{
+	int32_t V_0 = 0;
+	{
+		StringU5BU5D_t7674CD946EC0CE7B3AE0BE70E6EE85F2ECD9F248* L_0 = __this->___excludedScenes;
+		if (!L_0)
+		{
+			goto IL_0011;
+		}
+	}
+	{
+		StringU5BU5D_t7674CD946EC0CE7B3AE0BE70E6EE85F2ECD9F248* L_1 = __this->___excludedScenes;
+		NullCheck(L_1);
+		if ((((RuntimeArray*)L_1)->max_length))
+		{
+			goto IL_0013;
+		}
+	}
+
+IL_0011:
+	{
+		return (bool)0;
+	}
+
+IL_0013:
+	{
+		V_0 = 0;
+		goto IL_002e;
+	}
+
+IL_0017:
+	{
+		StringU5BU5D_t7674CD946EC0CE7B3AE0BE70E6EE85F2ECD9F248* L_2 = __this->___excludedScenes;
+		int32_t L_3 = V_0;
+		NullCheck(L_2);
+		int32_t L_4 = L_3;
+		String_t* L_5 = (L_2)->GetAt(static_cast<il2cpp_array_size_t>(L_4));
+		String_t* L_6 = ___0_sceneName;
+		bool L_7;
+		L_7 = String_Equals_mCC34895D0DB2AD440C9D8767032215BC86B5C48B(L_5, L_6, 4, NULL);
+		if (!L_7)
+		{
+			goto IL_002a;
+		}
+	}
+	{
+		return (bool)1;
+	}
+
+IL_002a:
+	{
+		int32_t L_8 = V_0;
+		V_0 = ((int32_t)il2cpp_codegen_add(L_8, 1));
+	}
+
+IL_002e:
+	{
+		int32_t L_9 = V_0;
+		StringU5BU5D_t7674CD946EC0CE7B3AE0BE70E6EE85F2ECD9F248* L_10 = __this->___excludedScenes;
+		NullCheck(L_10);
+		if ((((int32_t)L_9) < ((int32_t)((int32_t)(((RuntimeArray*)L_10)->max_length)))))
+		{
+			goto IL_0017;
+		}
+	}
+	{
+		return (bool)0;
+	}
+}
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void RelicDropEntry__ctor_m2DCE22A29D412361EBC80F26F6654BE6EDA51AD9 (RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* __this, const RuntimeMethod* method) 
 {
 	{
@@ -19535,13 +19653,17 @@ IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR List_1_tB951CE80B58D1BF9650862451D8DAD8C231F2
 		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&List_1_get_Item_mE42B06BF5FC683B5546ECE0E628473BE5B8C7693_RuntimeMethod_var);
 		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&List_1_tB951CE80B58D1BF9650862451D8DAD8C231F207B_il2cpp_TypeInfo_var);
 		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&Object_tC12DECB6760A7F2CBF65D9DCF18D044C2D97152C_il2cpp_TypeInfo_var);
+		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&SceneManager_tA0EF56A88ACA4A15731AF7FDC10A869FA4C698FA_il2cpp_TypeInfo_var);
 		s_Il2CppMethodInitialized = true;
 	}
 	List_1_tB951CE80B58D1BF9650862451D8DAD8C231F207B* V_0 = NULL;
 	float V_1 = 0.0f;
-	int32_t V_2 = 0;
-	RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* V_3 = NULL;
-	float V_4 = 0.0f;
+	String_t* V_2 = NULL;
+	Scene_tA1DC762B79745EB5140F054C884855B922318356 V_3;
+	memset((&V_3), 0, sizeof(V_3));
+	int32_t V_4 = 0;
+	RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* V_5 = NULL;
+	float V_6 = 0.0f;
 	{
 		List_1_tB951CE80B58D1BF9650862451D8DAD8C231F207B* L_0 = (List_1_tB951CE80B58D1BF9650862451D8DAD8C231F207B*)il2cpp_codegen_object_new(List_1_tB951CE80B58D1BF9650862451D8DAD8C231F207B_il2cpp_TypeInfo_var);
 		List_1__ctor_m447372C1EF7141193B93090A77395B786C72C7BC(L_0, List_1__ctor_m447372C1EF7141193B93090A77395B786C72C7BC_RuntimeMethod_var);
@@ -19591,81 +19713,99 @@ IL_001d:
 
 IL_0035:
 	{
-		V_2 = 0;
-		goto IL_007d;
+		il2cpp_codegen_runtime_class_init_inline(SceneManager_tA0EF56A88ACA4A15731AF7FDC10A869FA4C698FA_il2cpp_TypeInfo_var);
+		Scene_tA1DC762B79745EB5140F054C884855B922318356 L_11;
+		L_11 = SceneManager_GetActiveScene_m0B320EC4302F51A71495D1CCD1A0FF9C2ED1FDC8(NULL);
+		V_3 = L_11;
+		String_t* L_12;
+		L_12 = Scene_get_name_m3C818DFA663E159274DAD823B780C7616C5E2A8C((&V_3), NULL);
+		V_2 = L_12;
+		V_4 = 0;
+		goto IL_009e;
 	}
 
-IL_0039:
+IL_0048:
 	{
-		List_1_t7A865B4E2CB50426A7E223C9F4E13DFBD3AE94D9* L_11 = __this->___entries;
-		int32_t L_12 = V_2;
-		NullCheck(L_11);
-		RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* L_13;
-		L_13 = List_1_get_Item_mE42B06BF5FC683B5546ECE0E628473BE5B8C7693(L_11, L_12, List_1_get_Item_mE42B06BF5FC683B5546ECE0E628473BE5B8C7693_RuntimeMethod_var);
-		V_3 = L_13;
-		RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* L_14 = V_3;
-		if (!L_14)
+		List_1_t7A865B4E2CB50426A7E223C9F4E13DFBD3AE94D9* L_13 = __this->___entries;
+		int32_t L_14 = V_4;
+		NullCheck(L_13);
+		RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* L_15;
+		L_15 = List_1_get_Item_mE42B06BF5FC683B5546ECE0E628473BE5B8C7693(L_13, L_14, List_1_get_Item_mE42B06BF5FC683B5546ECE0E628473BE5B8C7693_RuntimeMethod_var);
+		V_5 = L_15;
+		RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* L_16 = V_5;
+		if (!L_16)
 		{
-			goto IL_0079;
+			goto IL_0098;
 		}
 	}
 	{
-		RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* L_15 = V_3;
-		NullCheck(L_15);
-		GameObject_t76FEDD663AB33C991A9C9A23129337651094216F* L_16 = L_15->___pickupPrefab;
+		RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* L_17 = V_5;
+		NullCheck(L_17);
+		GameObject_t76FEDD663AB33C991A9C9A23129337651094216F* L_18 = L_17->___pickupPrefab;
 		il2cpp_codegen_runtime_class_init_inline(Object_tC12DECB6760A7F2CBF65D9DCF18D044C2D97152C_il2cpp_TypeInfo_var);
-		bool L_17;
-		L_17 = Object_op_Equality_mB6120F782D83091EF56A198FCEBCF066DB4A9605(L_16, (Object_tC12DECB6760A7F2CBF65D9DCF18D044C2D97152C*)NULL, NULL);
-		if (L_17)
+		bool L_19;
+		L_19 = Object_op_Equality_mB6120F782D83091EF56A198FCEBCF066DB4A9605(L_18, (Object_tC12DECB6760A7F2CBF65D9DCF18D044C2D97152C*)NULL, NULL);
+		if (L_19)
 		{
-			goto IL_0079;
+			goto IL_0098;
 		}
 	}
 	{
-		RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* L_18 = V_3;
-		NullCheck(L_18);
-		float L_19 = L_18->___dropChance;
-		float L_20;
-		L_20 = Mathf_Clamp01_mA7E048DBDA832D399A581BE4D6DED9FA44CE0F14_inline(L_19, NULL);
-		V_4 = L_20;
-		float L_21;
-		L_21 = Random_get_value_m2CEA87FADF5222EF9E13D32695F15E2BA282E24B(NULL);
-		float L_22 = V_4;
-		if ((!(((float)L_21) <= ((float)L_22))))
+		RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* L_20 = V_5;
+		String_t* L_21 = V_2;
+		NullCheck(L_20);
+		bool L_22;
+		L_22 = RelicDropEntry_IsBlockedInScene_mB7D2384A5E76F1A2284F918B0C36BDDB995A81A1(L_20, L_21, NULL);
+		if (L_22)
 		{
-			goto IL_0079;
+			goto IL_0098;
 		}
 	}
 	{
-		List_1_tB951CE80B58D1BF9650862451D8DAD8C231F207B* L_23 = V_0;
-		RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* L_24 = V_3;
-		NullCheck(L_24);
-		GameObject_t76FEDD663AB33C991A9C9A23129337651094216F* L_25 = L_24->___pickupPrefab;
+		RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* L_23 = V_5;
 		NullCheck(L_23);
-		List_1_Add_m43FBF207375C6E06B8C45ECE614F9B8008FB686E_inline(L_23, L_25, List_1_Add_m43FBF207375C6E06B8C45ECE614F9B8008FB686E_RuntimeMethod_var);
-	}
-
-IL_0079:
-	{
-		int32_t L_26 = V_2;
-		V_2 = ((int32_t)il2cpp_codegen_add(L_26, 1));
-	}
-
-IL_007d:
-	{
-		int32_t L_27 = V_2;
-		List_1_t7A865B4E2CB50426A7E223C9F4E13DFBD3AE94D9* L_28 = __this->___entries;
-		NullCheck(L_28);
-		int32_t L_29;
-		L_29 = List_1_get_Count_mB8607C8FF4795092829E179794346218F5641DEA_inline(L_28, List_1_get_Count_mB8607C8FF4795092829E179794346218F5641DEA_RuntimeMethod_var);
-		if ((((int32_t)L_27) < ((int32_t)L_29)))
+		float L_24 = L_23->___dropChance;
+		float L_25;
+		L_25 = Mathf_Clamp01_mA7E048DBDA832D399A581BE4D6DED9FA44CE0F14_inline(L_24, NULL);
+		V_6 = L_25;
+		float L_26;
+		L_26 = Random_get_value_m2CEA87FADF5222EF9E13D32695F15E2BA282E24B(NULL);
+		float L_27 = V_6;
+		if ((!(((float)L_26) <= ((float)L_27))))
 		{
-			goto IL_0039;
+			goto IL_0098;
 		}
 	}
 	{
-		List_1_tB951CE80B58D1BF9650862451D8DAD8C231F207B* L_30 = V_0;
-		return L_30;
+		List_1_tB951CE80B58D1BF9650862451D8DAD8C231F207B* L_28 = V_0;
+		RelicDropEntry_t7F9520B0AB097D323C35BA66E4AB160383379B91* L_29 = V_5;
+		NullCheck(L_29);
+		GameObject_t76FEDD663AB33C991A9C9A23129337651094216F* L_30 = L_29->___pickupPrefab;
+		NullCheck(L_28);
+		List_1_Add_m43FBF207375C6E06B8C45ECE614F9B8008FB686E_inline(L_28, L_30, List_1_Add_m43FBF207375C6E06B8C45ECE614F9B8008FB686E_RuntimeMethod_var);
+	}
+
+IL_0098:
+	{
+		int32_t L_31 = V_4;
+		V_4 = ((int32_t)il2cpp_codegen_add(L_31, 1));
+	}
+
+IL_009e:
+	{
+		int32_t L_32 = V_4;
+		List_1_t7A865B4E2CB50426A7E223C9F4E13DFBD3AE94D9* L_33 = __this->___entries;
+		NullCheck(L_33);
+		int32_t L_34;
+		L_34 = List_1_get_Count_mB8607C8FF4795092829E179794346218F5641DEA_inline(L_33, List_1_get_Count_mB8607C8FF4795092829E179794346218F5641DEA_RuntimeMethod_var);
+		if ((((int32_t)L_32) < ((int32_t)L_34)))
+		{
+			goto IL_0048;
+		}
+	}
+	{
+		List_1_tB951CE80B58D1BF9650862451D8DAD8C231F207B* L_35 = V_0;
+		return L_35;
 	}
 }
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void RelicDropTable__ctor_m77BB5A0721A228DF94D318105E546F4B9865E02D (RelicDropTable_tDFFDE17618C954E976BFF0DC3EC68BB6CA4B6677* __this, const RuntimeMethod* method) 
@@ -22522,7 +22662,7 @@ IL_007f:
 		int32_t L_24 = __this->____damage;
 		NullCheck(L_23);
 		bool L_25;
-		L_25 = VirtualFuncInvoker1< bool, float >::Invoke(47, L_23, ((float)L_24));
+		L_25 = VirtualFuncInvoker1< bool, float >::Invoke(48, L_23, ((float)L_24));
 		V_2 = L_25;
 		goto IL_009d;
 	}
@@ -22533,7 +22673,7 @@ IL_008f:
 		int32_t L_27 = __this->___iceBulletEnemyDamage;
 		NullCheck(L_26);
 		bool L_28;
-		L_28 = VirtualFuncInvoker1< bool, float >::Invoke(47, L_26, ((float)L_27));
+		L_28 = VirtualFuncInvoker1< bool, float >::Invoke(48, L_26, ((float)L_27));
 		V_2 = L_28;
 	}
 
@@ -22578,7 +22718,7 @@ IL_00b9:
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_37 = ___0_enemy;
 		NullCheck(L_37);
 		RuntimeObject* L_38;
-		L_38 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(56, L_37, (bool)0);
+		L_38 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(57, L_37, (bool)0);
 		G_B17_0 = L_38;
 		G_B17_1 = G_B15_0;
 		goto IL_00e8;
@@ -22589,7 +22729,7 @@ IL_00e1:
 		Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* L_39 = ___0_enemy;
 		NullCheck(L_39);
 		RuntimeObject* L_40;
-		L_40 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(56, L_39, (bool)1);
+		L_40 = VirtualFuncInvoker1< RuntimeObject*, bool >::Invoke(57, L_39, (bool)1);
 		G_B17_0 = L_40;
 		G_B17_1 = G_B16_0;
 	}
