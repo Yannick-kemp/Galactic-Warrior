@@ -1483,11 +1483,19 @@ namespace Assets.Scripts.Platforms
                 w.LastSafePlatform = this;
 
                 Bounds pb = platformCollider.bounds;
-                float yOffset = w.collider2 != null ? w.collider2.bounds.extents.y : 0.5f;
+
+                // Distance from the Warrior pivot down to its collider bottom (feet).
+                // Using this instead of extents.y accounts for the collider offset, so
+                // the Warrior respawns ON the platform top instead of too low (which
+                // drops it below thin platforms whose solid collider is shallower than
+                // the offset error).
+                float feetToPivot = w.collider2 != null
+                    ? w.transform.position.y - w.collider2.bounds.min.y
+                    : 0.5f;
 
                 w.LastSafePosition = new Vector3(
                     w.transform.position.x,
-                    pb.max.y + yOffset + 0.05f,
+                    pb.max.y + feetToPivot + 0.05f,
                     w.transform.position.z
                 );
 

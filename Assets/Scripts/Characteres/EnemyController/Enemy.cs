@@ -304,9 +304,18 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         // airborne. Only the component of the move that points INTO the Warrior is removed; movement
         // parallel to the contact and away from him (patrol along the surface, platform-follow Y,
         // SmoothStepBack — which bypasses this anyway) is preserved.
+        // Per-enemy-TYPE opt-out for the body-penetration guard. The serialized
+        // preventWarriorBodyPenetration field above stays the master switch (and can still turn it
+        // OFF on any prefab), but some enemy types must never run the guard regardless of the
+        // Inspector value: bosses that intentionally body-ram, and the ground-bound terrestrial
+        // walkers (Hashagar/M97/P39/Raka/Crawling) which are pinned and no longer cause the violent
+        // launch. Those subclasses override this to false. Default keeps the guard available
+        // (Zalayty, flyers, etc.).
+        protected virtual bool AllowWarriorBodyPenetrationGuard => true;
+
         protected override Vector2 AdjustRequestedCoreMovePosition(Vector2 desiredPosition)
         {
-            if (!preventWarriorBodyPenetration || rigidbody2 == null)
+            if (!preventWarriorBodyPenetration || !AllowWarriorBodyPenetrationGuard || rigidbody2 == null)
                 return desiredPosition;
 
             if (IsDeadOrDying)
@@ -397,6 +406,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             // Keep ground-bound enemies glued to their platform by freezing the Rigidbody2D Y axis
             // while resting on a static platform, so gravity / external forces cannot lift them.
             ClampGroundBoundToSurface();
+
+            // ... and pin them within the platform span so no force can shove them off an extremity.
+            ClampGroundBoundHorizontally();
         }
 
         protected override void Start()
@@ -622,6 +634,69 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 rigidbody2.constraints = _groundBoundBaseConstraints | RigidbodyConstraints2D.FreezePositionY;
             else if (_groundBoundConstraintsCaptured)
                 rigidbody2.constraints = _groundBoundBaseConstraints;
+        }
+
+        // Horizontal skin kept between the support collider and the platform edge so the body
+        // always stays visibly on the surface (never balancing on the very corner).
+        private const float GroundBoundHorizontalEdgeSkin = 0.02f;
+
+        /// <summary>
+        /// Hard rule for terrestrial enemies (<see cref="groundBound"/> = true): they can never
+        /// leave their platform by an extremity, whatever the force that pushes them there (Warrior
+        /// body contact, solver depenetration, AddForce, knockback overshoot). Every physics step we
+        /// re-seat the Rigidbody2D so the support collider stays fully over the platform span. Patrol
+        /// and knockback already self-clamp well inside the edges (via ClampToCurrentPlatform), so
+        /// this only ever corrects an *external* shove past the edge -- scripted movement is a no-op
+        /// here and is never fought. Mirrors the Y-lock in <see cref="ClampGroundBoundToSurface"/>:
+        /// together they pin the enemy to its platform on both axes.
+        ///
+        /// Released (no clamp) only when the platform is genuinely gone, so a destroyed/disabled
+        /// platform still lets the enemy fall and trigger the void-death fallback.
+        ///
+        /// Driven once per physics step from FixedUpdate, after ClampGroundBoundToSurface has
+        /// refreshed the cached platform.
+        /// </summary>
+        protected void ClampGroundBoundHorizontally()
+        {
+            if (!groundBound || rigidbody2 == null) return;
+            if (IsDeadOrDying) return;
+
+            Collider2D platformCol = (CurrentplatForm != null && CurrentplatForm.platformCollider != null)
+                ? CurrentplatForm.platformCollider
+                : _groundBoundPlatformCollider;
+
+            // Platform genuinely gone -> don't pin X, let it fall / die normally.
+            if (platformCol == null || !platformCol.enabled || !platformCol.gameObject.activeInHierarchy)
+                return;
+
+            Collider2D support = (NormalCollider != null && NormalCollider.enabled)
+                ? NormalCollider
+                : collider2;
+
+            if (support == null || !support.enabled) return;
+
+            Bounds pb = platformCol.bounds;
+            Bounds sb = support.bounds;
+
+            // How far the body sticks out past each platform extremity (positive = sticking out).
+            float overLeft = (pb.min.x + GroundBoundHorizontalEdgeSkin) - sb.min.x;
+            float overRight = sb.max.x - (pb.max.x - GroundBoundHorizontalEdgeSkin);
+
+            float correction = 0f;
+            if (overLeft > 0f) correction += overLeft;    // shove back to the right
+            if (overRight > 0f) correction -= overRight;   // shove back to the left
+
+            // Platform narrower than the body (corrections cancel) or already inside -> nothing to do.
+            if (Mathf.Approximately(correction, 0f)) return;
+
+            Vector2 pos = rigidbody2.position;
+            rigidbody2.position = new Vector2(pos.x + correction, pos.y);
+
+            // Kill only the outward horizontal velocity so the push does not keep ramming the edge
+            // next step. Inward/vertical motion and platform carry are preserved.
+            Vector2 v = rigidbody2.linearVelocity;
+            if ((correction > 0f && v.x < 0f) || (correction < 0f && v.x > 0f))
+                rigidbody2.linearVelocity = new Vector2(0f, v.y);
         }
 
         protected void ClampEnemyToPlatformTop()
@@ -1749,6 +1824,20 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 animator.enabled = true;
 
             UpdateHealthBarDisplay();
+
+            // Let derived enemies clear any transient navigation/airborne state. A retry reuses the
+            // existing enemy instance (no scene reload), so an enemy that was mid-jump / in airborne
+            // recovery when the Warrior died would otherwise keep those flags forever and stay frozen.
+            OnCombatStateReset();
+        }
+
+        /// <summary>
+        /// Hook called at the end of <see cref="ResetCombatState"/>. Default does nothing.
+        /// Enemies with their own movement state machine (e.g. Zalayty's A* chase) override this to
+        /// reset jump/airborne/recovery flags and restart their follow loop on a retry.
+        /// </summary>
+        protected virtual void OnCombatStateReset()
+        {
         }
 
         protected virtual void StickToPlatform()

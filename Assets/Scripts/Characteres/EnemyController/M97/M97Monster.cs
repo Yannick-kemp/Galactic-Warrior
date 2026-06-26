@@ -8,6 +8,10 @@ using UnityEngine;
 
 public class M97Monster : Enemy
 {
+    // Ground-bound terrestrial walker: pinned to its platform, no longer the source of the violent
+    // body-push launch, so the anti-penetration guard is not needed here.
+    protected override bool AllowWarriorBodyPenetrationGuard => false;
+
     [Header("Laser Configuration")]
     public GameObject laserPrefab;
     public float laserActivationDelay = 0.5f;
@@ -199,6 +203,10 @@ public class M97Monster : Enemy
     protected override void Start()
     {
         base.Start();
+
+        // Terrestrial enemy: pinned to its platform on both axes. It can never take off
+        // (Y-lock) nor be shoved off an extremity (horizontal span clamp), whatever the force.
+        groundBound = true;
 
         // M97 defaults
         Range = 9f;

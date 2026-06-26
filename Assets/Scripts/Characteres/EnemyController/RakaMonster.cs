@@ -7,6 +7,10 @@ using UnityEngine;
 
 public class RakaMonster : Enemy
 {
+    // Ground-bound terrestrial walker: pinned to its platform, no longer the source of the violent
+    // body-push launch, so the anti-penetration guard is not needed here.
+    protected override bool AllowWarriorBodyPenetrationGuard => false;
+
     [Header("Ranges")]
     [SerializeField] private float meleeRange = 4f;
     [SerializeField] private float rangedRange = 6f;

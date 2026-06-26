@@ -649,6 +649,15 @@ public class GameMgr : MonoBehaviour, IGame
             respawnPosition = BuildSurfaceRespawnOnStaticPlatform(warrior.LastSafePlatform, warrior);
             respawnPlatform = warrior.LastSafePlatform;
         }
+        else if (_initialSpawnPosition != Vector3.zero)
+        {
+            // No safe platform or position was ever recorded (e.g. the Warrior fell off
+            // the starting ground before any platform contact registered, as on the
+            // AgeOfIce opening platform). Respawn at the scene's spawn point — which is
+            // safe ground by construction — instead of lastDeathPosition, which is where
+            // the Warrior died (below / under the platform).
+            respawnPosition = _initialSpawnPosition;
+        }
         else
         {
             // Absolute last resort.

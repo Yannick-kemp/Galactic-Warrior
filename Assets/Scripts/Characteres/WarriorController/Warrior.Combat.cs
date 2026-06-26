@@ -1499,11 +1499,14 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (platform != null && platform.platformCollider != null && collider2 != null)
             {
                 Bounds pb = platform.platformCollider.bounds;
-                float yOffset = collider2.bounds.extents.y;
+                // Pivot->feet distance (accounts for the collider offset) so the Warrior
+                // lands on the platform top instead of being placed too low and dropping
+                // below thin platforms.
+                float feetToPivot = transform.position.y - collider2.bounds.min.y;
 
                 LastSafePosition = new Vector3(
                     Mathf.Clamp(transform.position.x, pb.min.x, pb.max.x),
-                    pb.max.y + yOffset + 0.05f,
+                    pb.max.y + feetToPivot + 0.05f,
                     transform.position.z
                 );
 

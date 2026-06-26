@@ -11,6 +11,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
     /// </summary>
     public class HivernoxBoss : Enemy
     {
+        // Boss: may intentionally body-ram the Warrior, so the anti-penetration guard stays off here.
+        protected override bool AllowWarriorBodyPenetrationGuard => false;
+
         private const string ShieldLaserLayerName = "Shield Laser";
         [Header("Hivernox State")]
         [SerializeField] private HivernoxState state = HivernoxState.Idle;
@@ -134,6 +137,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             totalFramesInAnimation = 18;
             base.Start();
+            // Terrestrial boss: pinned to its platform on both axes. It can never take off
+            // (Y-lock) nor be shoved off an extremity (horizontal span clamp), whatever the force.
+            groundBound = true;
             SetEnemyType(EnemyType.Hivernox);
             SetBoss(true, "Hivernox");
             _homePosition = transform.position;

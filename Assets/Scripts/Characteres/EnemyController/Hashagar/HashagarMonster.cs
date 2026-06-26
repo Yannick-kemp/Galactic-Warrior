@@ -6,6 +6,10 @@ using UnityEngine;
 
 public class HashagarMonster : Enemy
 {
+    // Ground-bound terrestrial walker: pinned to its platform, no longer the source of the violent
+    // body-push launch, so the anti-penetration guard is not needed here.
+    protected override bool AllowWarriorBodyPenetrationGuard => false;
+
     [Header("Projectile Settings")]
     [SerializeField] private GameObject fireballPrefab;
     [SerializeField] private Transform firePoint; // assign HandSocket
@@ -86,6 +90,10 @@ public class HashagarMonster : Enemy
     protected override void Start()
     {
         base.Start();
+
+        // Terrestrial enemy: pinned to its platform on both axes. It can never take off
+        // (Y-lock) nor be shoved off an extremity (horizontal span clamp), whatever the force.
+        groundBound = true;
 
         // Hashagar is the LandOfFire boss (Hivernox/Zort flag themselves the same way).
         // Required so its death goes through the EnemyMgr boss path → slow-mo + boss relic grant.
