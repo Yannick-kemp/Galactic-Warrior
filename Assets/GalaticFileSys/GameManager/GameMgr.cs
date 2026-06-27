@@ -102,7 +102,7 @@ public class GameMgr : MonoBehaviour, IGame
     [Header("Progression / Purchase")]
     [SerializeField] private bool level2Unlocked = false; // legacy + "paid for the rest" flag
     [SerializeField] private bool autoUnlockForTesting = false;
-    [SerializeField] private string purchasePriceText = "€3.99";
+    [SerializeField] private string purchasePriceText = "€4.99";
 
     [Header("Level 1 Entry Rewards")]
     [SerializeField] private int level2EntryCoinsReward = 50;

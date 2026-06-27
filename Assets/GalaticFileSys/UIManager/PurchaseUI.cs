@@ -49,9 +49,6 @@ public class PurchaseUI : MonoBehaviour
 
     private async void Start()
     {
-        if (priceText != null)
-            priceText.text = "TEST";
-
         if (buyButton != null)
         {
             buyButton.onClick.RemoveListener(OnBuyPressed);
@@ -124,7 +121,14 @@ public class PurchaseUI : MonoBehaviour
         if (descriptionText != null && !string.IsNullOrWhiteSpace(description))
             descriptionText.text = description;
 
-        SetPriceText(!string.IsNullOrWhiteSpace(fallbackPrice) ? fallbackPrice : loadingPriceText);
+        // The store price is the source of truth: if it was already fetched,
+        // keep it and ignore the hardcoded fallback. Otherwise show the fallback
+        // (or the loading placeholder) until OnProductsFetched arrives.
+        string storePrice = fetchedProduct?.metadata?.localizedPriceString;
+        if (!string.IsNullOrWhiteSpace(storePrice))
+            SetPriceText(storePrice);
+        else
+            SetPriceText(!string.IsNullOrWhiteSpace(fallbackPrice) ? fallbackPrice : loadingPriceText);
     }
 
     private void OnProductsFetched(List<Product> products)

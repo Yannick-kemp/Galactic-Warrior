@@ -451,7 +451,6 @@ IL2CPP_EXTERN_C String_t* _stringLiteral7ACA34FD81900767B6FAD748BAAEF3F03C87EF79
 IL2CPP_EXTERN_C String_t* _stringLiteral87B57271FE87086C078BF89C102E25BF26FD9DC8;
 IL2CPP_EXTERN_C String_t* _stringLiteral91016FBC75291537623A8681D8FB536566858F5A;
 IL2CPP_EXTERN_C String_t* _stringLiteral921E89896A83EEAD71759D0E569160913410C0AC;
-IL2CPP_EXTERN_C String_t* _stringLiteral92CD4DD474FB97878B96BA874995D72A99E53AFF;
 IL2CPP_EXTERN_C String_t* _stringLiteral94273568D416D5047B23B325974153BC194AE2B9;
 IL2CPP_EXTERN_C String_t* _stringLiteral952EF958F414FB23368E5E971DD216AA0516F303;
 IL2CPP_EXTERN_C String_t* _stringLiteral96770C234E25D08DBDB7768B28980430D2D4DECB;
@@ -494,6 +493,7 @@ IL2CPP_EXTERN_C String_t* _stringLiteralF2A5C8F6E52C9C8BA3630773DDB46FD02EA90DDF
 IL2CPP_EXTERN_C String_t* _stringLiteralF393F1E43204ACABBCFFC192991420E736DA92E9;
 IL2CPP_EXTERN_C String_t* _stringLiteralF3E84B722399601AD7E281754E917478AA9AD48D;
 IL2CPP_EXTERN_C String_t* _stringLiteralF528CA9075380853F018B6D651CC18E0CC91A268;
+IL2CPP_EXTERN_C String_t* _stringLiteralF738E975EF8C4F738018EFA1FF1FCA24751FB4CD;
 IL2CPP_EXTERN_C String_t* _stringLiteralF966A7422E9862AD0864700224380C6DC52EBC07;
 IL2CPP_EXTERN_C String_t* _stringLiteralF9E3AE61D91C4279D746DCEA3C188CC5BFB39DBD;
 IL2CPP_EXTERN_C String_t* _stringLiteralFA1593A475AE72D37CB430CD68A81D4085BE6EEC;
@@ -24069,12 +24069,12 @@ IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void GameMgr__ctor_m798D1DEB4A62EBA3353D8BA75
 		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&_stringLiteral0B5ECFF84CE073C4971D637741C560F910E4D128);
 		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&_stringLiteral21FF51AEC11A7245E09D0F07DB55C3C5D5E15438);
 		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&_stringLiteral75CD62A8E32277DA4AEDFA7FDF9438B395C3194F);
-		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&_stringLiteral92CD4DD474FB97878B96BA874995D72A99E53AFF);
 		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&_stringLiteralA3C5A8C7BB99C72DA832A5F149B27943475499B0);
 		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&_stringLiteralC6D24DD6AD5EAF2BB7F8F7DE5BE15A3FE5EC8B93);
 		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&_stringLiteralDDADB4417D896B1D274AB5183F5A8EBBD0BCE931);
 		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&_stringLiteralDF587371041F91A4F618EAB229076C661C80B79F);
 		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&_stringLiteralDF7B5B2BA03FA3D7E4BB78C137D14A31E46521AE);
+		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&_stringLiteralF738E975EF8C4F738018EFA1FF1FCA24751FB4CD);
 		s_Il2CppMethodInitialized = true;
 	}
 	{
@@ -24131,8 +24131,8 @@ IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void GameMgr__ctor_m798D1DEB4A62EBA3353D8BA75
 		__this->___bossDeathSlowMoScale = (0.150000006f);
 		__this->___bossDeathSlowMoDuration = (0.600000024f);
 		__this->___bossDeathCompletionDelay = (0.0500000007f);
-		__this->___purchasePriceText = _stringLiteral92CD4DD474FB97878B96BA874995D72A99E53AFF;
-		Il2CppCodeGenWriteBarrier((void**)(&__this->___purchasePriceText), (void*)_stringLiteral92CD4DD474FB97878B96BA874995D72A99E53AFF);
+		__this->___purchasePriceText = _stringLiteralF738E975EF8C4F738018EFA1FF1FCA24751FB4CD;
+		Il2CppCodeGenWriteBarrier((void**)(&__this->___purchasePriceText), (void*)_stringLiteralF738E975EF8C4F738018EFA1FF1FCA24751FB4CD);
 		__this->___level2EntryCoinsReward = ((int32_t)50);
 		__this->___level2EntryUpgradeTokens = 1;
 		__this->___finalRewardCoins = ((int32_t)250);
