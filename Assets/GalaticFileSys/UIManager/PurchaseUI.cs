@@ -36,6 +36,7 @@ public class PurchaseUI : MonoBehaviour
 
     private bool _visible;
     private Coroutine _routine;
+    private bool _unlocked; // guards against unlocking twice (restore + buy + already-owned)
 
     private void Awake()
     {
@@ -68,6 +69,7 @@ public class PurchaseUI : MonoBehaviour
             storeController.OnProductsFetched += OnProductsFetched;
             storeController.OnPurchasePending += OnPurchasePending;
             storeController.OnPurchaseFailed += OnPurchaseFailed;
+            storeController.OnPurchasesFetched += OnPurchasesFetched;
 
             Debug.Log("[PurchaseUI] Connecting to store...");
             await storeController.Connect();
@@ -80,6 +82,12 @@ public class PurchaseUI : MonoBehaviour
 
             Debug.Log($"[PurchaseUI] FetchProducts for {productId}");
             storeController.FetchProducts(productsToFetch);
+
+            // Restore: if this non-consumable was already bought (e.g. a previous
+            // closed-testing purchase), Google won't let it be re-bought. Query the
+            // existing purchases so an owner is unlocked automatically.
+            Debug.Log("[PurchaseUI] FetchPurchases (restore)...");
+            storeController.FetchPurchases();
         }
         catch (System.Exception ex)
         {
@@ -95,6 +103,7 @@ public class PurchaseUI : MonoBehaviour
         storeController.OnProductsFetched -= OnProductsFetched;
         storeController.OnPurchasePending -= OnPurchasePending;
         storeController.OnPurchaseFailed -= OnPurchaseFailed;
+        storeController.OnPurchasesFetched -= OnPurchasesFetched;
     }
 
 #if UNITY_EDITOR
@@ -177,14 +186,88 @@ public class PurchaseUI : MonoBehaviour
         Debug.Log("[PurchaseUI] Purchase pending/success received.");
 
         // Unlock only here, after purchase succeeds.
-        GameMgr.Instance?.OnPurchaseConfirmed();
+        Unlock();
 
         storeController.ConfirmPurchase(order);
     }
 
     private void OnPurchaseFailed(FailedOrder order)
     {
-        Debug.LogWarning("[PurchaseUI] Purchase failed.");
+        Debug.LogWarning($"[PurchaseUI] Purchase failed: {order?.FailureReason} - {order?.Details}");
+
+        // "Vous possédez déjà cet article" / Google ITEM_ALREADY_OWNED surfaces here
+        // as DuplicateTransaction. The user already paid for it (e.g. a previous
+        // closed-testing purchase), so treat it as a successful unlock instead of
+        // leaving them stuck on the buy screen.
+        if (order != null && order.FailureReason == PurchaseFailureReason.DuplicateTransaction)
+        {
+            Debug.Log("[PurchaseUI] Item already owned -> unlocking.");
+            Unlock();
+        }
+    }
+
+    // Called when restoring existing purchases (FetchPurchases). If the product was
+    // already bought, unlock without prompting and confirm any pending order.
+    private void OnPurchasesFetched(Orders orders)
+    {
+        if (orders == null)
+            return;
+
+        Debug.Log($"[PurchaseUI] OnPurchasesFetched confirmed={orders.ConfirmedOrders?.Count ?? 0} pending={orders.PendingOrders?.Count ?? 0}");
+
+        if (orders.ConfirmedOrders != null)
+        {
+            foreach (var order in orders.ConfirmedOrders)
+            {
+                if (CartContainsProduct(order?.CartOrdered))
+                {
+                    Debug.Log("[PurchaseUI] Restored owned product (confirmed) -> unlocking.");
+                    Unlock();
+                    return;
+                }
+            }
+        }
+
+        if (orders.PendingOrders != null)
+        {
+            foreach (var order in orders.PendingOrders)
+            {
+                if (CartContainsProduct(order?.CartOrdered))
+                {
+                    Debug.Log("[PurchaseUI] Restored owned product (pending) -> unlocking.");
+                    Unlock();
+                    storeController.ConfirmPurchase(order);
+                    return;
+                }
+            }
+        }
+    }
+
+    private bool CartContainsProduct(ICart cart)
+    {
+        if (cart == null)
+            return false;
+
+        var items = cart.Items();
+        if (items == null)
+            return false;
+
+        foreach (var item in items)
+        {
+            if (item?.Product?.definition != null && item.Product.definition.id == productId)
+                return true;
+        }
+
+        return false;
+    }
+
+    private void Unlock()
+    {
+        if (_unlocked)
+            return;
+
+        _unlocked = true;
+        GameMgr.Instance?.OnPurchaseConfirmed();
     }
 
     public void OnNoThanksPressed()

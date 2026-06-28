@@ -2507,6 +2507,7 @@ struct PurchaseUI_t33DA30968271A6B2096BE499EBC04650D58BA3FD  : public MonoBehavi
 	Product_tD279BF775D345330FEE8405D2F53EC5D6B971C76* ___fetchedProduct;
 	bool ____visible;
 	Coroutine_t85EA685566A254C23F3FD77AB5BDFFFF8799596B* ____routine;
+	bool ____unlocked;
 };
 struct ScoreManager_t78F180C1487022FAD7FB0E73AE2E77DD5F6DC8C2  : public MonoBehaviour_t532A11E69716D348D8AA7F854AFCBFCB8AD17F71
 {
@@ -18841,7 +18842,7 @@ IL_0055:
 		L_11 = GameMgr_HasNextCampaignScene_mD919024A23388C15141388E27580F8E9297B17E5(__this, L_10, NULL);
 		if (!L_11)
 		{
-			goto IL_0069;
+			goto IL_0070;
 		}
 	}
 	{
@@ -18849,9 +18850,11 @@ IL_0055:
 		V_2 = ((int32_t)il2cpp_codegen_add(L_12, 1));
 		int32_t L_13 = V_2;
 		GameMgr_MarkSceneAsReached_m58095D4C72691A865E4DB23AE0C6AF86E5D096CE(__this, L_13, NULL);
+		int32_t L_14 = V_2;
+		GameMgr_SetContinueScene_m30ACDBB52491F031B410EC40B58E858726AE932B(__this, L_14, NULL);
 	}
 
-IL_0069:
+IL_0070:
 	{
 		GameMgr_LoadMainMenu_mE8369846DA886ACC82772F73BE1B7BF235933631(__this, NULL);
 		return;

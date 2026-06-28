@@ -1058,6 +1058,9 @@ public class GameMgr : MonoBehaviour, IGame
         {
             int nextIndex = currentIndex + 1;
             MarkSceneAsReached(nextIndex);
+            // Just unlocked the campaign right after finishing this level: point "Continue"
+            // at the next scene (e.g. AgeOfIce after WarriorScene), not the level we just cleared.
+            SetContinueScene(nextIndex);
         }
 
         LoadMainMenu();

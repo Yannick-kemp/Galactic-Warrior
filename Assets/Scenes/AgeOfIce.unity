@@ -2840,7 +2840,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: meteorDamage
-      value: 10
+      value: 8
       objectReference: {fileID: 0}
     - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: meteorHitStunSeconds
@@ -5007,6 +5007,14 @@ PrefabInstance:
     - target: {fileID: 3622786407412105312, guid: 6356b44f168adeb4e8e26455bca33986, type: 3}
       propertyPath: m_Name
       value: MeteorStartTrigger
+      objectReference: {fileID: 0}
+    - target: {fileID: 5334954600650892112, guid: 6356b44f168adeb4e8e26455bca33986, type: 3}
+      propertyPath: m_Size.y
+      value: 7.33
+      objectReference: {fileID: 0}
+    - target: {fileID: 5334954600650892112, guid: 6356b44f168adeb4e8e26455bca33986, type: 3}
+      propertyPath: m_Offset.y
+      value: 2.42
       objectReference: {fileID: 0}
     - target: {fileID: 5933938695564733984, guid: 6356b44f168adeb4e8e26455bca33986, type: 3}
       propertyPath: m_LocalPosition.x
