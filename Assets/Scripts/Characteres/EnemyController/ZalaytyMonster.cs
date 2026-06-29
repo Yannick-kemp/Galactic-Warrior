@@ -152,6 +152,8 @@ public class ZalaytyMonster : Enemy
     private bool _samePlatformContactAttackWasActive;
 
     private Coroutine followRoutine;
+    private float _spawnGravityScale = 1f;
+    private bool _started;
 
     private bool isOnEdgePlatform = false;
     public bool IsOnEdgePlatform => isOnEdgePlatform;
@@ -294,6 +296,13 @@ public class ZalaytyMonster : Enemy
 
     [Tooltip("Horizontal tolerance used when checking whether Zalayty's body is still above the shared platform during micro-separation.")]
     [SerializeField, Min(0f)] private float samePlatformMicroSeparationHorizontalSkin = 0.04f;
+
+    [Header("Platform Seam (contiguous walkable pieces) - Zalayty Only")]
+    [Tooltip("Two distinct platform pieces are treated as one continuous walkable surface (same-platform chase, no A* jump) when their tops are within this Y band. Catches checkpoint / zone-boundary seams where CurrentplatForm flickers between the abutting pieces on either character.")]
+    [SerializeField, Min(0f)] private float samePlatformSeamTopYBand = 0.22f;
+
+    [Tooltip("Maximum horizontal gap between two platform pieces' edges still considered a continuous walkable seam. Keep small so real jump gaps are NOT merged into one surface.")]
+    [SerializeField, Min(0f)] private float samePlatformSeamMaxGapX = 0.25f;
 
     public override bool HardAnchorToMovingPlatforms => false;
     protected override bool UsesCommittedPatrolEdge => false;
@@ -667,6 +676,10 @@ public class ZalaytyMonster : Enemy
             rigidbody2.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
             rigidbody2.interpolation = RigidbodyInterpolation2D.Interpolate;
             rigidbody2.sleepMode = RigidbodySleepMode2D.NeverSleep;
+
+            // Captured once: jump-down / missed-landing recovery only ever ratchet gravityScale UP
+            // (Mathf.Max) and never restore it, so a retry must put it back to the authored value.
+            _spawnGravityScale = rigidbody2.gravityScale;
         }
 
         // Zalayty defaults
@@ -679,8 +692,103 @@ public class ZalaytyMonster : Enemy
         ApplySpawnOverridesNow();
         RememberKnownPlatforms(GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null);
 
+        _started = true;
+        RestartFollowLoop();
+    }
+
+    private void RestartFollowLoop()
+    {
+        if (!isActiveAndEnabled)
+            return;
+
         if (followRoutine != null) StopCoroutine(followRoutine);
         followRoutine = StartCoroutine(FollowWarriorLoop());
+    }
+
+    /// <summary>
+    /// Zalayty (a non-boss enemy) is parented under his spawn point, INSIDE its ZoneCullable
+    /// (EnemyMgr.ParentSpawnedEnemyToOwnerZone), so zone culling does SetActive(false) on him and Unity
+    /// STOPS all his coroutines — including FollowWarriorLoop. They are NOT auto-resumed when the zone
+    /// reactivates, and the loop is only otherwise launched in Start (which never runs again). That left
+    /// his chase loop permanently dead after his home zone was culled and brought back — e.g. the Warrior
+    /// roams far enough to cull Zalayty's zone and then returns, or a retry's camera snap culls/unculls it
+    /// — so Zalayty just stood there and never resumed the chase. Re-arm a clean chase state and restart
+    /// the loop on every re-enable past the first (Start handles the first launch).
+    /// </summary>
+    protected override void OnEnable()
+    {
+        base.OnEnable();
+
+        if (_started)
+            ResetZalaytyChaseStateAndRestartLoop();
+    }
+
+    /// <summary>
+    /// A retry reuses this same Zalayty instance (TryRetryFromDeath does not reload the scene): it only
+    /// reseats the Warrior, pushes nearby enemies with the spawn bubble, and calls ResetCombatState. If
+    /// the Warrior died while Zalayty was mid-jump or in airborne / missed-landing recovery, those flags
+    /// would survive the retry and block CanUseZalaytyGroundMovementNow — leaving him frozen.
+    /// </summary>
+    protected override void OnCombatStateReset()
+    {
+        base.OnCombatStateReset();
+        ResetZalaytyChaseStateAndRestartLoop();
+    }
+
+    /// <summary>
+    /// Clears every transient navigation / airborne / contact flag, restores movement and the spawn
+    /// gravity scale, re-acquires the ground platform, and restarts FollowWarriorLoop from a clean state.
+    /// Shared by the retry reset (OnCombatStateReset) and the zone-reactivation path (OnEnable) so a
+    /// reused Zalayty instance can never get stuck not chasing.
+    /// </summary>
+    private void ResetZalaytyChaseStateAndRestartLoop()
+    {
+        StopMoveTowardCoroutine();
+        StopJumpTowardCoroutine();
+        activesJumpCoroutine = null;
+        _activeJumpTargetPlatform = null;
+
+        _isJumping = false;
+        SetJumping(false);
+        DescendentPhase = false;
+        targetReached = true;
+        _isMoving = false;
+
+        _missedMovingPlatformLandingRecoveryActive = false;
+        _forceAirborneAnimationUntil = -999f;
+        _warriorTopReboundActive = false;
+
+        _samePlatformContactCombatLocked = false;
+        _samePlatformContactAttackWasActive = false;
+        _differentPlatformImpactLockUntil = -999f;
+        inRangeOrAttacking = false;
+
+        _hasCurrentIndependentMoveTarget = false;
+        _currentIndependentMoveTargetWarrior = null;
+
+        // A culled enemy has CanMove left in whatever state it held when deactivated (a stun can also
+        // leave it false). A reactivated / retried Zalayty must always be able to move again.
+        CanMove = true;
+
+        ClearWarriorSamePlatformLeaveGrace();
+
+        if (rigidbody2 != null)
+        {
+            Vector2 v = rigidbody2.linearVelocity;
+            v.x = 0f;
+            rigidbody2.linearVelocity = v;
+            rigidbody2.gravityScale = _spawnGravityScale;
+        }
+
+        // Do NOT force CurrentplatForm to null here: if the immediate ground-point recovery misses for
+        // one frame (e.g. just after a spawn-bubble teleport) it would strand him platform-less. Keep
+        // any valid platform; only recover when it is actually missing (TryRecover is a no-op otherwise),
+        // and OnCollisionStay refreshes it on the next physics step regardless.
+        TryRecoverCurrentPlatformFromGroundPoints();
+        RememberKnownPlatforms(GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null);
+
+        ExitWaitAnimation();
+        RestartFollowLoop();
     }
 
     protected override void Update()
@@ -975,7 +1083,7 @@ public class ZalaytyMonster : Enemy
             // SAME PLATFORM: chase until the MAIN BoxCollider2D bodies physically touch.
             // Do not use range-only attack decisions here. This keeps Zalayty moving
             // toward Warrior and prevents early Wait/attack before real contact.
-            if (CurrentplatForm == warrior.CurrentplatForm)
+            if (IsSharingPlatformWithWarrior(warrior))
             {
                 float targetX = GetIndependentFollowTargetX(warrior);
                 SetDirectionVariables(targetX);
@@ -1373,6 +1481,74 @@ public class ZalaytyMonster : Enemy
 
         if (CanMove)
             RunAnimationDisplay();
+    }
+
+    /// <summary>
+    /// Robust "same platform as Warrior" test for the chase decision.
+    ///
+    /// Near a seam between two abutting platform pieces (typically at a checkpoint), the platform
+    /// triggers' per-collider OnCollisionStay2D callbacks each do <c>character.CurrentplatForm = this</c>
+    /// every physics frame. When a character straddles the seam it touches BOTH colliders, and Unity's
+    /// collision-callback order between them is not deterministic — so Zalayty.CurrentplatForm and
+    /// Warrior.CurrentplatForm can point at different pieces on alternating frames even though both are
+    /// physically standing on the shared surface. Strict reference equality then flickers between this
+    /// same-platform chase branch and the different-platform A* branch (which Waits / stops the move and
+    /// walks toward a takeoff edge), making Zalayty flip left/right on the spot and never follow.
+    ///
+    /// Treat them as sharing a platform when the references already match, OR Zalayty's own ground
+    /// points are really on the Warrior's platform, OR the two distinct pieces form one continuous
+    /// walkable surface (a seam). The last case is essential when the Warrior respawns and stands
+    /// STATIONARY exactly on a checkpoint seam: his CurrentplatForm then keeps flickering between the
+    /// two abutting pieces, and whenever his reference points at the piece Zalayty is not grounded on,
+    /// the ground-point test alone would fail and drop Zalayty into the A* branch — making him flip on
+    /// the spot. The contiguous-surface test is symmetric (independent of which piece either reference
+    /// currently names) and the small skins keep real jump gaps from being merged into one surface.
+    /// </summary>
+    private bool IsSharingPlatformWithWarrior(Warrior warrior)
+    {
+        if (warrior == null)
+            return false;
+
+        if (CurrentplatForm != null && CurrentplatForm == warrior.CurrentplatForm)
+            return true;
+
+        if (warrior.CurrentplatForm != null &&
+            warrior.CurrentplatForm.platformCollider != null &&
+            CountGroundPointsOnSpecificPlatform(warrior.CurrentplatForm) > 0)
+            return true;
+
+        if (AreContiguousWalkableSurfaces(CurrentplatForm, warrior.CurrentplatForm))
+            return true;
+
+        return false;
+    }
+
+    /// <summary>
+    /// True when two distinct platform pieces abut closely enough, at the same height, to be one
+    /// continuous walkable surface (a checkpoint / zone-boundary seam). Tops within
+    /// <see cref="samePlatformSeamTopYBand"/> and an edge-to-edge X gap within
+    /// <see cref="samePlatformSeamMaxGapX"/>. A real jump gap (wider X gap) or a step (different top Y)
+    /// is intentionally NOT merged, so genuine platform changes still go through A*.
+    /// </summary>
+    private bool AreContiguousWalkableSurfaces(PlatFormColliderTrigger a, PlatFormColliderTrigger b)
+    {
+        if (a == null || b == null || a == b)
+            return false;
+
+        if (a.platformCollider == null || b.platformCollider == null)
+            return false;
+
+        Bounds ba = a.platformCollider.bounds;
+        Bounds bb = b.platformCollider.bounds;
+
+        if (Mathf.Abs(ba.max.y - bb.max.y) > samePlatformSeamTopYBand)
+            return false;
+
+        float gapX = 0f;
+        if (bb.min.x > ba.max.x) gapX = bb.min.x - ba.max.x;
+        else if (ba.min.x > bb.max.x) gapX = ba.min.x - bb.max.x;
+
+        return gapX <= samePlatformSeamMaxGapX;
     }
 
     private float GetIndependentFollowTargetX(Warrior warrior)
@@ -2589,6 +2765,22 @@ public class ZalaytyMonster : Enemy
         StopMoveTowardCoroutine();
         ExitWaitAnimation();
 
+        // A moving source/destination platform may have shifted while Zalayty walked to his
+        // takeoff edge. Refresh both bounds so the landing point and the reach test use the
+        // platforms' CURRENT positions, not the snapshot taken when the transition started.
+        if (sourcePlatform != null && sourcePlatform.platformCollider != null)
+            curB = sourcePlatform.platformCollider.bounds;
+        nextB = nextPlatform.platformCollider.bounds;
+
+        // The A* graph keeps a moving platform on the route using its full swept travel
+        // envelope, but the actual leap must only commit while the destination is CURRENTLY
+        // within Zalayty's horizontal reach. Otherwise he would jump toward a moving platform
+        // sitting at its far extreme and fall (often over a pit). If it is still out of reach,
+        // abort this attempt and stay grounded at the edge; the follow loop retries and jumps
+        // as soon as the platform comes back within range.
+        if (!IsHorizontalGapCurrentlyJumpable(curB, nextB))
+            yield break;
+
         // 2) Landing X:
         // - going down: use your ChooseBestLocationForTransition (fixed + clamped)
         // - going up/side: still bias toward warrior X
@@ -2708,6 +2900,24 @@ public class ZalaytyMonster : Enemy
 
         if (HasSafelyLandedOnPlatform(nextPlatform))
             RestoreIgnoredWarriorPlatformJumpCollisions();
+    }
+
+    /// <summary>
+    /// True when the horizontal edge-to-edge gap between the source and destination platforms
+    /// is currently within Zalayty's jump reach. Mirrors the gap rule used by
+    /// <see cref="PlatformGraphAStar"/>.IsReachable, but evaluated on LIVE bounds at the moment
+    /// of the leap so a moving destination is only jumped to while it is actually close.
+    /// Vertical limits are intentionally ignored (Zalayty uses <c>ignoreVerticalLimits</c>).
+    /// </summary>
+    private bool IsHorizontalGapCurrentlyJumpable(Bounds curB, Bounds nextB)
+    {
+        float gapX = 0f;
+
+        if (nextB.min.x > curB.max.x) gapX = nextB.min.x - curB.max.x;       // destination is right
+        else if (curB.min.x > nextB.max.x) gapX = curB.min.x - nextB.max.x;  // destination is left
+        // Overlapping in X => gapX stays 0.
+
+        return gapX <= zalaytyHorizontalGap;
     }
 
     private Side ChooseBestSideForTransition(Bounds curB, Bounds nextB, float desiredX)

@@ -1,0 +1,12 @@
+# ninja log v5
+190	1871	8039511687300008	FramePacing/CMakeFiles/swappywrapper.dir/UnitySwappyWrapper.cpp.o	f91f3dcc54c3d9b6
+1874	2313	8039511691620844	C:/Users/yannk/Documents/Galactic-Warrior/Library/PramData/AndroidApplicationController/Cache/com.polymart.GalacticWarrior/gradle-project/unityLibrary/build/intermediates/cxx/Debug/4o4t5d37/obj/arm64-v8a/libswappywrapper.so	b8c3430416d19e71
+27	15543	8039511824059714	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	bb0f84fb56d38fc3
+51	15557	8039511824112963	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	a1ffbf4ea06e57dd
+74	15566	8039511823843556	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	58191a38164e8d8d
+173	15581	8039511824465344	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	ea41812ff15767e1
+2	15657	8039511825097868	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	74e1f0766abfa8bf
+62	15816	8039511826780419	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	2810d79935539fb7
+39	15861	8039511827195276	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	89292f2a34a7ddc6
+86	16113	8039511829782310	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	cac36c2968ce6963
+16114	16258	8039511831248524	C:/Users/yannk/Documents/Galactic-Warrior/Library/PramData/AndroidApplicationController/Cache/com.polymart.GalacticWarrior/gradle-project/unityLibrary/build/intermediates/cxx/Debug/4o4t5d37/obj/arm64-v8a/libgame.so	261ea3acb77593c1

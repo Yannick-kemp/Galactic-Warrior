@@ -411,6 +411,7 @@ MonoBehaviour:
   groundBoundSeatTolerance: 0.06
   targetAnimationName: AttackAnimation
   enemyType: 6
+  scoreValue: 20
   isBoss: 1
   bossDisplayName: Raka Mini Boss
   totalFramesInAnimation: 16

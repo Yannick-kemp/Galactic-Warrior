@@ -71,13 +71,61 @@ public class CharacterController : Character, ICharacterController
         RequestCoreMovePosition(mergedPosition);
     }
 
+    // ─── Safe Animator access ─────────────────────────────────────────────
+    // The Warrior and every enemy share this base controller, but each has its own
+    // AnimatorController and does NOT necessarily declare every bool parameter used
+    // here (isAttacking2, isAttacking3, IsLosingCtrl, …). Calling animator.GetBool /
+    // SetBool with a missing parameter makes Unity emit a warning EVERY call. On a
+    // per-frame path (MoveTowardPostionAction) with several enemies patrolling, those
+    // warnings are written synchronously to the log sink every frame — Editor.log in
+    // the Editor, logcat on Android — which BLOCKS the main thread on I/O (seen as a
+    // 0%-CPU "not responding" freeze on both platforms). These helpers skip parameters
+    // the current animator does not declare, so no warning is ever generated.
+    private HashSet<string> _animatorBoolParams;
+
+    private bool AnimatorHasBool(string paramName)
+    {
+        if (animator == null) return false;
+
+        if (_animatorBoolParams == null)
+        {
+            _animatorBoolParams = new HashSet<string>();
+            AnimatorControllerParameter[] all = animator.parameters;
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i].type == AnimatorControllerParameterType.Bool)
+                    _animatorBoolParams.Add(all[i].name);
+            }
+        }
+
+        return _animatorBoolParams.Contains(paramName);
+    }
+
+    protected bool GetAnimBool(string paramName)
+    {
+        return AnimatorHasBool(paramName) && animator.GetBool(paramName);
+    }
+
+    protected void SetAnimBool(string paramName, bool value)
+    {
+        if (AnimatorHasBool(paramName))
+            animator.SetBool(paramName, value);
+    }
+
     // Default: do not alter velocity (the Warrior keeps its own physics: falls, jumps, bounces).
     // Enemies override this to true so their scripted MovePosition cannot transfer a momentum
     // impulse onto the Warrior on contact.
     protected virtual bool NeutralizeImplicitMoveVelocity => false;
 
+    // Last chance for a subclass to clamp a scripted move target before it is committed.
+    // Enemies override this to stop their MovePosition from penetrating the Warrior's body
+    // (the deep overlap is what Unity's solver depenetrates into a violent launch). Default: no-op.
+    protected virtual Vector2 AdjustRequestedCoreMovePosition(Vector2 desiredPosition) => desiredPosition;
+
     protected void RequestCoreMovePosition(Vector2 position)
     {
+        position = AdjustRequestedCoreMovePosition(position);
+
         _lastCoreMoveRequestPosition = position;
         _lastCoreMoveRequestFrame = Time.frameCount;
         _lastCoreMoveRequestTime = Time.time;
@@ -152,119 +200,119 @@ public class CharacterController : Character, ICharacterController
 
     public void WaitAnimationDisplay()
     {
-        animator.SetBool("isWaiting", true);
-        animator.SetBool("isJumping", false);
-        animator.SetBool("isRunning", false);
-        animator.SetBool("isDying", false);
-        animator.SetBool("isAttacking", false);
-        animator.SetBool("isAttacking2", false);
-        animator.SetBool("isAttacking3", false);
-        animator.SetBool("IsLosingCtrl", false);
-        animator.SetBool("isWalking", false);
+        SetAnimBool("isWaiting", true);
+        SetAnimBool("isJumping", false);
+        SetAnimBool("isRunning", false);
+        SetAnimBool("isDying", false);
+        SetAnimBool("isAttacking", false);
+        SetAnimBool("isAttacking2", false);
+        SetAnimBool("isAttacking3", false);
+        SetAnimBool("IsLosingCtrl", false);
+        SetAnimBool("isWalking", false);
     }
 
     public void JumpAnimationDisplay()
     {
-        animator.SetBool("isWaiting", false);
-        animator.SetBool("isRunning", false);
-        animator.SetBool("isJumping", true);
-        animator.SetBool("isAttacking", false);
-        animator.SetBool("IsLosingCtrl", false);
-        animator.SetBool("isAttacking2", false);
-        animator.SetBool("isAttacking3", false);
-        animator.SetBool("isDying", false);
-        animator.SetBool("isWalking", false);
+        SetAnimBool("isWaiting", false);
+        SetAnimBool("isRunning", false);
+        SetAnimBool("isJumping", true);
+        SetAnimBool("isAttacking", false);
+        SetAnimBool("IsLosingCtrl", false);
+        SetAnimBool("isAttacking2", false);
+        SetAnimBool("isAttacking3", false);
+        SetAnimBool("isDying", false);
+        SetAnimBool("isWalking", false);
     }
 
     public void RunAnimationDisplay()
     {
-        animator.SetBool("isWaiting", false);
-        animator.SetBool("isJumping", false);
-        animator.SetBool("isRunning", true);
-        animator.SetBool("isAttacking", false);
-        animator.SetBool("isWalking", false);
-        animator.SetBool("isDying", false);
-        animator.SetBool("isAttacking2", false);
-        animator.SetBool("isAttacking3", false);
-        animator.SetBool("IsLosingCtrl", false);
+        SetAnimBool("isWaiting", false);
+        SetAnimBool("isJumping", false);
+        SetAnimBool("isRunning", true);
+        SetAnimBool("isAttacking", false);
+        SetAnimBool("isWalking", false);
+        SetAnimBool("isDying", false);
+        SetAnimBool("isAttacking2", false);
+        SetAnimBool("isAttacking3", false);
+        SetAnimBool("IsLosingCtrl", false);
     }
 
     public void WalkAnimationDisplay()
     {
-        animator.SetBool("isWaiting", false);
-        animator.SetBool("isRunning", false);
-        animator.SetBool("isJumping", false);
-        animator.SetBool("isAttacking", false);
-        animator.SetBool("isDying", false);
-        animator.SetBool("isWalking", true);
-        animator.SetBool("isAttacking2", false);
-        animator.SetBool("isAttacking3", false);
-        animator.SetBool("IsLosingCtrl", false);
+        SetAnimBool("isWaiting", false);
+        SetAnimBool("isRunning", false);
+        SetAnimBool("isJumping", false);
+        SetAnimBool("isAttacking", false);
+        SetAnimBool("isDying", false);
+        SetAnimBool("isWalking", true);
+        SetAnimBool("isAttacking2", false);
+        SetAnimBool("isAttacking3", false);
+        SetAnimBool("IsLosingCtrl", false);
     }
 
     public void AttackAnimationDisplay()
     {
-        animator.SetBool("isWaiting", false);
-        animator.SetBool("isWalking", false);
-        animator.SetBool("isRunning", false);
-        animator.SetBool("isJumping", false);
-        animator.SetBool("isAttacking", true);
-        animator.SetBool("isDying", false);
-        animator.SetBool("isAttacking2", false);
-        animator.SetBool("isAttacking3", false);
-        animator.SetBool("IsLosingCtrl", false);
+        SetAnimBool("isWaiting", false);
+        SetAnimBool("isWalking", false);
+        SetAnimBool("isRunning", false);
+        SetAnimBool("isJumping", false);
+        SetAnimBool("isAttacking", true);
+        SetAnimBool("isDying", false);
+        SetAnimBool("isAttacking2", false);
+        SetAnimBool("isAttacking3", false);
+        SetAnimBool("IsLosingCtrl", false);
     }
 
     public void AttackAnimation2Display()
     {
-        animator.SetBool("isWaiting", false);
-        animator.SetBool("isWalking", false);
-        animator.SetBool("isRunning", false);
-        animator.SetBool("isJumping", false);
-        animator.SetBool("isAttacking", false);
-        animator.SetBool("isDying", false);
-        animator.SetBool("isAttacking2", true);
-        animator.SetBool("isAttacking3", false);
-        animator.SetBool("IsLosingCtrl", false);
+        SetAnimBool("isWaiting", false);
+        SetAnimBool("isWalking", false);
+        SetAnimBool("isRunning", false);
+        SetAnimBool("isJumping", false);
+        SetAnimBool("isAttacking", false);
+        SetAnimBool("isDying", false);
+        SetAnimBool("isAttacking2", true);
+        SetAnimBool("isAttacking3", false);
+        SetAnimBool("IsLosingCtrl", false);
     }
 
     public void AttackAnimation3Display()
     {
-        animator.SetBool("isWaiting", false);
-        animator.SetBool("isWalking", false);
-        animator.SetBool("isRunning", false);
-        animator.SetBool("isJumping", false);
-        animator.SetBool("isAttacking", false);
-        animator.SetBool("isAttacking2", false);
-        animator.SetBool("isAttacking3", true);
-        animator.SetBool("isDying", false);
-        animator.SetBool("IsLosingCtrl", false);
+        SetAnimBool("isWaiting", false);
+        SetAnimBool("isWalking", false);
+        SetAnimBool("isRunning", false);
+        SetAnimBool("isJumping", false);
+        SetAnimBool("isAttacking", false);
+        SetAnimBool("isAttacking2", false);
+        SetAnimBool("isAttacking3", true);
+        SetAnimBool("isDying", false);
+        SetAnimBool("IsLosingCtrl", false);
     }
 
     public void DeathAnimationDisplay()
     {
-        animator.SetBool("isWaiting", false);
-        animator.SetBool("isRunning", false);
-        animator.SetBool("isJumping", false);
-        animator.SetBool("isAttacking", false);
-        animator.SetBool("isDying", true);
-        animator.SetBool("isAttacking2", false);
-        animator.SetBool("isAttacking3", false);
-        animator.SetBool("isWalking", false);
-        animator.SetBool("IsLosingCtrl", false);
+        SetAnimBool("isWaiting", false);
+        SetAnimBool("isRunning", false);
+        SetAnimBool("isJumping", false);
+        SetAnimBool("isAttacking", false);
+        SetAnimBool("isDying", true);
+        SetAnimBool("isAttacking2", false);
+        SetAnimBool("isAttacking3", false);
+        SetAnimBool("isWalking", false);
+        SetAnimBool("IsLosingCtrl", false);
     }
 
     public void LosingBalanceAnimationDisplay()
     {
-        animator.SetBool("isWaiting", false);
-        animator.SetBool("isRunning", false);
-        animator.SetBool("isJumping", false);
-        animator.SetBool("isAttacking", false);
-        animator.SetBool("isAttacking2", false);
-        animator.SetBool("isAttacking3", false);
-        animator.SetBool("isDying", false);
-        animator.SetBool("isWalking", false);
-        animator.SetBool("IsLosingCtrl", true);
+        SetAnimBool("isWaiting", false);
+        SetAnimBool("isRunning", false);
+        SetAnimBool("isJumping", false);
+        SetAnimBool("isAttacking", false);
+        SetAnimBool("isAttacking2", false);
+        SetAnimBool("isAttacking3", false);
+        SetAnimBool("isDying", false);
+        SetAnimBool("isWalking", false);
+        SetAnimBool("IsLosingCtrl", true);
     }
 
 
@@ -375,11 +423,11 @@ public class CharacterController : Character, ICharacterController
     //    while (Mathf.Abs(targetX - transform.position.x) > 0.1f)
     //    {
     //        if (animator == null ||
-    //  (!animator.GetBool("isAttacking") &&
-    //   !animator.GetBool("isAttacking2") &&
-    //   !animator.GetBool("isAttacking3") &&
-    //   !animator.GetBool("isDying") &&
-    //   !animator.GetBool("IsLosingCtrl")))
+    //  (!GetAnimBool("isAttacking") &&
+    //   !GetAnimBool("isAttacking2") &&
+    //   !GetAnimBool("isAttacking3") &&
+    //   !GetAnimBool("isDying") &&
+    //   !GetAnimBool("IsLosingCtrl")))
     //        {
     //            FlipCharacter(targetX);
     //        }
@@ -437,11 +485,11 @@ public class CharacterController : Character, ICharacterController
             }
 
             if (animator == null ||
-                (!animator.GetBool("isAttacking") &&
-                 !animator.GetBool("isAttacking2") &&
-                 !animator.GetBool("isAttacking3") &&
-                 !animator.GetBool("isDying") &&
-                 !animator.GetBool("IsLosingCtrl")))
+                (!GetAnimBool("isAttacking") &&
+                 !GetAnimBool("isAttacking2") &&
+                 !GetAnimBool("isAttacking3") &&
+                 !GetAnimBool("isDying") &&
+                 !GetAnimBool("IsLosingCtrl")))
             {
                 FlipCharacter(targetX);
             }

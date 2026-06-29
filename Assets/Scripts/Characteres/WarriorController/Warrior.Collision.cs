@@ -173,6 +173,11 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (IsHardActionLocked) { ResetOverlapRecoveryTracking(); return; }
             if (_hitReactRoutine != null) { ResetOverlapRecoveryTracking(); return; }
 
+            // Warrior attack has priority over enemy-overlap separation. A grounded melee attack
+            // (M97, P39, Crawling, ...) must be allowed to play its full clip — the depenetration
+            // nudge / bounce here would otherwise disturb the Attack1 clip before its hit-frame.
+            if (IsAnyAttackPlaying()) { ResetOverlapRecoveryTracking(); return; }
+
             // Stand down while a boss-jump-cancel fall is in progress: the Warrior must drop under
             // gravity (sliding off the boss via the physics solver), not be launched into a bounce.
             if (Time.time <= _suppressEnemyOverlapBounceUntil) { ResetOverlapRecoveryTracking(); return; }
@@ -584,13 +589,17 @@ namespace Assets.Scripts.Characteres.WarriorController
                     return true;
                 }
 
-                // If this was the last known nearby enemy top, let Warrior bounce from it once,
-                // then ignore all nearby enemies so the jump can finish as a safe landing.
+                // Chain exhausted: each nearby enemy top has been used once as a bounce pad and
+                // there is no safe land left. New rule — prefer dropping the Warrior straight onto
+                // the ground BETWEEN the two bracketing enemies instead of one more final bounce.
+                // Falls back to the final bounce (which uses the current enemy top as a landing
+                // aid) only when there is no two-sided bracket or a hole sits between the enemies.
                 if (IsLatestRegisteredEnemyUnique(enemy, nearbyEnemies) &&
                     touchedAtLeastTwoDifferentEnemies &&
                     !hasUnbouncedNearbyEnemy)
                 {
-                    FinishEnemyTopBounceChainWithFinalBounce(enemy, nearbyEnemies);
+                    if (!TryLandBetweenBracketingEnemies(nearbyEnemies))
+                        FinishEnemyTopBounceChainWithFinalBounce(enemy, nearbyEnemies);
                     return true;
                 }
 
@@ -1487,6 +1496,15 @@ namespace Assets.Scripts.Characteres.WarriorController
         private void StopRunningOnEnemyContact(Enemy enemy)
         {
             if (enemy == null) return;
+
+            // Warrior attack has priority over the enemy-contact stop (M97, P39, Crawling, ...).
+            // A pressing melee enemy keeps imparting horizontal velocity to the Warrior, so without
+            // this guard StopRunningOnEnemyContact runs every physics frame, calls Wait/LosingBalance,
+            // and resets isAttacking=false -> the in-progress Attack1 clip is killed before its
+            // hit-frame AnimationEvent ever fires. Attack2/Attack3 survive only because their damage
+            // is already resolved at button press. Let the attack clip play to completion here.
+            if (IsAnyAttackPlaying()) return;
+
             if (!IsSamePlatformAs(enemy)) return;
             if (CountGroundPoints() <= 0) return;
 

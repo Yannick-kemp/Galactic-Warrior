@@ -37,6 +37,37 @@ public class ZoneCullingManager : MonoBehaviour
     private readonly List<ZoneCullable> _zones = new List<ZoneCullable>();
     private float _timer;
 
+    public static ZoneCullingManager Instance { get; private set; }
+
+    private void Awake()
+    {
+        Instance = this;
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+            Instance = null;
+    }
+
+    /// <summary>
+    /// Immediately activates any zone whose bounds contain <paramref name="worldPoint"/>. Call this
+    /// just before teleporting / respawning the Warrior into a position that may sit in a currently
+    /// culled (deactivated) zone: it brings that zone's platform colliders back to life so the
+    /// Warrior lands on a live surface instead of dropping through a disabled one. The regular cull
+    /// pass then keeps the zone active while he stands in it (the "never cull the Warrior's zone"
+    /// guard), so this is a safe one-shot.
+    /// </summary>
+    public void EnsureZoneActiveAt(Vector2 worldPoint)
+    {
+        for (int i = 0; i < _zones.Count; i++)
+        {
+            ZoneCullable z = _zones[i];
+            if (z != null && z.ContainsPoint(worldPoint))
+                z.SetZoneActive(true);
+        }
+    }
+
     private void Start()
     {
         // Zones start active, so this finds them all (Include also catches any that start inactive,
@@ -74,7 +105,21 @@ public class ZoneCullingManager : MonoBehaviour
         Rect exitRect = Expand(camRect, exitMargin);
 
         Transform warrior = GetWarrior();
-        Vector2 warriorPos = warrior != null ? (Vector2)warrior.position : (Vector2)camRect.center;
+
+        // Until the Warrior is registered/positioned (e.g. the very first cull pass at scene load,
+        // before GameMgr.RegisterHero has placed him and snapped the camera), never cull anything.
+        // Otherwise the zone holding his spawn / landing platform could be deactivated for one
+        // interval and he would spawn onto a disabled platform collider and fall/tunnel. Keeping
+        // every zone active for this pass is strictly safe; normal culling resumes once he exists.
+        if (warrior == null)
+        {
+            for (int i = 0; i < _zones.Count; i++)
+                if (_zones[i] != null)
+                    _zones[i].SetZoneActive(true);
+            return;
+        }
+
+        Vector2 warriorPos = (Vector2)warrior.position;
 
         for (int i = 0; i < _zones.Count; i++)
         {

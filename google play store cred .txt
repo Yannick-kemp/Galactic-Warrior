@@ -1,0 +1,32 @@
+Everything's wired up. Here's the complete picture.
+
+## What I set up
+
+| File | Purpose | Committed? |
+|---|---|---|
+| `galactic-warrior-release.keystore` | Your release/upload key (RSA 2048, alias `galacticwarrior`, valid ~27 yrs) | ❌ gitignored |
+| `keystore.properties` | Holds the passwords for automated signing | ❌ gitignored |
+| [AndroidSigningPreprocessor.cs](Assets/Scripts/Editor/AndroidSigningPreprocessor.cs) | Auto-applies release signing before **every** Android build | ✅ tracked |
+| [AndroidDeployToUser0.cs](Assets/Scripts/Editor/AndroidDeployToUser0.cs) | Your device-deploy menu (from earlier) | ✅ tracked |
+| `.gitignore` | Now blocks `*.keystore`, `*.jks`, `keystore.properties` | ✅ tracked |
+| `ProjectSettings.asset` | `useCustomKeystore=1`, path + alias set (this file is gitignored in your project) | ❌ gitignored |
+
+I verified: both secret files are git-ignored, and the keystore is valid (SHA-256 fingerprint `CB:A6:49:57…`).
+
+## Why this fully fixes the Play rejection
+
+The root cause was Unity falling back to the **debug keystore**. The preprocessor (an `IPreprocessBuildWithReport`) runs automatically before any Android build and forces `PlayerSettings.Android` to use your release keystore + passwords. Because Unity never saves passwords to disk, this is what guarantees the AAB is release-signed every session — and if `keystore.properties` is ever missing, the build **fails loudly** instead of silently producing a debug-signed file.
+
+## Your next steps to get a build Play will accept
+
+1. Back in Unity, let it recompile the new scripts.
+2. **File ▸ Build Settings ▸** check **Build App Bundle (Google Play)** so you produce an `.aab` (Play prefers AAB over APK).
+3. Build. Watch the Console for `[AndroidSigning] Release signing applied: keystore='galactic-warrior-release.keystore', alias='galacticwarrior'` — that line confirms it's release-signed.
+4. Upload the `.aab` to Play Console. Since you're on Google Play App Signing, your keystore is registered as the **upload key** on first upload.
+
+## Two things to act on now
+
+- 🔒 **Back up `galactic-warrior-release.keystore` and the password `Yolaine24?y`** off this machine (cloud/password manager). Lose them and you can't update the app.
+- 🔢 If Play already registered version code `1` from the rejected upload, bump **Player Settings ▸ Bundle Version Code** to `2` before re-uploading — Play refuses a duplicate version code.
+
+Want me to bump the Android bundle version code to `2` now, or are you good to do it in the editor?

@@ -476,8 +476,11 @@ MonoBehaviour:
   meleeHitDistance: 0.65
   useWorldYDeathFallback: 1
   worldDeathY: -30
+  groundBound: 0
+  groundBoundSeatTolerance: 0.06
   targetAnimationName: AttackAnimation
   enemyType: 3
+  scoreValue: 2
   isBoss: 0
   bossDisplayName: 
   totalFramesInAnimation: 16
@@ -501,6 +504,8 @@ MonoBehaviour:
   participatesInWarriorTopPingPongEscape: 1
   edgeSafeMargin: 0.45
   edgeTolerance: 0.05
+  recoilPatrolSuppressSeconds: 0.15
+  platformSafeMargin: 0.12
 --- !u!61 &3971217980109467877
 BoxCollider2D:
   m_ObjectHideFlags: 0

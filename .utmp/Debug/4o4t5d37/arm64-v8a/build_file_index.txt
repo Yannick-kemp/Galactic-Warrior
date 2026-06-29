@@ -1,0 +1,3 @@
+C:\Users\yannk\Documents\Galactic-Warrior\Library\PramData\AndroidApplicationController\Cache\com.polymart.GalacticWarrior\gradle-project\unityLibrary\src\main\cpp\CMakeLists.txt
+C:\Users\yannk\Documents\Galactic-Warrior\Library\PramData\AndroidApplicationController\Cache\com.polymart.GalacticWarrior\gradle-project\unityLibrary\src\main\cpp\FramePacing\CMakeLists.txt
+C:\Users\yannk\Documents\Galactic-Warrior\Library\PramData\AndroidApplicationController\Cache\com.polymart.GalacticWarrior\gradle-project\unityLibrary\src\main\cpp\GameActivity\CMakeLists.txt

@@ -15,6 +15,9 @@ public class GameMgr : MonoBehaviour, IGame
     [SerializeField] private int maxRetries = 3;
 
     private int retryCount = 0;
+    // True between a death and its resolution (revive or game over). Guards the retry-consume so a
+    // single death only costs one life, even though HandleWarriorDead fires twice (StartDeath + EndDeath).
+    private bool _deathConsumed;
     private Vector3 lastDeathPosition;
     public bool IsRestarting { get; private set; }
     public static GameMgr Instance { get; private set; }
@@ -99,7 +102,7 @@ public class GameMgr : MonoBehaviour, IGame
     [Header("Progression / Purchase")]
     [SerializeField] private bool level2Unlocked = false; // legacy + "paid for the rest" flag
     [SerializeField] private bool autoUnlockForTesting = false;
-    [SerializeField] private string purchasePriceText = "€3.99";
+    [SerializeField] private string purchasePriceText = "€4.99";
 
     [Header("Level 1 Entry Rewards")]
     [SerializeField] private int level2EntryCoinsReward = 50;
@@ -184,6 +187,20 @@ public class GameMgr : MonoBehaviour, IGame
     private Transform _initialSpawnParent;
 
     public int RetriesRemaining => Mathf.Max(0, maxRetries - retryCount);
+
+    // ─── Retry-reward feature (additive, scoring untouched) ──────────────────────
+    // Exposed so a separate RetryRewardManager can observe retry losses and restore retries
+    // it has "bought" with score. The scoring system is never modified by any of this.
+
+    /// <summary>Max retries available per run (mirrors the configured ceiling).</summary>
+    public int MaxRetries => maxRetries;
+
+    /// <summary>
+    /// Raised right after a retry has been successfully consumed (a death's "Retry" was accepted
+    /// and retryCount incremented). RetryRewardManager listens to attempt an immediate redemption
+    /// (model A: a token earned pre-loss buys the retry back at once).
+    /// </summary>
+    public event System.Action OnRetryConsumed;
 
     // Treat this as "campaign purchased / rest unlocked"
     public bool Level2Unlocked => autoUnlockForTesting || level2Unlocked;
@@ -476,6 +493,15 @@ public class GameMgr : MonoBehaviour, IGame
             e.StopMoveTowardCoroutine();
         }
 
+        // A death costs one life immediately so the HUD and the Game-Over overlay both read the
+        // post-death count: RetriesRemaining hits 0 exactly when it's a real game over (no extra death).
+        // Guarded: HandleWarriorDead is called twice per death (StartDeath + EndDeath) → consume once.
+        if (!_deathConsumed)
+        {
+            _deathConsumed = true;
+            retryCount = Mathf.Min(retryCount + 1, maxRetries);
+        }
+
         UIManager.Instance?.ShowGameOver();
     }
 
@@ -529,17 +555,13 @@ public class GameMgr : MonoBehaviour, IGame
 
     public bool TryRetryFromDeath()
     {
+        // The life was already consumed at death (HandleWarriorDead). If none remain → real game over.
         if (retryCount >= maxRetries)
             return false;
 
-        retryCount++;
-
         Warrior warrior = WarriorInstance;
         if (warrior == null)
-        {
-            retryCount--;
             return false;
-        }
 
         ResetMeteorHazards(true);
 
@@ -627,6 +649,15 @@ public class GameMgr : MonoBehaviour, IGame
             respawnPosition = BuildSurfaceRespawnOnStaticPlatform(warrior.LastSafePlatform, warrior);
             respawnPlatform = warrior.LastSafePlatform;
         }
+        else if (_initialSpawnPosition != Vector3.zero)
+        {
+            // No safe platform or position was ever recorded (e.g. the Warrior fell off
+            // the starting ground before any platform contact registered, as on the
+            // AgeOfIce opening platform). Respawn at the scene's spawn point — which is
+            // safe ground by construction — instead of lastDeathPosition, which is where
+            // the Warrior died (below / under the platform).
+            respawnPosition = _initialSpawnPosition;
+        }
         else
         {
             // Absolute last resort.
@@ -643,7 +674,6 @@ public class GameMgr : MonoBehaviour, IGame
         if (!revived)
         {
             Debug.LogWarning("[GameMgr] Retry failed: warrior was not in death state.");
-            retryCount--;
             return false;
         }
 
@@ -655,6 +685,30 @@ public class GameMgr : MonoBehaviour, IGame
         ResetAllEnemies();
 
         Debug.Log($"[GameMgr] Retry {retryCount}/{maxRetries}");
+
+        // This death is resolved → the next death will consume a fresh life.
+        _deathConsumed = false;
+
+        // A retry was effectively consumed → let the reward system buy it back immediately
+        // if a token is in reserve (model A). Fired only on the success path.
+        OnRetryConsumed?.Invoke();
+
+        return true;
+    }
+
+    /// <summary>
+    /// Additive hook for the retry-reward feature. Restores one previously-consumed retry
+    /// (retryCount--). retryCount is clamped at 0, so RetriesRemaining can never exceed maxRetries
+    /// — the ceiling is enforced here. Returns true only if a retry was actually restored.
+    /// Does NOT touch the scoring system.
+    /// </summary>
+    public bool GrantRetryReward()
+    {
+        if (retryCount <= 0)
+            return false; // already at max retries — nothing to restore
+
+        retryCount--;
+        Debug.Log($"[GameMgr] Retry reward granted → consumed {retryCount}/{maxRetries} ({RetriesRemaining} remaining)");
         return true;
     }
 
@@ -1004,6 +1058,9 @@ public class GameMgr : MonoBehaviour, IGame
         {
             int nextIndex = currentIndex + 1;
             MarkSceneAsReached(nextIndex);
+            // Just unlocked the campaign right after finishing this level: point "Continue"
+            // at the next scene (e.g. AgeOfIce after WarriorScene), not the level we just cleared.
+            SetContinueScene(nextIndex);
         }
 
         LoadMainMenu();
@@ -1174,6 +1231,7 @@ public class GameMgr : MonoBehaviour, IGame
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
         IsRestarting = false;
+        _deathConsumed = false; // fresh warrior spawns alive → no unresolved death
 
         ExitForcedRetryZone();
 
@@ -1258,6 +1316,7 @@ public class GameMgr : MonoBehaviour, IGame
         SceneManager.sceneLoaded -= OnSceneLoadedAfterRevive;
 
         retryCount = 0;
+        _deathConsumed = false;
         IsRestarting = false;
 
         ExitForcedRetryZone();
@@ -1313,6 +1372,7 @@ public class GameMgr : MonoBehaviour, IGame
     private void ResetMenuLaunchState()
     {
         retryCount = 0;
+        _deathConsumed = false;
         ResetTransientCheckpoint();
         _initialSpawnPosition = Vector3.zero;
         _initialSpawnParent = null;
@@ -1688,6 +1748,12 @@ public class GameMgr : MonoBehaviour, IGame
     {
         if (warrior == null)
             return;
+
+        // A respawn / checkpoint / forced-retry teleport can target a position inside a zone that is
+        // currently culled (off-camera), whose platform colliders are disabled. Bring that zone back
+        // to life BEFORE seating the Warrior, otherwise he lands on a disabled collider and drops
+        // through it. The regular cull pass keeps the zone active afterwards while he stands in it.
+        ZoneCullingManager.Instance?.EnsureZoneActiveAt(respawnPosition);
 
         // Never parent the Warrior to a moving platform here.
         // MovingVerticalPlatform carries riders with its own delta/rider system.

@@ -529,6 +529,7 @@ MonoBehaviour:
   groundBoundSeatTolerance: 0.06
   targetAnimationName: AttackAnimation
   enemyType: 8
+  scoreValue: 5
   isBoss: 0
   bossDisplayName: 
   totalFramesInAnimation: 16

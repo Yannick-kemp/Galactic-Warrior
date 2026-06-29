@@ -6,6 +6,10 @@ using UnityEngine;
 
 public class HashagarMonster : Enemy
 {
+    // Ground-bound terrestrial walker: pinned to its platform, no longer the source of the violent
+    // body-push launch, so the anti-penetration guard is not needed here.
+    protected override bool AllowWarriorBodyPenetrationGuard => false;
+
     [Header("Projectile Settings")]
     [SerializeField] private GameObject fireballPrefab;
     [SerializeField] private Transform firePoint; // assign HandSocket
@@ -86,6 +90,10 @@ public class HashagarMonster : Enemy
     protected override void Start()
     {
         base.Start();
+
+        // Terrestrial enemy: pinned to its platform on both axes. It can never take off
+        // (Y-lock) nor be shoved off an extremity (horizontal span clamp), whatever the force.
+        groundBound = true;
 
         // Hashagar is the LandOfFire boss (Hivernox/Zort flag themselves the same way).
         // Required so its death goes through the EnemyMgr boss path → slow-mo + boss relic grant.
@@ -543,6 +551,12 @@ public class HashagarMonster : Enemy
             if (sr != null)
                 sr.enabled = false;
         }
+
+        // Tell the Warrior's Attack3 sprite watchdog that Hashagar now owns the hide, so it
+        // stops re-enabling the default sprite every Update (which made the Warrior never
+        // disappear during the Attack2 grab). Cleared in RestoreWarriorVisualsAfterHashagarHold.
+        if (_warrior != null)
+            _warrior.IsExternallyHiddenByHashagar = true;
     }
 
     private void RestoreWarriorVisualsAfterHashagarHold()
@@ -564,6 +578,11 @@ public class HashagarMonster : Enemy
 
         _warriorSpritesWereEnabledBeforeHold = null;
         _warriorVisualSnapshotValid = false;
+
+        // Hand the hide back: the Warrior's Attack3 sprite watchdog may resume managing the
+        // default sprite now that Hashagar no longer holds it.
+        if (_warrior != null)
+            _warrior.IsExternallyHiddenByHashagar = false;
 
         // Final correction: let Warrior restore its own default visual setup.
         // This prevents the Hivernox frozen overlay from staying visible,

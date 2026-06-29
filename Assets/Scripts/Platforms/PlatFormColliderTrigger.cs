@@ -60,6 +60,30 @@ public class PlatFormColliderTrigger : MonoBehaviour
     {
     }
 
+    /// <summary>
+    /// Bounds used by the A* reachability test (horizontal gap / vertical delta between
+    /// platforms). For a STATIC platform this is simply the current collider bounds.
+    ///
+    /// Motion platforms override this to return the full SWEPT envelope of their travel
+    /// so that a graph edge to/from them is considered reachable for the whole motion
+    /// cycle, not only for the instant the platform happens to be close. Without this,
+    /// a moving platform that drifts to its far extreme momentarily pushes the edge gap
+    /// over the agent limit, the A* edge disappears, FindPath returns null, and a chasing
+    /// agent (Zalayty) freezes in Wait until the platform drifts back — the intermittent
+    /// "loses its path / stuck on a platform" bug.
+    ///
+    /// This is intentionally separate from <see cref="PlatformNode.TopCenter"/>, which
+    /// stays the live top center (used for A* cost and gizmos) and is what agents actually
+    /// target when jumping.
+    /// </summary>
+    public virtual Bounds GetReachabilityBounds()
+    {
+        if (platformCollider != null)
+            return platformCollider.bounds;
+
+        return new Bounds(transform.position, Vector3.zero);
+    }
+
     public virtual void ApplyVisualTheme(PlatformTheme theme)
     {
         AutoBindVisualRenderersIfNeeded();

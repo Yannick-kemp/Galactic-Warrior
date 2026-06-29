@@ -16,6 +16,11 @@ namespace Assets.Scripts.Relics.Projectiles
         [SerializeField] private LayerMask obstacleMask;
         [SerializeField] private bool destroyOnAnyObstacle = true;
 
+        [Header("Enemy Damage")]
+        [Tooltip("Dégât fixe infligé aux ennemis non-boss par l'IceBulletProjectile. " +
+                 "L'ennemi meurt si sa vie tombe à 0, sinon il survit avec ses PV restants.")]
+        [SerializeField] private int iceBulletEnemyDamage = 50;
+
         [Header("Hit FX")]
         [SerializeField] private GameObject hitFxPrefab;          // assign FX_Ice_Hit
         [SerializeField] private float hitFxDestroyAfter = 0.8f;
@@ -188,16 +193,11 @@ namespace Assets.Scripts.Relics.Projectiles
                 // Bosses are excluded from the two-step ice execution and take normal damage.
                 killed = enemy.TakeDamageAndReturnKilled(_damage);
             }
-            else if (enemy.IsIceBulletMarked)
-            {
-                // Second ice bullet hit: instantly execute the enemy regardless of remaining health.
-                killed = enemy.TakeDamageAndReturnKilled(Mathf.Max(1f, enemy.CurrentHealth));
-            }
             else
             {
-                // First ice bullet hit: halve current health and mark for execution on the next hit.
-                enemy.MarkIceBulletHit();
-                killed = enemy.TakeDamageAndReturnKilled(Mathf.Max(1f, enemy.CurrentHealth * 0.5f));
+                // Ice bullet inflige un dégât fixe aux ennemis non-boss. Mort si la vie tombe à 0,
+                // survie sinon (ex. 80 PV → 30 PV avec un dégât de 50). Plus de mécanique en deux temps.
+                killed = enemy.TakeDamageAndReturnKilled(iceBulletEnemyDamage);
             }
 
             if (!killed && _stunSeconds > 0f)

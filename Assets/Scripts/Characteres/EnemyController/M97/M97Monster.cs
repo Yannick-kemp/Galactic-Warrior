@@ -8,6 +8,10 @@ using UnityEngine;
 
 public class M97Monster : Enemy
 {
+    // Ground-bound terrestrial walker: pinned to its platform, no longer the source of the violent
+    // body-push launch, so the anti-penetration guard is not needed here.
+    protected override bool AllowWarriorBodyPenetrationGuard => true;
+
     [Header("Laser Configuration")]
     public GameObject laserPrefab;
     public float laserActivationDelay = 0.5f;
@@ -199,6 +203,10 @@ public class M97Monster : Enemy
     protected override void Start()
     {
         base.Start();
+
+        // Terrestrial enemy: pinned to its platform on both axes. It can never take off
+        // (Y-lock) nor be shoved off an extremity (horizontal span clamp), whatever the force.
+        groundBound = true;
 
         // M97 defaults
         Range = 9f;
@@ -1935,7 +1943,18 @@ public class M97Monster : Enemy
                 : (Vector2)transform.position;
 
             targetPosition.y = targetY;
-            targetPosition.x = ClampM97XToLiftSurface(targetPosition.x, platformBounds, bodyBounds);
+
+            // Preserve the character's intended horizontal movement. This routine seat runs
+            // every FixedUpdate while M97 rides the lift; writing the *current* X here would
+            // cancel the patrol coroutine's pending MovePosition each physics step and pin
+            // M97 horizontally on the platform. When a fresh core-move request exists (the
+            // patrol/chase is actively moving), seat to that requested X instead so the
+            // anti-tunnel layer only owns Y and never fights horizontal travel.
+            float seatX = targetPosition.x;
+            if (TryGetCoreMoveRequestForRecentStep(out Vector2 requestedCoreMove))
+                seatX = requestedCoreMove.x;
+
+            targetPosition.x = ClampM97XToLiftSurface(seatX, platformBounds, bodyBounds);
 
             MarkIntentionalEnemyDisplacement(Time.fixedDeltaTime * 4f);
 

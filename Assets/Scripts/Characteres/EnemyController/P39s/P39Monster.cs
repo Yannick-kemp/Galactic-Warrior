@@ -11,6 +11,10 @@ using UnityEngine;
 /// </summary>
 public class P39Monster_WithHealthBar : Enemy
 {
+    // Ground-bound terrestrial walker: pinned to its platform, no longer the source of the violent
+    // body-push launch, so the anti-penetration guard is not needed here.
+    protected override bool AllowWarriorBodyPenetrationGuard => false;
+
     [Header("Edge patrol (moving platform safe)")]
     [SerializeField] private float edgeSafeMargin = 0.45f; // keep consistent with platform clamp
     [SerializeField] private float edgeTolerance = 0.05f;  // 

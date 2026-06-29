@@ -85,7 +85,7 @@ MonoBehaviour:
   bossDeathCompletionDelay: 0.05
   level2Unlocked: 0
   autoUnlockForTesting: 0
-  purchasePriceText: "\u20AC3.99"
+  purchasePriceText: "\u20AC4.99"
   level2EntryCoinsReward: 50
   level2EntryUpgradeTokens: 1
   returnToMenuAfterPurchasedLevelComplete: 1

@@ -126,6 +126,27 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private EnemyType enemyType;
         public EnemyType EnemyType => enemyType;
 
+        [Header("Score Reward")]
+        [Tooltip("Points accordés au joueur quand cet ennemi est tué. Laisser à -1 pour utiliser " +
+                 "la valeur par défaut du type (Zalayty 20, Raka 30, M97 15, Morvex 5, autres 10).")]
+        [SerializeField] private int scoreValue = -1;
+
+        /// <summary>Points granted when this enemy is killed. Per-instance override if >= 0,
+        /// otherwise the per-type default. Editable in the Inspector on each enemy/prefab.</summary>
+        public int ScoreValue => scoreValue >= 0 ? scoreValue : DefaultScoreForType(enemyType);
+
+        private static int DefaultScoreForType(EnemyType type)
+        {
+            switch (type)
+            {
+                case EnemyType.Zalayty: return 20;
+                case EnemyType.Raka:    return 30;
+                case EnemyType.M97:     return 15;
+                case EnemyType.Morvex:  return 5;
+                default:                return 10; // fallback for unlisted types
+            }
+        }
+
         [Header("Boss")]
         [SerializeField] private bool isBoss = false;
         [SerializeField] private string bossDisplayName = "";
@@ -226,6 +247,16 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [Tooltip("ON = clears enemy Rigidbody2D velocity along the Warrior push direction while body contact is active.")]
         [SerializeField] private bool cancelWarriorBodyPushVelocity = true;
 
+        [Header("Warrior Body Penetration Guard (Anti Violent Repulse)")]
+        [Tooltip("ON = this enemy's scripted movement (patrol/chase) is clamped to STOP at contact with the Warrior's body instead of driving its collider into him. The deep overlap is what Unity's solver depenetrates into a violent launch; preventing the overlap removes the launch whether the Warrior is grounded or airborne. Disable only for bosses that intentionally body-ram.")]
+        [SerializeField] private bool preventWarriorBodyPenetration = true;
+
+        [Tooltip("Small skin (meters) kept between the enemy body and the Warrior when a move is clamped at contact. Keep slightly above the physics skin.")]
+        [SerializeField, Min(0f)] private float warriorBodyPenetrationSkin = 0.02f;
+
+        [Tooltip("Only clamp when the Warrior body is within this distance of the enemy body. Beyond it the move is never altered (cheap early-out for far patrol).")]
+        [SerializeField, Min(0f)] private float warriorBodyPenetrationCheckRange = 0.75f;
+
         private Vector2 _warriorBodyPushPhysicsStepStart;
         private bool _hasWarriorBodyPushPhysicsStepStart;
 
@@ -265,6 +296,84 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             _attackDisabledUntil = Mathf.Max(_attackDisabledUntil, Time.time + d);
         }
 
+        // Anti violent-repulse (root-cause side): clamp this enemy's scripted move target so its
+        // body collider never penetrates the Warrior. The deep overlap a fast scripted mover would
+        // otherwise create is exactly what Unity's 2D solver depenetrates into a violent launch of
+        // the Warrior. By stopping the move at contact (minus a small skin) no overlap is ever
+        // produced, so there is nothing to eject — regardless of whether the Warrior is grounded or
+        // airborne. Only the component of the move that points INTO the Warrior is removed; movement
+        // parallel to the contact and away from him (patrol along the surface, platform-follow Y,
+        // SmoothStepBack — which bypasses this anyway) is preserved.
+        // Per-enemy-TYPE opt-out for the body-penetration guard. The serialized
+        // preventWarriorBodyPenetration field above stays the master switch (and can still turn it
+        // OFF on any prefab), but some enemy types must never run the guard regardless of the
+        // Inspector value: bosses that intentionally body-ram, and the ground-bound terrestrial
+        // walkers (Hashagar/M97/P39/Raka/Crawling) which are pinned and no longer cause the violent
+        // launch. Those subclasses override this to false. Default keeps the guard available
+        // (Zalayty, flyers, etc.).
+        protected virtual bool AllowWarriorBodyPenetrationGuard => true;
+
+        protected override Vector2 AdjustRequestedCoreMovePosition(Vector2 desiredPosition)
+        {
+            if (!preventWarriorBodyPenetration || !AllowWarriorBodyPenetrationGuard || rigidbody2 == null)
+                return desiredPosition;
+
+            if (IsDeadOrDying)
+                return desiredPosition;
+
+            Collider2D body = (NormalCollider != null && NormalCollider.enabled && !NormalCollider.isTrigger)
+                ? NormalCollider
+                : collider2;
+
+            if (body == null || !body.enabled || body.isTrigger)
+                return desiredPosition;
+
+            Warrior w = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
+            if (w == null || w.collider2 == null || !w.collider2.enabled)
+                return desiredPosition;
+
+            // Sprint dodge intentionally lets the Warrior pass through enemies (colliders are
+            // IgnoreCollision'd), so there is no penetration to prevent — don't fight it.
+            if (w.IsDodging)
+                return desiredPosition;
+
+            Vector2 from = rigidbody2.position;
+            Vector2 delta = desiredPosition - from;
+            if (delta.sqrMagnitude < 1e-10f)
+                return desiredPosition;
+
+            ColliderDistance2D cd = Physics2D.Distance(body, w.collider2);
+            if (!cd.isValid)
+                return desiredPosition;
+
+            float gap = cd.distance; // signed: > 0 separated, < 0 overlapping
+
+            if (gap > warriorBodyPenetrationCheckRange)
+                return desiredPosition; // too far to matter this frame
+
+            // Direction from the enemy body toward the Warrior body. Use the closest-point vector
+            // while separated (accurate contact axis); fall back to center-to-center when overlapping
+            // or degenerate.
+            Vector2 towardWarrior = (gap > 0f) ? (cd.pointB - cd.pointA) : Vector2.zero;
+            if (towardWarrior.sqrMagnitude < 1e-10f)
+                towardWarrior = (Vector2)w.collider2.bounds.center - (Vector2)body.bounds.center;
+            if (towardWarrior.sqrMagnitude < 1e-10f)
+                return desiredPosition;
+            towardWarrior.Normalize();
+
+            float closing = Vector2.Dot(delta, towardWarrior); // > 0 means moving toward the Warrior
+            if (closing <= 0f)
+                return desiredPosition; // moving away / parallel: never clamp
+
+            float allowed = Mathf.Max(0f, gap - warriorBodyPenetrationSkin);
+            if (closing <= allowed)
+                return desiredPosition; // move stays clear of contact
+
+            // Remove only the excess component that would drive the body into the Warrior.
+            delta -= towardWarrior * (closing - allowed);
+            return from + delta;
+        }
+
         protected virtual void FixedUpdate()
         {
             CaptureWarriorBodyPushPhysicsStepStart();
@@ -297,6 +406,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             // Keep ground-bound enemies glued to their platform by freezing the Rigidbody2D Y axis
             // while resting on a static platform, so gravity / external forces cannot lift them.
             ClampGroundBoundToSurface();
+
+            // ... and pin them within the platform span so no force can shove them off an extremity.
+            ClampGroundBoundHorizontally();
         }
 
         protected override void Start()
@@ -524,6 +636,69 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 rigidbody2.constraints = _groundBoundBaseConstraints;
         }
 
+        // Horizontal skin kept between the support collider and the platform edge so the body
+        // always stays visibly on the surface (never balancing on the very corner).
+        private const float GroundBoundHorizontalEdgeSkin = 0.02f;
+
+        /// <summary>
+        /// Hard rule for terrestrial enemies (<see cref="groundBound"/> = true): they can never
+        /// leave their platform by an extremity, whatever the force that pushes them there (Warrior
+        /// body contact, solver depenetration, AddForce, knockback overshoot). Every physics step we
+        /// re-seat the Rigidbody2D so the support collider stays fully over the platform span. Patrol
+        /// and knockback already self-clamp well inside the edges (via ClampToCurrentPlatform), so
+        /// this only ever corrects an *external* shove past the edge -- scripted movement is a no-op
+        /// here and is never fought. Mirrors the Y-lock in <see cref="ClampGroundBoundToSurface"/>:
+        /// together they pin the enemy to its platform on both axes.
+        ///
+        /// Released (no clamp) only when the platform is genuinely gone, so a destroyed/disabled
+        /// platform still lets the enemy fall and trigger the void-death fallback.
+        ///
+        /// Driven once per physics step from FixedUpdate, after ClampGroundBoundToSurface has
+        /// refreshed the cached platform.
+        /// </summary>
+        protected void ClampGroundBoundHorizontally()
+        {
+            if (!groundBound || rigidbody2 == null) return;
+            if (IsDeadOrDying) return;
+
+            Collider2D platformCol = (CurrentplatForm != null && CurrentplatForm.platformCollider != null)
+                ? CurrentplatForm.platformCollider
+                : _groundBoundPlatformCollider;
+
+            // Platform genuinely gone -> don't pin X, let it fall / die normally.
+            if (platformCol == null || !platformCol.enabled || !platformCol.gameObject.activeInHierarchy)
+                return;
+
+            Collider2D support = (NormalCollider != null && NormalCollider.enabled)
+                ? NormalCollider
+                : collider2;
+
+            if (support == null || !support.enabled) return;
+
+            Bounds pb = platformCol.bounds;
+            Bounds sb = support.bounds;
+
+            // How far the body sticks out past each platform extremity (positive = sticking out).
+            float overLeft = (pb.min.x + GroundBoundHorizontalEdgeSkin) - sb.min.x;
+            float overRight = sb.max.x - (pb.max.x - GroundBoundHorizontalEdgeSkin);
+
+            float correction = 0f;
+            if (overLeft > 0f) correction += overLeft;    // shove back to the right
+            if (overRight > 0f) correction -= overRight;   // shove back to the left
+
+            // Platform narrower than the body (corrections cancel) or already inside -> nothing to do.
+            if (Mathf.Approximately(correction, 0f)) return;
+
+            Vector2 pos = rigidbody2.position;
+            rigidbody2.position = new Vector2(pos.x + correction, pos.y);
+
+            // Kill only the outward horizontal velocity so the push does not keep ramming the edge
+            // next step. Inward/vertical motion and platform carry are preserved.
+            Vector2 v = rigidbody2.linearVelocity;
+            if ((correction > 0f && v.x < 0f) || (correction < 0f && v.x > 0f))
+                rigidbody2.linearVelocity = new Vector2(0f, v.y);
+        }
+
         protected void ClampEnemyToPlatformTop()
         {
             if (CurrentplatForm == null) return;
@@ -661,6 +836,16 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                         victim = gameObject
                     });
                 }
+            }
+
+            // Score-by-type reward: killing a regular enemy grants points based on its type.
+            // ScoreManager.Add raises OnPointsAdded, which makes SpectaclePopupSpawner show the
+            // "+points" popup automatically — no separate popup call needed. Bosses are excluded
+            // (they have their own level-complete flow). Awarded once thanks to the _deathStarted guard.
+            if (!IsBoss)
+            {
+                Assets.Scripts.Scoring.ScoreManager.Instance?.Add(
+                    ScoreValue, enemyType.ToString(), transform.position);
             }
 
             StartCoroutine(DeathSequence());
@@ -1639,6 +1824,20 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 animator.enabled = true;
 
             UpdateHealthBarDisplay();
+
+            // Let derived enemies clear any transient navigation/airborne state. A retry reuses the
+            // existing enemy instance (no scene reload), so an enemy that was mid-jump / in airborne
+            // recovery when the Warrior died would otherwise keep those flags forever and stay frozen.
+            OnCombatStateReset();
+        }
+
+        /// <summary>
+        /// Hook called at the end of <see cref="ResetCombatState"/>. Default does nothing.
+        /// Enemies with their own movement state machine (e.g. Zalayty's A* chase) override this to
+        /// reset jump/airborne/recovery flags and restart their follow loop on a retry.
+        /// </summary>
+        protected virtual void OnCombatStateReset()
+        {
         }
 
         protected virtual void StickToPlatform()

@@ -1,5 +1,6 @@
 ﻿using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Characteres.WarriorController;
+using Assets.Scripts.Tools;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -69,6 +70,35 @@ namespace Assets.Scripts.Platforms
         public bool IsMovingUpNow => _isMovingUp;
         public bool IsMovingDownNow => !_isMovingUp;
         public Vector2 LastLiftDelta => _lastLiftDelta;
+
+        /// <summary>
+        /// Returns the collider bounds widened over the full vertical travel range so the
+        /// A* graph treats an edge to/from this lift as reachable for the whole motion cycle,
+        /// not only while the lift is at one end of its course.
+        /// </summary>
+        public override Bounds GetReachabilityBounds()
+        {
+            Bounds b = base.GetReachabilityBounds();
+
+            if (platformCollider == null || _worldMaxY <= _worldMinY)
+                return b;
+
+            // _worldMinY / _worldMaxY are the platform CENTER extremes; the collider keeps a
+            // constant vertical offset from the center, so the swept AABB is the current
+            // bounds expanded by the remaining travel above and below.
+            float centerY = transform.position.y;
+            float downExpand = Mathf.Max(0f, centerY - _worldMinY);
+            float upExpand = Mathf.Max(0f, _worldMaxY - centerY);
+
+            Vector3 min = b.min;
+            Vector3 max = b.max;
+            min.y -= downExpand;
+            max.y += upExpand;
+
+            Bounds swept = new Bounds();
+            swept.SetMinMax(min, max);
+            return swept;
+        }
 
         /// <summary>
         /// True while this lift is actively carrying the given character as a registered rider.
@@ -600,27 +630,27 @@ namespace Assets.Scripts.Platforms
 
             if (IsPlatformIgnoredByCharacter(rider))
             {
-                Debug.Log("[LiftDetach] platform ignored for " + rider.name);
+                GwLog.Verbose("[LiftDetach] platform ignored for " + rider.name);
                 return false;
             }
 
 
             if (rider.rigidbody2 != null && rider.rigidbody2.linearVelocity.y > jumpOffVelocity)
             {
-                Debug.Log("[LiftDetach] upward velocity too high: " + rider.rigidbody2.linearVelocity.y);
+                GwLog.Verbose("[LiftDetach] upward velocity too high: " + rider.rigidbody2.linearVelocity.y);
                 return false;
             }
 
             if (!IsHorizontallyOverPlatform(support))
             {
-                Debug.Log("[LiftDetach] not horizontally over platform for " + rider.name);
+                GwLog.Verbose("[LiftDetach] not horizontally over platform for " + rider.name);
                 return false;
             }
 
             bool bottomCloseToTop = IsBottomCloseToPlatformTop(support);
             if (!bottomCloseToTop)
             {
-                Debug.Log("[LiftDetach] bottom not close to platform top");
+                GwLog.Verbose("[LiftDetach] bottom not close to platform top");
                 return false;
             }
 
@@ -628,7 +658,7 @@ namespace Assets.Scripts.Platforms
             // Landing confirmation is done by OnCollisionEnter2D / OnCollisionStay2D.
             if (rider is ZalaytyMonster && rider.activesJumpCoroutine != null)
             {
-                Debug.Log("[LiftDetach] Zalayty active jump coroutine for " + rider.name);
+                GwLog.Verbose("[LiftDetach] Zalayty active jump coroutine for " + rider.name);
                 return false;
             }
 
@@ -639,7 +669,7 @@ namespace Assets.Scripts.Platforms
 
             if (rider.IsJumping)
             {
-                Debug.Log("[LiftDetach] IsJumping true for " + rider.name);
+                GwLog.Verbose("[LiftDetach] IsJumping true for " + rider.name);
                 return false;
             }
 

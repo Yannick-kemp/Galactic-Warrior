@@ -523,7 +523,12 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             Bounds pb = CurrentplatForm.platformCollider.bounds;
 
-            float safeY = pb.max.y + collider2.bounds.extents.y + 0.02f;
+            // Place the collider bottom (feet) on the platform top. Using the real
+            // pivot->feet distance instead of extents.y accounts for the collider's
+            // vertical offset, otherwise the Warrior is respawned too low and drops
+            // below thin platforms (collider thinner than the offset error).
+            float feetToPivot = transform.position.y - collider2.bounds.min.y;
+            float safeY = pb.max.y + feetToPivot + 0.02f;
 
             float minX = pb.min.x + platformSafeMargin;
             float maxX = pb.max.x - platformSafeMargin;

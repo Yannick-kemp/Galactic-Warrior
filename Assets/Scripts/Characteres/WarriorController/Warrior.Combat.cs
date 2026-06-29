@@ -115,13 +115,9 @@ namespace Assets.Scripts.Characteres.WarriorController
                 PlayAttack1MissSfx();
             }
 
-            // 7. Scoring and Crowd Feedback for multi-hits
-            if (valid >= 2)
-            {
-                Vector2 avgHp = sumHitPoints / valid;
-                GetComponent<Assets.Scripts.Scoring.SpectacularActionScorer>()
-                    ?.NotifyCrowdHit(valid, avgHp);
-            }
+            // 7. Crowd-hit scoring rule changed: enemy kills now grant score per enemy TYPE
+            //    (see Enemy.OnDeath / Enemy.ScoreValue). The old generic "Crowd hit" bonus popup
+            //    is intentionally no longer awarded here.
         }
 
         private Vector3 GetHitFxPosition(Enemy enemy, HitFxPoint point)
@@ -258,12 +254,9 @@ namespace Assets.Scripts.Characteres.WarriorController
                     KnockbackEnemiesInRange(0.35f, enemy, 10);
                 }
 
-                if (valid >= 2)
-                {
-                    Vector2 avgHp = sumHp / valid;
-                    GetComponent<Assets.Scripts.Scoring.SpectacularActionScorer>()
-                        ?.NotifyCrowdHit(valid, avgHp);
-                }
+                // Crowd-hit scoring rule changed: enemy kills now grant score per enemy TYPE
+                // (see Enemy.OnDeath / Enemy.ScoreValue). The old generic "Crowd hit" bonus
+                // popup is intentionally no longer awarded here.
             }
 
             StartCoroutine(TrackSlashPosition(slash));
@@ -1062,6 +1055,9 @@ namespace Assets.Scripts.Characteres.WarriorController
         [Tooltip("ON = enemy push/repulse is allowed to send the Warrior past the platform edge instead of clamping him at the edge.")]
         [SerializeField] private bool enemyExternalPushCanForcePlatformExit = true;
 
+        [Tooltip("ON = when the falling-stone platform repulse reaches the edge, the Warrior enters the shared LosingBalance recovery (input stays active to jump/move) instead of being forced into a locked jump-fall. Only affects the FallingStone platform repulse.")]
+        [SerializeField] private bool stoneRepulseEdgeGivesRecovery = true;
+
         [Tooltip("Small X tolerance used when deciding that the Warrior has crossed a platform edge because of enemy push/repulse.")]
         [SerializeField, Min(0f)] private float enemyExternalPushEdgeTolerance = 0.02f;
 
@@ -1443,6 +1439,20 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (!passedRightEdge && !passedLeftEdge && !noGroundLeft)
                 return false;
 
+            // Requested behavior for the FallingStone platform repulse:
+            // at the edge, give the player a LosingBalance recovery window with active input
+            // instead of forcing a locked jump-fall off the platform.
+            if (stoneRepulseEdgeGivesRecovery)
+            {
+                BeginStoneRepulseEdgeLosingBalanceRecovery(
+                    platform,
+                    restoreCanAttackWarrior,
+                    restoreCanAttack
+                );
+
+                return true;
+            }
+
             BeginEnemyExternalPushFall(
                 platform,
                 direction,
@@ -1489,11 +1499,14 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (platform != null && platform.platformCollider != null && collider2 != null)
             {
                 Bounds pb = platform.platformCollider.bounds;
-                float yOffset = collider2.bounds.extents.y;
+                // Pivot->feet distance (accounts for the collider offset) so the Warrior
+                // lands on the platform top instead of being placed too low and dropping
+                // below thin platforms.
+                float feetToPivot = transform.position.y - collider2.bounds.min.y;
 
                 LastSafePosition = new Vector3(
                     Mathf.Clamp(transform.position.x, pb.min.x, pb.max.x),
-                    pb.max.y + yOffset + 0.05f,
+                    pb.max.y + feetToPivot + 0.05f,
                     transform.position.z
                 );
 
@@ -1521,6 +1534,65 @@ namespace Assets.Scripts.Characteres.WarriorController
             JumpAnimationDisplay();
 
             Debug.Log("[EnemyExternalPush] Warrior was pushed past platform edge and is now falling naturally.");
+        }
+
+        /// <summary>
+        /// FallingStone platform-repulse edge handling.
+        /// Instead of forcing a locked jump-fall, hand the Warrior to the shared
+        /// LosingBalance recovery system: it plays the losing-balance animation and
+        /// keeps input active for losingBalanceFallDelay so the player can jump/move
+        /// to recover. If the player does nothing, that system forces the physics fall.
+        /// </summary>
+        private void BeginStoneRepulseEdgeLosingBalanceRecovery(
+            PlatFormColliderTrigger platform,
+            bool restoreCanAttackWarrior,
+            bool restoreCanAttack)
+        {
+            StopMoveTowardCoroutine();
+            StopJumpTowardCoroutine();
+
+            // End the repulse lock so the player regains control during the recovery window.
+            _platformStoneRepulseActive = false;
+            _platformStoneRepulseStoppedByEnemyContact = false;
+            _platformStoneRepulseBlockingEnemy = null;
+            _blockedByEnemyContact = false;
+            _blockingEnemy = null;
+            _blockAction = false;
+
+            // IMPORTANT: do NOT set IsFallingEdge here.
+            // While losing balance the player must be allowed to jump/move (HandleInput
+            // blocks input when IsFallingEdge is true). The shared LosingBalance fall
+            // routine sets the falling flags later, only if no recovery happens.
+            IsFallingEdge = false;
+            IsFallingPlfExit = false;
+            IsFallingHitEnemy = false;
+            IsFallingGrazesEdge = false;
+
+            if (_deathStarted || CanDie || IsDeadOrDying)
+                return;
+
+            // Restore input so the player can attempt a recovery jump/move.
+            CanMove = true;
+            CanAttackWarrior = restoreCanAttackWarrior;
+            CanAttack = restoreCanAttack;
+
+            // Kill the residual repulse velocity so the Warrior teeters at the edge
+            // (keeping at least one ground point) instead of sliding straight off.
+            if (rigidbody2 != null)
+            {
+                Vector2 v = rigidbody2.linearVelocity;
+                v.x = 0f;
+                rigidbody2.linearVelocity = v;
+                rigidbody2.angularVelocity = 0f;
+            }
+
+            if (platform != null)
+                LastSafePlatform = platform;
+
+            // Shared recovery entry point: LosingBalance animation + recovery countdown.
+            ShowLosingBalance();
+
+            Debug.Log("[StoneRepulse EDGE] Warrior reached the edge -> LosingBalance recovery (input active).");
         }
 
         private void IgnoreOldPlatformDuringExternalPushFall(PlatFormColliderTrigger platform)

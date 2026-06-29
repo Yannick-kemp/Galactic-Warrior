@@ -108,11 +108,26 @@ public class PlatformGraphAStar : MonoBehaviour
     {
         if (a == null || b == null) return false;
 
+        // Never route ONTO a culled platform: a culled zone deactivates the whole platform GameObject
+        // (ZoneCullable.SetZoneActive), so its collider is disabled and an agent jumping there would
+        // fall through. Excluding it as a destination also keeps it from injecting a phantom node into
+        // the graph near the culling boundary (which made chasers flip left/right on the spot).
+        //
+        // Do NOT block pathing FROM the source node, even if it is momentarily culled: the agent is
+        // physically standing on it, and excluding it would strand a chaser with no path at all (frozen
+        // on the spot). The source still has valid geometry because RefreshGeometry preserves the last
+        // known-good bounds while a platform is inactive.
+        if (!b.IsUsableForPathing) return false;
+
         a.RefreshGeometry();
         b.RefreshGeometry();
 
-        Bounds A = a.Bounds;
-        Bounds B = b.Bounds;
+        // Use the swept-travel envelope (motion platforms widen this). For static
+        // platforms it equals the current collider bounds, so this is a no-op there.
+        // This keeps edges to/from moving platforms stable across the whole motion
+        // cycle instead of flickering with the platform's instantaneous position.
+        Bounds A = a.ReachabilityBounds;
+        Bounds B = b.ReachabilityBounds;
 
         // Horizontal gap between platform edges
         float gapX = 0f;
@@ -269,6 +284,10 @@ public class PlatformNode
     public Bounds Bounds;
     public Vector2 TopCenter;
 
+    // Bounds used only by the reachability test. For motion platforms this is the full
+    // swept envelope of their travel; for static platforms it equals Bounds.
+    public Bounds ReachabilityBounds;
+
     public List<PlatformNode> Neighbors = new List<PlatformNode>();
 
     public PlatformNode Parent;
@@ -282,12 +301,31 @@ public class PlatformNode
         RefreshGeometry();
     }
 
+    /// <summary>
+    /// True only while the platform can really be walked/landed on right now. A culled zone
+    /// deactivates the whole platform GameObject; its collider then reports degenerate (0,0,0)
+    /// bounds, so it must be excluded from pathfinding rather than treated as a real waypoint.
+    /// </summary>
+    public bool IsUsableForPathing =>
+        Platform != null &&
+        Platform.platformCollider != null &&
+        Platform.platformCollider.enabled &&
+        Platform.platformCollider.gameObject.activeInHierarchy;
+
     public void RefreshGeometry()
     {
-        if (Platform != null && Platform.platformCollider != null)
-        {
-            Bounds = Platform.platformCollider.bounds;
-            TopCenter = new Vector2(Bounds.center.x, Bounds.max.y);
-        }
+        if (Platform == null || Platform.platformCollider == null)
+            return;
+
+        // Never overwrite the last-known-good geometry with the degenerate (0,0,0) bounds a
+        // disabled/inactive collider reports while its zone is culled. Keeping the cached bounds
+        // means the node has valid geometry the instant its zone reactivates, and the graph is
+        // never poisoned with an origin-positioned phantom node mid-cull.
+        if (!Platform.platformCollider.enabled || !Platform.platformCollider.gameObject.activeInHierarchy)
+            return;
+
+        Bounds = Platform.platformCollider.bounds;
+        TopCenter = new Vector2(Bounds.center.x, Bounds.max.y);
+        ReachabilityBounds = Platform.GetReachabilityBounds();
     }
 }

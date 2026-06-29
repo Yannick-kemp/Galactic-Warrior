@@ -23,6 +23,9 @@ namespace Assets.Scripts.Characteres.EnemyContoller
     /// </summary>
     public class ZortBoss : Enemy
     {
+        // Boss: may intentionally body-ram the Warrior, so the anti-penetration guard stays off here.
+        protected override bool AllowWarriorBodyPenetrationGuard => false;
+
         public enum Phase { One, Two, Three }
 
         [Header("Zort - Data")]

@@ -456,6 +456,8 @@ MonoBehaviour:
   enemyTopTrapFallGravity: 3.5
   enemyTopTrapMinDownVelocity: 1.25
   notifyEnemiesToSideStepOnTopTrap: 1
+  enableLandBetweenEnemies: 1
+  landBetweenEnemiesRaycastMaxDistance: 6
   enableSingleEnemyTopStuckEscape: 1
   singleEnemyTopStuckTime: 0.3
   enableEnemyOverlapRecovery: 1
@@ -480,6 +482,7 @@ MonoBehaviour:
   stopPlatformStoneRepulseOnEnemyContact: 1
   platformStoneEnemyContactSkin: 0.03
   enemyExternalPushCanForcePlatformExit: 1
+  stoneRepulseEdgeGivesRecovery: 1
   enemyExternalPushEdgeTolerance: 0.02
   enemyExternalPushFallMinXVelocity: 2.5
   enemyExternalPushFallGravityScale: 3
@@ -607,6 +610,7 @@ MonoBehaviour:
   iceTouchGuardDuration: 0.12
   minIceAimDistance: 0.12
   attack3FailsafeSeconds: 1.25
+  castOrphanGraceSeconds: 0.4
   meteorDamageMinInterval: 0.12
   meteorShieldBlockCost: 5
   meteorHitStunSeconds: 0.08
@@ -723,9 +727,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 09aa693dffa2d9c4db90ab8aac8b492a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  cleanTransferPoints: 25
-  crowdHitPoints: 20
-  crowdHitExtraPerEnemy: 8
+  cleanTransferPoints: 5
+  crowdHitPoints: 1
+  crowdHitExtraPerEnemy: 10
   maxTransferTime: 1.6
   minAirTime: 0.08
   minVerticalGain: 0.1
@@ -780,7 +784,7 @@ AudioSource:
   SpatializePostEffects: 0
   Priority: 128
   DopplerLevel: 1
-  MinDistance: 1
+  MinDistance: 4.3258514
   MaxDistance: 500
   Pan2D: 0
   rolloffMode: 0

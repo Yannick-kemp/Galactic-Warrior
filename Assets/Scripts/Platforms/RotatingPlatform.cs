@@ -56,6 +56,24 @@ public class RotatingPlatform : PlatFormPlfColliderTrigger
         }
     }
 
+    /// <summary>
+    /// Returns the collider bounds widened by the orbit radius in every direction so the
+    /// A* graph treats an edge to/from this platform as reachable across its whole orbit,
+    /// not only at the instant it happens to be close to a neighbour.
+    /// </summary>
+    public override Bounds GetReachabilityBounds()
+    {
+        Bounds b = base.GetReachabilityBounds();
+
+        if (platformCollider == null || Radius <= 0f)
+            return b;
+
+        // Bounds.Expand grows the total size by the given amount per axis (half on each
+        // side), so 2*Radius makes each side grow by the full orbit Radius.
+        b.Expand(new Vector3(2f * Radius, 2f * Radius, 0f));
+        return b;
+    }
+
     private Rigidbody2D _platformBody;
 
     private Vector2 _center;

@@ -398,6 +398,11 @@ MonoBehaviour:
   DescendentPhase: 0
   _isJumping: 0
   _isMoving: 0
+  enableDestinationPlatformAntiTunnel: 1
+  antiTunnelLandingSkin: 0.015
+  antiTunnelCastExtraDistance: 0.08
+  antiTunnelHorizontalSkin: 0.03
+  antiTunnelTopStartTolerance: 0.04
   Range: 5.5
   attackCooldown: 1.5
   attackDamage: 10
@@ -430,8 +435,11 @@ MonoBehaviour:
   meleeHitDistance: 0.65
   useWorldYDeathFallback: 1
   worldDeathY: -30
+  groundBound: 0
+  groundBoundSeatTolerance: 0.06
   targetAnimationName: AttackAnimation
   enemyType: 9
+  scoreValue: 40
   isBoss: 1
   bossDisplayName: HivernoxBoss
   totalFramesInAnimation: 16
@@ -439,6 +447,20 @@ MonoBehaviour:
   disableAttackWhenHitSeconds: 0.2
   hitReaction: {fileID: 0}
   patrolEdgeArriveThreshold: 0.12
+  preventWarriorBodyMomentumPush: 1
+  warriorBodyPushRestoreStrength: 1
+  maxAllowedBodyPushDistance: 0.03
+  warriorBodyPushContactMemory: 0.1
+  warriorBodyPushMaxCorrectionPerStep: 0.2
+  preventWarriorBodyHorizontalPush: 1
+  preventWarriorBodyVerticalLift: 1
+  warriorBodyLiftAllowance: 0.04
+  cancelWarriorBodyPushVelocity: 1
+  useGroundCheckPointForPatrolEdge: 1
+  patrolEdgeAheadProbeDistance: 0.55
+  patrolEdgeRayExtraLength: 0.2
+  patrolEdgeBoundsSkin: 0.02
+  participatesInWarriorTopPingPongEscape: 1
   state: 0
   activateOnStart: 0
   debugStateChanges: 0
