@@ -143,6 +143,10 @@ public class GameMgr : MonoBehaviour, IGame
     private const string ContinueSceneIndexKey = "GW_ContinueSceneIndex";
     private const string LegacyLevel2UnlockedKey = "GW_Level2Unlocked";
 
+    // WarriorScene onboarding tutorial — persisted like the other one-shot flags so the
+    // tutorial is only ever shown on the very first WarriorScene playthrough.
+    private const string TutorialCompletedKey = "GW_TutorialCompleted";
+
     [Header("Post-Level Complete")]
     [SerializeField] private bool returnToMenuAfterPurchasedLevelComplete = true;
 
@@ -238,6 +242,36 @@ public class GameMgr : MonoBehaviour, IGame
         if (Instance == this)
             SceneManager.sceneLoaded -= HandleSceneLoaded;
     }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+    private void Update()
+    {
+        // DEV: F9 anywhere wipes all saved state and reloads the current scene from scratch,
+        // so the WarriorScene tutorial (and any other one-shot flag) replays immediately.
+        // Lives on GameMgr because it is the persistent (DontDestroyOnLoad) singleton present
+        // in every gameplay scene — unlike DebugSaveHotkeys which only existed in the menu.
+        if (Input.GetKeyDown(KeyCode.F9))
+        {
+            ResetAllProgressForDev();
+            Time.timeScale = 1f;
+
+            // Destroy the persistent (DontDestroyOnLoad) warrior so the reloaded scene spawns a
+            // fresh one that re-registers cleanly via RegisterHero. A raw LoadScene leaves the old
+            // warrior alive AND a new scene instance, so GameMgr.WarriorInstance ends up stale/null
+            // (while Warrior.Instance still works) → the game plays but Retry/Revive fail, because
+            // both check WarriorInstance. This mirrors the official scene-transition cleanup.
+            if (Warrior.Instance != null)
+                Destroy(Warrior.Instance.gameObject);
+            WarriorInstance = null;
+
+            if (InputMgr.Instance != null)
+                InputMgr.Instance.InputLocked = false;
+
+            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+            Debug.Log("[GameMgr] DEV F9: full reset + active scene reloaded (persistent warrior destroyed).");
+        }
+    }
+#endif
 
     public void Initialize()
     {
@@ -557,11 +591,17 @@ public class GameMgr : MonoBehaviour, IGame
     {
         // The life was already consumed at death (HandleWarriorDead). If none remain → real game over.
         if (retryCount >= maxRetries)
+        {
+            Debug.LogWarning($"[GameMgr] Retry refused: no retries left (retryCount={retryCount}/{maxRetries}).");
             return false;
+        }
 
         Warrior warrior = WarriorInstance;
         if (warrior == null)
+        {
+            Debug.LogWarning("[GameMgr] Retry refused: WarriorInstance is null.");
             return false;
+        }
 
         ResetMeteorHazards(true);
 
@@ -775,6 +815,17 @@ public class GameMgr : MonoBehaviour, IGame
     // ─── Final victory (last campaign scene boss defeated) ───────────────────────
 
     public bool IsGameCompleted => PlayerPrefs.GetInt(GameCompletedKey, 0) == 1;
+
+    // ─── WarriorScene tutorial completion (persistent, one-shot) ─────────────────
+    public bool IsTutorialCompleted => PlayerPrefs.GetInt(TutorialCompletedKey, 0) == 1;
+
+    public void MarkTutorialCompleted()
+    {
+        if (IsTutorialCompleted) return;
+
+        PlayerPrefs.SetInt(TutorialCompletedKey, 1);
+        PlayerPrefs.Save();
+    }
 
     private void ShowFinalVictoryScreen()
     {
@@ -1021,6 +1072,37 @@ public class GameMgr : MonoBehaviour, IGame
         OnBossRelicCountChanged?.Invoke(0);
     }
 
+    /// <summary>
+    /// DEV ONLY. Wipes every persisted state in one shot (progression, checkpoints, boss
+    /// relics, campaign unlock AND the WarriorScene tutorial flag) and re-syncs the in-memory
+    /// caches from the now-empty store. Single source of truth for dev resets so new keys are
+    /// always covered. Effective only in the Editor / development builds.
+    /// </summary>
+    public void ResetAllProgressForDev()
+    {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        PlayerPrefs.DeleteAll();
+        PlayerPrefs.Save();
+
+        // Force a fully clean baseline before reloading from the wiped store.
+        level2Unlocked = false;
+
+        // Reset the in-run lives too: F9 reloads the scene with a raw LoadScene that bypasses the
+        // menu/revive paths which normally zero these — without this, retryCount leaks across F9
+        // reloads and eventually hits maxRetries, making the in-game Retry button fail.
+        retryCount = 0;
+        _deathConsumed = false;
+
+        LoadBossRelicsFromDisk();
+        LoadCheckpointFromDisk();
+        LoadProgression();
+
+        OnBossRelicCountChanged?.Invoke(BossRelicCount);
+
+        Debug.Log("[GameMgr] DEV reset: all persisted state wiped (incl. tutorial, checkpoints, progression, lives).");
+#endif
+    }
+
     public void UnlockLevel2()
     {
         level2Unlocked = true;
@@ -1064,6 +1146,23 @@ public class GameMgr : MonoBehaviour, IGame
         }
 
         LoadMainMenu();
+    }
+
+    // Silent unlock used when an existing purchase is RESTORED at startup (FetchPurchases), as
+    // opposed to a fresh purchase. It must never navigate/LoadMainMenu — otherwise an owner who is
+    // mid-gameplay (e.g. sent into WarriorScene by the tutorial gate) gets bounced back to the menu
+    // the moment the store reports ownership. Only refreshes the menu if we are actually on it.
+    public void OnPurchaseRestored()
+    {
+        UnlockLevel2();
+        HideAnyPurchaseScreen();
+
+        if (IsMainMenuScene())
+        {
+            var menu = FindFirstObjectByType<MainMenuUI>(FindObjectsInactive.Include);
+            if (menu != null)
+                menu.Refresh();
+        }
     }
 
     public void OnPurchaseDeclined()
@@ -1344,7 +1443,7 @@ public class GameMgr : MonoBehaviour, IGame
         ResetMenuLaunchState();
         ScoreManager.Instance?.StartNewRun();
 
-        string target = GetContinueSceneName();
+        string target = EnforceTutorialGate(GetContinueSceneName());
 
         // Resume at the saved checkpoint when it belongs to the scene we are loading.
         _pendingCheckpointRespawn =
@@ -1366,7 +1465,26 @@ public class GameMgr : MonoBehaviour, IGame
         ResetMenuLaunchState();
         _suppressCheckpointRespawnOnce = true; // Level Select always plays the chosen level from its start.
         ScoreManager.Instance?.StartNewRun();
-        SceneManager.LoadScene(campaignSceneOrder[sceneIndex]);
+        SceneManager.LoadScene(EnforceTutorialGate(campaignSceneOrder[sceneIndex]));
+    }
+
+    // Onboarding gate: until the WarriorScene tutorial has been completed once, every campaign
+    // entry (Continue, Level Select, post-purchase routing through the menu) is redirected to
+    // WarriorScene so the tutorial can never be skipped — e.g. a player who buys the game without
+    // playing the demo and taps Continue would otherwise land straight in AgeOfIce. Once completed
+    // (GW_TutorialCompleted == 1) this is a no-op and normal routing resumes. Progress is preserved:
+    // HighestReachedSceneIndex is never lowered, so all unlocked levels stay available afterwards.
+    private string EnforceTutorialGate(string requestedSceneName)
+    {
+        if (IsTutorialCompleted)
+            return requestedSceneName;
+        if (string.IsNullOrEmpty(warriorSceneName))
+            return requestedSceneName;
+        if (requestedSceneName == warriorSceneName)
+            return requestedSceneName;
+
+        Debug.Log($"[GameMgr] Tutorial gate: redirecting '{requestedSceneName}' → '{warriorSceneName}' (tutorial not completed yet).");
+        return warriorSceneName;
     }
 
     private void ResetMenuLaunchState()

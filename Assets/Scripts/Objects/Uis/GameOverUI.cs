@@ -121,7 +121,9 @@ public class GameOverUI : MonoBehaviour
 
         yield return StartCoroutine(FadeOverlayTo(1f, retryFadeDuration));
 
+        Debug.LogWarning($"[GameOverUI] Retry clicked — GameMgr.Instance is null? {GameMgr.Instance == null}");
         bool ok = GameMgr.Instance?.TryRetryFromDeath() ?? false;
+        Debug.LogWarning($"[GameOverUI] TryRetryFromDeath returned {ok}");
 
         if (!ok)
         {
