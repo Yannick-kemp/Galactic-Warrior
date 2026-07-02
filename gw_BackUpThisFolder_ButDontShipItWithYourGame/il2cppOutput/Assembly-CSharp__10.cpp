@@ -1586,6 +1586,17 @@ struct Warrior_tCF382FDF8BE1AF9BDE52BF0954F020A2691F1C2F  : public CharacterCont
 	float ___singleEnemyTopStuckTime;
 	Enemy_t7209B1F9581AA972DD665F1F0DE2B98C580F6812* ____singleEnemyTopContactEnemy;
 	float ____singleEnemyTopContactStartedAt;
+	bool ___enableEnemyTopPingPongAbsoluteFailsafe;
+	int32_t ___absoluteFailsafeContactLimit;
+	float ___absoluteFailsafeStuckSeconds;
+	float ___absoluteFailsafeIdleResetSeconds;
+	float ___absoluteFailsafeGroundSearchDistance;
+	float ___absoluteFailsafePhaseThroughMaxSeconds;
+	int32_t ____absoluteFailsafeContactCount;
+	float ____absoluteFailsafeStuckSince;
+	float ____absoluteFailsafeLastContactTime;
+	bool ____absoluteFailsafeActive;
+	Coroutine_t85EA685566A254C23F3FD77AB5BDFFFF8799596B* ____absoluteFailsafeRoutine;
 	bool ___enableEnemyOverlapRecovery;
 	float ___overlapRecoveryPenetrationEpsilon;
 	float ___overlapRecoveryScanPad;

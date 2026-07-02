@@ -370,6 +370,9 @@ public class ZalaytyMonster : Enemy
     [Tooltip("When true, a side impact while Zalayty is in a controlled platform-change jump interrupts the arc and lets him recover/fall naturally.")]
     [SerializeField] private bool interruptZalaytyJumpOnDifferentPlatformImpact = true;
 
+    [Tooltip("When true, if the different-platform impact happens while Zalayty is actually ARRIVING on the destination platform (the Warrior simply occupies his beside-her landing spot), complete the landing beside her instead of dropping him into a free-fall back to origin. Only genuine mid-air side impacts (over a gap) still free-fall. Fixes Zalayty never being able to reach a Warrior-occupied platform.")]
+    [SerializeField] private bool landOnWarriorPlatformInsteadOfFallingOnImpact = true;
+
     [Tooltip("If true, the absorber requires both CurrentplatForm values to be known and different. This keeps same-platform combat untouched.")]
     [SerializeField] private bool requireKnownDifferentPlatformsForImpactAbsorption = true;
 
@@ -2054,6 +2057,15 @@ public class ZalaytyMonster : Enemy
         if (_activeJumpTargetPlatform == platform)
             _activeJumpTargetPlatform = null;
 
+        // A confirmed landing ENDS the platform-change jump. Clear its whole signature so the
+        // next physics frame's body contact with a grounded Warrior — Zalayty is now seated
+        // right beside her — is handled as normal same-platform contact-combat, NOT as another
+        // platform-change jump impact. Leaving these set re-entered the impact interrupt with a
+        // now-null target platform and free-fell Zalayty back off the platform he had just
+        // reached, so he could never actually stay on a Warrior-occupied platform.
+        _lastZalaytyBodyMoveWasPlatformChangeJump = false;
+        _recentPlatformChangeArrivalUntil = -999f;
+
         RestoreActiveJumpDownSourcePlatformNow();
 
         StopHorizontalVelocityIfNeeded();
@@ -3674,6 +3686,47 @@ public class ZalaytyMonster : Enemy
         {
             PlatFormColliderTrigger missedPlatform = _activeJumpTargetPlatform;
             StopJumpTowardCoroutine();
+
+            // TEMP DIAGNOSTIC — remove after tuning.
+            UnityEngine.Debug.Log(
+                $"[ZALAYTY-SEAT] IMPACT INTERRUPT: missedPlatform={(missedPlatform != null ? missedPlatform.name : "NULL")} " +
+                $"landFixEnabled={landOnWarriorPlatformInsteadOfFallingOnImpact} " +
+                $"isJumping={_isJumping} activeJumpCo={(activesJumpCoroutine != null)} " +
+                $"lastMoveWasPlatformChange={_lastZalaytyBodyMoveWasPlatformChangeJump}",
+                this);
+
+            // The Warrior shove was already absorbed by the caller (she stays put). If
+            // Zalayty is genuinely ARRIVING on the destination platform — the common case
+            // where the Warrior merely occupies his beside-her landing spot — COMPLETE the
+            // landing beside her instead of dropping him into an uncontrolled free-fall.
+            // Free-falling back to origin is exactly why a Warrior-occupied platform could
+            // never be reached (Zalayty retried the same jump forever). Only a real mid-air
+            // side impact over a gap (where he cannot seat) still falls through to recovery.
+            if (landOnWarriorPlatformInsteadOfFallingOnImpact &&
+                TryLandZalaytyOnTargetPlatformInsteadOfFalling(missedPlatform))
+                return;
+
+            // Backstop against re-ejection: if there is no known jump target left but Zalayty is
+            // already really grounded on a platform, he has effectively arrived. Never free-fall
+            // him off ground he is standing on — clear the stale platform-change signature and stop.
+            if (missedPlatform == null &&
+                CurrentplatForm != null &&
+                IsZalaytyReallyGroundedOnPlatform(CurrentplatForm))
+            {
+                _lastZalaytyBodyMoveWasPlatformChangeJump = false;
+                _recentPlatformChangeArrivalUntil = -999f;
+
+                if (rigidbody2 != null)
+                {
+                    Vector2 grounded = rigidbody2.linearVelocity;
+                    grounded.x = 0f;
+                    rigidbody2.linearVelocity = grounded;
+                }
+
+                UnityEngine.Debug.Log("[ZALAYTY-SEAT] BACKSTOP: null target but already grounded -> STAY (no free-fall)", this);
+                return;
+            }
+
             BeginMissedMovingPlatformLandingRecovery(missedPlatform);
             return;
         }
@@ -3684,6 +3737,111 @@ public class ZalaytyMonster : Enemy
             v.x = 0f;
             rigidbody2.linearVelocity = v;
         }
+    }
+
+    /// <summary>
+    /// Called at the different-platform impact interrupt. If Zalayty is actually on/near the
+    /// destination platform top, seat him BESIDE the Warrior and finish the jump grounded
+    /// instead of free-falling back to origin. Returns true only when he really lands.
+    /// A genuine mid-air side impact (far from the platform top / over a gap) returns false
+    /// so the caller keeps the natural free-fall recovery.
+    /// </summary>
+    private bool TryLandZalaytyOnTargetPlatformInsteadOfFalling(PlatFormColliderTrigger platform)
+    {
+        if (platform == null || platform.platformCollider == null)
+            return false;
+
+        if (_deathStarted || currentHealth <= 0f)
+            return false;
+
+        Physics2D.SyncTransforms();
+
+        // ===== TEMP DIAGNOSTIC (Zalayty free-fall-on-impact) — remove after tuning =====
+        // Measures why the beside-Warrior seat passes or fails at the impact interrupt.
+        // Fires only on the different-platform impact interrupt (cooldown-gated), not per frame.
+        LogZalaytySeatDiagnostic(platform);
+        // ===============================================================================
+
+        // Already cleanly on the platform surface: just finish grounded.
+        if (IsZalaytyReallyGroundedOnPlatform(platform))
+        {
+            UnityEngine.Debug.Log($"[ZALAYTY-SEAT] RESULT=already-grounded on '{platform.name}' -> LAND OK", this);
+            FinishIndependentJumpOnPlatform(platform);
+            return true;
+        }
+
+        // Close enough to snap: seat him beside the Warrior (never on her top) and finish.
+        Warrior warrior = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
+
+        Vector2 currentPosition = rigidbody2 != null
+            ? rigidbody2.position
+            : (Vector2)transform.position;
+
+        Vector2 besideWarrior = ResolvePlatformJumpLandingAwayFromWarriorTop(
+            currentPosition,
+            platform,
+            warrior);
+
+        if (TrySeatZalaytyOnPlatformIfClose(platform, besideWarrior.x, out Vector2 seatedPosition))
+        {
+            MoveZalaytyBody(seatedPosition);
+            Physics2D.SyncTransforms();
+
+            if (IsZalaytyReallyGroundedOnPlatform(platform))
+            {
+                UnityEngine.Debug.Log($"[ZALAYTY-SEAT] RESULT=seated-then-grounded on '{platform.name}' -> LAND OK", this);
+                FinishIndependentJumpOnPlatform(platform);
+                return true;
+            }
+
+            UnityEngine.Debug.Log($"[ZALAYTY-SEAT] RESULT=seated-but-NOT-grounded on '{platform.name}' -> FREE-FALL (seat moved him but IsZalaytyReallyGroundedOnPlatform still false)", this);
+            return false;
+        }
+
+        UnityEngine.Debug.Log($"[ZALAYTY-SEAT] RESULT=seat-rejected on '{platform.name}' -> FREE-FALL", this);
+        return false;
+    }
+
+    // TEMP DIAGNOSTIC — remove after tuning. Logs the exact seat measurements vs thresholds
+    // so we know whether Zalayty is too far horizontally, too high/low vertically, or moving
+    // upward when the beside-Warrior seat is attempted at the different-platform impact interrupt.
+    private void LogZalaytySeatDiagnostic(PlatFormColliderTrigger platform)
+    {
+        if (platform == null || platform.platformCollider == null)
+        {
+            UnityEngine.Debug.Log("[ZALAYTY-SEAT] platform NULL at interrupt -> cannot land (missed jump target not tracked)", this);
+            return;
+        }
+
+        Collider2D body = GetZalaytyBodyCollider();
+        if (body == null)
+        {
+            UnityEngine.Debug.Log($"[ZALAYTY-SEAT] body collider NULL on '{platform.name}'", this);
+            return;
+        }
+
+        Bounds pB = platform.platformCollider.bounds;
+        Bounds bB = body.bounds;
+
+        bool horizontallyClose =
+            bB.max.x > pB.min.x - movingLandingSnapMaxHorizontalDistance &&
+            bB.min.x < pB.max.x + movingLandingSnapMaxHorizontalDistance;
+
+        float bottomAboveTop = bB.min.y - pB.max.y;
+        float vMin = -independentLandingBand;
+        float vMax = landingYOffset + movingLandingSnapMaxVerticalDistance;
+        bool verticallyClose = bottomAboveTop >= vMin && bottomAboveTop <= vMax;
+
+        float vy = rigidbody2 != null ? rigidbody2.linearVelocity.y : 0f;
+        bool upwardBlock = rigidbody2 != null && vy > 0.08f && !DescendentPhase;
+
+        UnityEngine.Debug.Log(
+            $"[ZALAYTY-SEAT] plat='{platform.name}' " +
+            $"grounded={IsZalaytyReallyGroundedOnPlatform(platform)} | " +
+            $"HORIZ close={horizontallyClose} (bodyX=[{bB.min.x:F2},{bB.max.x:F2}] platX=[{pB.min.x:F2},{pB.max.x:F2}] margin={movingLandingSnapMaxHorizontalDistance:F2}) | " +
+            $"VERT close={verticallyClose} (bottomAboveTop={bottomAboveTop:F2} window=[{vMin:F2},{vMax:F2}]) | " +
+            $"vy={vy:F2} descend={DescendentPhase} upwardBlock={upwardBlock}",
+            this);
     }
 
     private bool TryHandleSamePlatformWarriorMainBoxContact(Collision2D collision)

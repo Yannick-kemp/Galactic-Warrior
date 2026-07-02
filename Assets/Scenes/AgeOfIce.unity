@@ -7709,7 +7709,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: meteorDamage
-      value: 15
+      value: 8
+      objectReference: {fileID: 0}
+    - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
+      propertyPath: meteorHitStunSeconds
+      value: 0.06
       objectReference: {fileID: 0}
     - target: {fileID: 3081477084896002268, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: m_Name
@@ -12650,7 +12654,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 3170026781034161643, guid: 5e7a9b7a82a134e40b327fb74eff50ce, type: 3}
       propertyPath: m_Name
-      value: plf-crack (2)
+      value: plf-crack (20000)
       objectReference: {fileID: 0}
     - target: {fileID: 3170026781034161643, guid: 5e7a9b7a82a134e40b327fb74eff50ce, type: 3}
       propertyPath: m_IsActive
@@ -16987,7 +16991,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: meteorDamage
-      value: 15
+      value: 8
+      objectReference: {fileID: 0}
+    - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
+      propertyPath: meteorHitStunSeconds
+      value: 0.06
       objectReference: {fileID: 0}
     - target: {fileID: 3081477084896002268, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: m_Name
@@ -20961,7 +20969,7 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
-    overrideIsBoss: 0
+    overrideIsBoss: 1
     isBoss: 0
     overrideSparkStun: 0
     sparkStunSeconds: 0.1

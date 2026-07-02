@@ -88,6 +88,31 @@ namespace Assets.Scripts.Characteres.WarriorController
         private Enemy _singleEnemyTopContactEnemy;
         private float _singleEnemyTopContactStartedAt = -999f;
 
+        [Header("Enemy Top Ping-Pong ABSOLUTE Failsafe (anti soft-lock)")]
+        [Tooltip("ON = last-resort guaranteed escape that does NOT depend on the enemy cluster geometry, on which enemy was already bounced, or on the enemies cooperating (side-step / repath). It fires when the Warrior has been ping-ponging on enemy tops for too many total contacts OR too long, regardless of identity — the case that made a >2 Zalayty cluster over no reachable ground trap the Warrior forever. Leave ON.")]
+        [SerializeField] private bool enableEnemyTopPingPongAbsoluteFailsafe = true;
+
+        [Tooltip("Total enemy-top contacts (ANY enemy, NOT windowed, NOT per-enemy) that force the failsafe. Keep well above the normal 2-enemy resolution (~2-3 contacts) so it only triggers on the pathological perpetual loop.")]
+        [SerializeField, Min(2)] private int absoluteFailsafeContactLimit = 6;
+
+        [Tooltip("Continuous seconds the Warrior may stay airborne/pinned on enemy tops (zero own ground points) before the failsafe forces a resolution. Parallel trigger to the contact count.")]
+        [SerializeField, Min(0.2f)] private float absoluteFailsafeStuckSeconds = 1.5f;
+
+        [Tooltip("If no enemy-top contact happens for this long, the absolute-failsafe counters self-reset so unrelated later encounters do not accumulate onto a stale count.")]
+        [SerializeField, Min(0.2f)] private float absoluteFailsafeIdleResetSeconds = 1.2f;
+
+        [Tooltip("Downward search distance for real ground (PlatformLayer) below the Warrior when the failsafe fires. Ground within this range → phase-through toward it; nothing within range → straight teleport to the last safe position.")]
+        [SerializeField, Min(0.5f)] private float absoluteFailsafeGroundSearchDistance = 12f;
+
+        [Tooltip("Maximum duration of the phase-through fall before we give up and teleport to the last safe position (backstop even when a ground raycast said ground existed).")]
+        [SerializeField, Min(0.2f)] private float absoluteFailsafePhaseThroughMaxSeconds = 1.5f;
+
+        private int _absoluteFailsafeContactCount;
+        private float _absoluteFailsafeStuckSince = -1f;
+        private float _absoluteFailsafeLastContactTime = -999f;
+        private bool _absoluteFailsafeActive;
+        private Coroutine _absoluteFailsafeRoutine;
+
         #endregion
 
         #region Enemy Overlap Recovery (Guaranteed Separation Backstop)
@@ -549,6 +574,15 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (!warriorOnEnemyTop)
                 return false;
 
+            // ── Couche 1 + résolution absolue ─────────────────────────────────────────────
+            // Absolute, geometry-independent, identity-independent backstop. Runs BEFORE the
+            // windowed per-enemy chain logic below. It only takes over when that logic has
+            // provably failed to resolve the situation (perpetual >2-enemy ping-pong over no
+            // reachable ground — the Zalayty soft-lock). In normal 1-2 enemy cases the chain
+            // resolves long before these thresholds, so this is a no-op there.
+            if (UpdateAndCheckEnemyTopPingPongAbsoluteFailsafe(registerBounceContact))
+                return true;
+
             List<Enemy> nearbyEnemies = GetNearbyEnemiesForTopTrap(enemy);
 
             // The multi-enemy chain rule below exists only for the top-bounce bridge.
@@ -691,6 +725,239 @@ namespace Assets.Scripts.Characteres.WarriorController
         {
             _singleEnemyTopContactEnemy = null;
             _singleEnemyTopContactStartedAt = -999f;
+        }
+
+        // ── Enemy Top Ping-Pong ABSOLUTE Failsafe ────────────────────────────────────────
+        // Couche 1: absolute, non-windowed, identity-independent accounting. Returns true
+        // once it has taken over the situation (caller must stop all other bounce handling).
+        private bool UpdateAndCheckEnemyTopPingPongAbsoluteFailsafe(bool registerBounceContact)
+        {
+            if (!enableEnemyTopPingPongAbsoluteFailsafe)
+                return false;
+
+            // Already resolving: swallow every further top contact until the routine ends.
+            // Stale-guard: if the routine reference is gone (e.g. the Warrior was
+            // disabled/re-enabled by a retry mid-resolution) the flag would otherwise stay
+            // stuck and swallow every bounce forever — self-heal instead of freezing.
+            if (_absoluteFailsafeActive)
+            {
+                if (_absoluteFailsafeRoutine != null)
+                    return true;
+
+                _absoluteFailsafeActive = false;
+            }
+
+            // Genuine own-ground support ⇒ not trapped. Reset and let the normal logic run.
+            if (CountGroundPoints() > 0)
+            {
+                ResetEnemyTopPingPongAbsoluteFailsafe();
+                return false;
+            }
+
+            // Self-clean: a long gap since the last top contact means any partial count
+            // belonged to an unrelated, already-resolved encounter.
+            if (Time.time - _absoluteFailsafeLastContactTime > absoluteFailsafeIdleResetSeconds)
+                ResetEnemyTopPingPongAbsoluteFailsafe();
+
+            _absoluteFailsafeLastContactTime = Time.time;
+
+            // Continuous "pinned on tops with no own ground" timer.
+            if (_absoluteFailsafeStuckSince < 0f)
+                _absoluteFailsafeStuckSince = Time.time;
+
+            // Count only real new contacts (OnCollisionEnter), never per-frame Stay callbacks.
+            if (registerBounceContact)
+                _absoluteFailsafeContactCount++;
+
+            bool tooManyContacts = _absoluteFailsafeContactCount >= absoluteFailsafeContactLimit;
+            bool stuckTooLong =
+                Time.time - _absoluteFailsafeStuckSince >= absoluteFailsafeStuckSeconds;
+
+            if (!tooManyContacts && !stuckTooLong)
+                return false;
+
+            TriggerEnemyTopPingPongAbsoluteFailsafe();
+            return true;
+        }
+
+        private void ResetEnemyTopPingPongAbsoluteFailsafe()
+        {
+            _absoluteFailsafeContactCount = 0;
+            _absoluteFailsafeStuckSince = -1f;
+        }
+
+        private void TriggerEnemyTopPingPongAbsoluteFailsafe()
+        {
+            _absoluteFailsafeActive = true;
+            ResetEnemyTopPingPongAbsoluteFailsafe();
+            ResetEnemyTopTrapTracking();
+
+            // Tear down any scripted motion / post-bounce / jump state that owns the body.
+            StopJumpTowardCoroutine();
+            StopMoveTowardCoroutine();
+            if (_postBounceActive)
+                EndPostBounce();
+
+            _postBounceActive = false;
+            _lastBouncedEnemy = null;
+            _blockAction = false;
+
+            IsFallingEdge = false;
+            IsFallingPlfExit = false;
+            IsFallingHitEnemy = false;
+            IsFallingGrazesEdge = false;
+
+            if (_absoluteFailsafeRoutine != null)
+                StopCoroutine(_absoluteFailsafeRoutine);
+
+            _absoluteFailsafeRoutine =
+                StartCoroutine(EnemyTopPingPongAbsoluteFailsafeRoutine());
+        }
+
+        private IEnumerator EnemyTopPingPongAbsoluteFailsafeRoutine()
+        {
+            List<Enemy> allEnemies = GetAllActiveTopPingPongEnemies();
+
+            // Phase 1: ignore EVERY enemy collider (absolute, not a snapshot) so nothing can
+            // re-catch a top while we resolve.
+            SetIgnoreNearbyEnemies(allEnemies, true);
+
+            // Type 2 hybride: real ground within reach directly below the Warrior?
+            bool groundBelow = HasGroundBelowWithin(absoluteFailsafeGroundSearchDistance);
+
+            bool landedNaturally = false;
+
+            if (groundBelow)
+            {
+                // Phase-through: force a clean vertical fall and wait for a genuine ground landing.
+                DescendentPhase = true;
+                CanMove = true;
+                CanAttackWarrior = true;
+
+                if (rigidbody2 != null)
+                {
+                    RigidbodyConstraints2D constraints = rigidbody2.constraints;
+                    constraints &= ~RigidbodyConstraints2D.FreezePositionY;
+                    constraints |= RigidbodyConstraints2D.FreezeRotation;
+                    rigidbody2.constraints = constraints;
+
+                    rigidbody2.gravityScale =
+                        Mathf.Max(rigidbody2.gravityScale, enemyTopTrapFallGravity);
+
+                    Vector2 velocity = rigidbody2.linearVelocity;
+                    velocity.x = 0f;
+                    if (velocity.y > -enemyTopTrapMinDownVelocity)
+                        velocity.y = -enemyTopTrapMinDownVelocity;
+                    rigidbody2.linearVelocity = velocity;
+                    rigidbody2.WakeUp();
+                }
+
+                JumpAnimationDisplay();
+
+                float timeoutAt = Time.time + absoluteFailsafePhaseThroughMaxSeconds;
+                while (Time.time < timeoutAt)
+                {
+                    if (CountGroundPoints() > 0)
+                    {
+                        landedNaturally = true;
+                        break;
+                    }
+                    yield return new WaitForFixedUpdate();
+                }
+            }
+
+            // Phase 2 (fallback): no reachable ground, or phase-through timed out → teleport
+            // to the last known safe standing position.
+            if (!landedNaturally)
+                TeleportToLastSafePositionForFailsafe();
+
+            // Keep enemies ignored a short grace so the landing/teleport cannot be re-trapped,
+            // then restore collisions once the Warrior is actually clear.
+            float restoreTimeoutAt = Time.time + enemyTopTrapIgnoreCollisionTime;
+            while (Time.time < restoreTimeoutAt)
+            {
+                if (AreWarriorAndNearbyEnemiesClear(allEnemies))
+                    break;
+                yield return new WaitForFixedUpdate();
+            }
+
+            SetIgnoreNearbyEnemies(allEnemies, false);
+
+            ResetEnemyTopPingPongAbsoluteFailsafe();
+            _absoluteFailsafeLastContactTime = -999f;
+            _absoluteFailsafeActive = false;
+            _absoluteFailsafeRoutine = null;
+        }
+
+        private List<Enemy> GetAllActiveTopPingPongEnemies()
+        {
+            List<Enemy> result = new List<Enemy>();
+            Enemy[] all = FindObjectsByType<Enemy>(FindObjectsSortMode.None);
+
+            for (int i = 0; i < all.Length; i++)
+            {
+                Enemy e = all[i];
+                if (e == null || !e.gameObject.activeInHierarchy)
+                    continue;
+
+                result.Add(e);
+            }
+
+            return result;
+        }
+
+        private bool HasGroundBelowWithin(float distance)
+        {
+            if (collider2 == null || PlatformLayer.value == 0)
+                return false;
+
+            Vector2 origin = new Vector2(collider2.bounds.center.x, collider2.bounds.min.y);
+            RaycastHit2D hit = Physics2D.Raycast(origin, Vector2.down, distance, PlatformLayer);
+            return hit.collider != null;
+        }
+
+        private void TeleportToLastSafePositionForFailsafe()
+        {
+            // Only teleport to a position we trust as a real, seated platform spot.
+            if (LastSafePlatform == null)
+            {
+                // No trusted safe spot: fall back to a plain downward break so the Warrior at
+                // least leaves the cluster under gravity instead of freezing.
+                if (rigidbody2 != null)
+                {
+                    RigidbodyConstraints2D constraints = rigidbody2.constraints;
+                    constraints &= ~RigidbodyConstraints2D.FreezePositionY;
+                    constraints |= RigidbodyConstraints2D.FreezeRotation;
+                    rigidbody2.constraints = constraints;
+
+                    rigidbody2.gravityScale =
+                        Mathf.Max(rigidbody2.gravityScale, enemyTopTrapFallGravity);
+
+                    Vector2 v = rigidbody2.linearVelocity;
+                    v.x = 0f;
+                    if (v.y > -enemyTopTrapMinDownVelocity)
+                        v.y = -enemyTopTrapMinDownVelocity;
+                    rigidbody2.linearVelocity = v;
+                    rigidbody2.WakeUp();
+                }
+
+                return;
+            }
+
+            if (rigidbody2 != null)
+            {
+                rigidbody2.position = LastSafePosition;
+                Physics2D.SyncTransforms();
+            }
+            else
+            {
+                transform.position = LastSafePosition;
+            }
+
+            // Canonical safe-state reset (zeroes velocity, restores gravity/constraints, idle anim).
+            PrepareForSafeRespawn();
+
+            CurrentplatForm = LastSafePlatform;
         }
 
         private void RegisterEnemyTopTrapBounce(Enemy enemy, bool forceCountBounce)
