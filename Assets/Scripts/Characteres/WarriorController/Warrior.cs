@@ -829,6 +829,8 @@ namespace Assets.Scripts.Characteres.WarriorController
         public override void TakeDamage(float damage)
         {
             if (IsDeadOrDying) return;
+            // WarriorScene onboarding: Warrior is invulnerable until the 4 tutorial steps are done.
+            if (WarriorTutorialController.TutorialActive) return;
             if (_sprintActive) return;
             if (_reviveInvulnerable) return;
             if (_deathStarted) return;

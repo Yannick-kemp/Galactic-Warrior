@@ -7,6 +7,13 @@ using UnityEngine.UI;
 public class ButtonClickHandler : MonoBehaviour,
     IPointerDownHandler, IPointerUpHandler, IPointerExitHandler
 {
+    /// <summary>
+    /// Raised whenever the physical attack button is pressed (pointer down), regardless of
+    /// whether the attack actually resolves. Used by the WarriorScene tutorial to validate
+    /// the "press attack" step. Not fired by internal/world-touch attack calls.
+    /// </summary>
+    public static event System.Action OnAttackButtonPressed;
+
     [Header("Button Reference")]
     [SerializeField] private Button attackButton;
     [SerializeField] private RectTransform buttonRectTransform;
@@ -158,6 +165,8 @@ public class ButtonClickHandler : MonoBehaviour,
     public void OnPointerDown(PointerEventData eventData)
     {
         _pressed = true;
+
+        OnAttackButtonPressed?.Invoke();
 
         ConsumeUiAndBlockWorld(eventData, uiBlockOnPress);
         AttackOnce();

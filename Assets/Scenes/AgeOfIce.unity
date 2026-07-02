@@ -2840,11 +2840,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: meteorDamage
-      value: 8
+      value: 6
       objectReference: {fileID: 0}
     - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: meteorHitStunSeconds
-      value: 0.06
+      value: 0.064
       objectReference: {fileID: 0}
     - target: {fileID: 3081477084896002268, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: m_Name
@@ -10463,7 +10463,7 @@ BoxCollider2D:
   m_UsedByEffector: 0
   m_CompositeOperation: 0
   m_CompositeOrder: 0
-  m_Offset: {x: 102.6, y: 11.68}
+  m_Offset: {x: 102.6, y: 31.1}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0, y: 0}
@@ -25974,7 +25974,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: meteorDamage
-      value: 15
+      value: 8
+      objectReference: {fileID: 0}
+    - target: {fileID: 1259653247139532602, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
+      propertyPath: meteorHitStunSeconds
+      value: 0.06
       objectReference: {fileID: 0}
     - target: {fileID: 3081477084896002268, guid: ea8446cef156fe940b2b0ddfeb5f6bdf, type: 3}
       propertyPath: m_Name

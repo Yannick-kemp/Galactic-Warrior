@@ -26,6 +26,11 @@ public class PurchaseUI : MonoBehaviour
     [SerializeField] private bool replaceTitleFromStore = false;
     [SerializeField] private bool replaceDescriptionFromStore = false;
 
+    [Header("Web (WebGL) — funnel vers Google Play")]
+    [Tooltip("Fiche Google Play ouverte par le bouton dans le build WebGL (démo). Ignoré sur Android.")]
+    [SerializeField] private string playStoreUrl = "https://play.google.com/store/apps/details?id=";
+    [SerializeField] private string webStoreButtonText = "Sur Google Play";
+
     [Header("Animation")]
     [SerializeField] private Vector3 hiddenScale = new Vector3(0.9f, 0.9f, 1f);
     [SerializeField] private Vector3 shownScale = Vector3.one;
@@ -48,20 +53,31 @@ public class PurchaseUI : MonoBehaviour
         HideImmediate();
     }
 
-    private async void Start()
+    private void Start()
     {
-        if (buyButton != null)
-        {
-            buyButton.onClick.RemoveListener(OnBuyPressed);
-            buyButton.onClick.AddListener(OnBuyPressed);
-        }
-
         if (noThanksButton != null)
         {
             noThanksButton.onClick.RemoveListener(OnNoThanksPressed);
             noThanksButton.onClick.AddListener(OnNoThanksPressed);
         }
 
+#if UNITY_WEBGL
+        // Pas d'IAP/Google Play sur le Web : le bouton renvoie vers la fiche Play Store.
+        EnterWebDemoMode();
+#else
+        if (buyButton != null)
+        {
+            buyButton.onClick.RemoveListener(OnBuyPressed);
+            buyButton.onClick.AddListener(OnBuyPressed);
+        }
+
+        InitializeStoreAsync();
+#endif
+    }
+
+#if !UNITY_WEBGL
+    private async void InitializeStoreAsync()
+    {
         try
         {
             storeController = UnityIAPServices.StoreController();
@@ -76,9 +92,9 @@ public class PurchaseUI : MonoBehaviour
             Debug.Log("[PurchaseUI] Store connected.");
 
             var productsToFetch = new List<ProductDefinition>
-        {
-            new(productId, ProductType.NonConsumable)
-        };
+            {
+                new(productId, ProductType.NonConsumable)
+            };
 
             Debug.Log($"[PurchaseUI] FetchProducts for {productId}");
             storeController.FetchProducts(productsToFetch);
@@ -94,6 +110,7 @@ public class PurchaseUI : MonoBehaviour
             Debug.LogWarning($"[PurchaseUI] IAP init failed: {ex}");
         }
     }
+#endif
 
     private void OnDestroy()
     {
@@ -138,6 +155,11 @@ public class PurchaseUI : MonoBehaviour
             SetPriceText(storePrice);
         else
             SetPriceText(!string.IsNullOrWhiteSpace(fallbackPrice) ? fallbackPrice : loadingPriceText);
+
+#if UNITY_WEBGL
+        // Sur le Web il n'y a pas de prix store : on garde l'invite Google Play.
+        SetPriceText(webStoreButtonText);
+#endif
     }
 
     private void OnProductsFetched(List<Product> products)
@@ -185,8 +207,8 @@ public class PurchaseUI : MonoBehaviour
     {
         Debug.Log("[PurchaseUI] Purchase pending/success received.");
 
-        // Unlock only here, after purchase succeeds.
-        Unlock();
+        // Real purchase just completed → unlock and route normally.
+        Unlock(navigate: true);
 
         storeController.ConfirmPurchase(order);
     }
@@ -202,7 +224,8 @@ public class PurchaseUI : MonoBehaviour
         if (order != null && order.FailureReason == PurchaseFailureReason.DuplicateTransaction)
         {
             Debug.Log("[PurchaseUI] Item already owned -> unlocking.");
-            Unlock();
+            // User actively tried to buy from the purchase screen → routing back is expected.
+            Unlock(navigate: true);
         }
     }
 
@@ -222,7 +245,7 @@ public class PurchaseUI : MonoBehaviour
                 if (CartContainsProduct(order?.CartOrdered))
                 {
                     Debug.Log("[PurchaseUI] Restored owned product (confirmed) -> unlocking.");
-                    Unlock();
+                    Unlock(navigate: false);   // silent restore — must not bounce the player to the menu
                     return;
                 }
             }
@@ -235,7 +258,7 @@ public class PurchaseUI : MonoBehaviour
                 if (CartContainsProduct(order?.CartOrdered))
                 {
                     Debug.Log("[PurchaseUI] Restored owned product (pending) -> unlocking.");
-                    Unlock();
+                    Unlock(navigate: false);   // silent restore — must not bounce the player to the menu
                     storeController.ConfirmPurchase(order);
                     return;
                 }
@@ -261,19 +284,56 @@ public class PurchaseUI : MonoBehaviour
         return false;
     }
 
-    private void Unlock()
+    // navigate=true for a real purchase (return to menu / advance). navigate=false for a silent
+    // restore at startup (FetchPurchases) — it must NOT route, or it yanks the player out of
+    // whatever scene they're in (e.g. an owner sent into WarriorScene by the tutorial gate would be
+    // bounced back to the menu the instant the store reports ownership).
+    private void Unlock(bool navigate)
     {
         if (_unlocked)
             return;
 
         _unlocked = true;
-        GameMgr.Instance?.OnPurchaseConfirmed();
+
+        if (navigate)
+            GameMgr.Instance?.OnPurchaseConfirmed();
+        else
+            GameMgr.Instance?.OnPurchaseRestored();
     }
 
     public void OnNoThanksPressed()
     {
         GameMgr.Instance?.OnPurchaseDeclined();
     }
+
+#if UNITY_WEBGL
+    // WebGL n'a pas d'IAP : on transforme le bouton d'achat en lien vers Google Play
+    // et on affiche un libellé d'invite au lieu d'un prix store.
+    private void EnterWebDemoMode()
+    {
+        if (buyButton != null)
+        {
+            buyButton.onClick.RemoveListener(OnBuyPressed);
+            buyButton.onClick.RemoveListener(OnGetFullVersionPressed);
+            buyButton.onClick.AddListener(OnGetFullVersionPressed);
+        }
+
+        if (priceText != null)
+            priceText.text = webStoreButtonText;
+    }
+
+    private void OnGetFullVersionPressed()
+    {
+        if (string.IsNullOrWhiteSpace(playStoreUrl))
+        {
+            Debug.LogWarning("[PurchaseUI] playStoreUrl non renseigné dans l'Inspector.");
+            return;
+        }
+
+        Debug.Log($"[PurchaseUI] (Web) Ouverture Google Play: {playStoreUrl}");
+        Application.OpenURL(playStoreUrl);
+    }
+#endif
 
     public void Show()
     {

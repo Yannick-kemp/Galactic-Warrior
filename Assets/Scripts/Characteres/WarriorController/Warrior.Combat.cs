@@ -299,6 +299,8 @@ namespace Assets.Scripts.Characteres.WarriorController
         public void KnockbackEnemiesInRange(float knockbackForce, Enemy enemy, int damage)
         {
             if (enemy == null) return;
+            // WarriorScene onboarding: no damage is dealt to enemies until the tutorial is done.
+            if (WarriorTutorialController.TutorialActive) return;
 
             WarriorZalaytyHitKind hitKind = attackMode == AttackAnimMode.Attack2
                 ? WarriorZalaytyHitKind.Attack2

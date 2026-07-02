@@ -7,21 +7,18 @@ public class DebugSaveHotkeys : MonoBehaviour
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         if (Input.GetKeyDown(KeyCode.F9))
         {
-            PlayerPrefs.DeleteKey("GW_CampaignPurchased");
-            PlayerPrefs.DeleteKey("GW_HighestReachedSceneIndex");
-            PlayerPrefs.DeleteKey("GW_Level2Unlocked");
-            PlayerPrefs.Save();
-
-            // Also wipe boss-relic progress (memory + disk) so the rise animation/grant replays.
+            // Single source of truth: wipes everything incl. tutorial, checkpoints and progression.
             if (GameMgr.Instance != null)
-                GameMgr.Instance.ClearBossRelics();
+            {
+                GameMgr.Instance.ResetAllProgressForDev();
+            }
             else
             {
-                PlayerPrefs.DeleteKey("GW_BossRelicsDefeated");
+                PlayerPrefs.DeleteAll();
                 PlayerPrefs.Save();
             }
 
-            Debug.Log("[DebugSaveHotkeys] Progress reset (incl. boss relics).");
+            Debug.Log("[DebugSaveHotkeys] Full dev reset (incl. tutorial, checkpoints, boss relics).");
         }
 #endif
     }
