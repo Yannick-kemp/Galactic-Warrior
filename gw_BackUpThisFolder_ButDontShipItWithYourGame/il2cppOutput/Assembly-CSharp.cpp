@@ -3158,6 +3158,8 @@ struct Warrior_tCF382FDF8BE1AF9BDE52BF0954F020A2691F1C2F  : public CharacterCont
 	float ___viewportBottomMargin;
 	Camera_tA92CC927D7439999BC82DBEDC0AA45B470F9E184* ___deathCheckCamera;
 	bool ____deathFinalized;
+	int32_t ____directMoveSign;
+	bool ___U3CDirectControlActiveU3Ek__BackingField;
 	GameObject_t76FEDD663AB33C991A9C9A23129337651094216F* ___bodyFixedRoot;
 	GameObject_t76FEDD663AB33C991A9C9A23129337651094216F* ___attack3VisualsRoot;
 	Transform_tB27202C6F4E36D225EE28A13E4D662BF99785DB1* ___attack3IkTarget;

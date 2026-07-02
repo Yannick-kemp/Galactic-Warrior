@@ -142,6 +142,19 @@ public class WarriorTutorialController : MonoBehaviour
             yield break;
         }
 
+        // Control-scheme gate: the whole tutorial is tap-based (a hand on a world target the player
+        // taps, tap-to-jump). In joystick (Direct) mode it makes no sense and would soft-lock the
+        // player (combat is frozen, the Warrior is boxed in by confinement walls) → skip it cleanly.
+        // We deliberately do NOT mark it completed, so switching back to Tap later still shows it.
+        if (ControlScheme.IsDirect)
+        {
+            Log("Control scheme = Direct (joystick) → skipping tap tutorial (normal gameplay).");
+            TutorialActive = false;
+            SetActiveSafe(attackHint, false);
+            enabled = false;
+            yield break;
+        }
+
         bool done = GameMgr.Instance != null && GameMgr.Instance.IsTutorialCompleted;
         Log($"GameMgr.Instance={(GameMgr.Instance != null)}, IsTutorialCompleted={done}.");
 

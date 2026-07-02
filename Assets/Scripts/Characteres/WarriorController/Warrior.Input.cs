@@ -10,6 +10,11 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void HandleInput()
         {
+            // Direct-control (joystick) mode fully bypasses tap-to-navigate.
+            // DirectControlHud drives the Warrior through DirectMove/DirectJump instead.
+            if (ControlScheme.IsDirect)
+                return;
+
             // Hivernox freeze/hit-lock must stop world input before IceBallRelic touch handling.
             if (IsHardActionLocked || _frozenByHivernox || !CanAttackWarrior)
                 return;
