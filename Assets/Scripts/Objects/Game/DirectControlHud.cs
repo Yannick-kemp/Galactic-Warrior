@@ -131,19 +131,37 @@ namespace Assets.Scripts.Objects.Game
             _iceAimDir = Vector2.zero;
             HideAimIndicator();
 
-            // Joystick + keyboard (PC) combined.
+            // On-screen joystick (touch) + keyboard + gamepad all feed the SAME held-direction
+            // mover as the Android joystick (Warrior.DirectMove/DirectJump/DirectAttack).
             float x = _joystick != null ? _joystick.Value.x : 0f;
-            float kb = Input.GetAxisRaw("Horizontal");
+            float kb = Input.GetAxisRaw("Horizontal"); // keyboard A/D (+ legacy joystick axis)
             if (Mathf.Abs(kb) > Mathf.Abs(x)) x = kb;
+
+            bool jumpPressed = Input.GetKeyDown(KeyCode.Space);
+            bool attackPressed = Input.GetKeyDown(KeyCode.J);
+
+#if ENABLE_INPUT_SYSTEM
+            // Physical gamepad parity on PC (Steam): left stick moves, South = jump,
+            // West = attack — routed through the exact same Direct* API as the touch joystick.
+            var gamepad = UnityEngine.InputSystem.Gamepad.current;
+            if (gamepad != null)
+            {
+                float gpx = gamepad.leftStick.x.ReadValue();
+                if (Mathf.Abs(gpx) > Mathf.Abs(x)) x = gpx;
+
+                if (gamepad.buttonSouth.wasPressedThisFrame) jumpPressed = true;   // A / Cross
+                if (gamepad.buttonWest.wasPressedThisFrame) attackPressed = true;  // X / Square
+            }
+#endif
 
             if (Mathf.Abs(x) > deadZone)
                 _warrior.DirectMove(Mathf.Sign(x));
             else
                 _warrior.DirectStop();
 
-            if (Input.GetKeyDown(KeyCode.Space))
+            if (jumpPressed)
                 _warrior.DirectJump(x);
-            if (Input.GetKeyDown(KeyCode.J))
+            if (attackPressed)
                 _warrior.DirectAttack();
         }
 
@@ -182,8 +200,14 @@ namespace Assets.Scripts.Objects.Game
 
             _iceAiming = pressed;
 
-            // PC fallback.
-            if (Input.GetKeyDown(KeyCode.K))
+            // PC fallback: K key or gamepad North (Y / Triangle) fires the aimed relic.
+            bool castPressed = Input.GetKeyDown(KeyCode.K);
+#if ENABLE_INPUT_SYSTEM
+            var castPad = UnityEngine.InputSystem.Gamepad.current;
+            if (castPad != null && castPad.buttonNorth.wasPressedThisFrame)
+                castPressed = true;
+#endif
+            if (castPressed)
             {
                 _warrior.DirectCastIceBall(_iceAimDir);
                 _iceAimDir = Vector2.zero;

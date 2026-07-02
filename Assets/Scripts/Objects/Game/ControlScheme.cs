@@ -18,7 +18,18 @@ public static class ControlScheme
 
     private const string KEY = "control_scheme";
 
-    public static Mode Current => (Mode)PlayerPrefs.GetInt(KEY, (int)Mode.Tap);
+    // Platform default when the player has not made an explicit choice yet: desktop (Steam)
+    // defaults to Direct (joystick/keyboard/gamepad held-direction), like a standard PC
+    // platformer; mobile keeps the tap-to-navigate default. An explicit Settings toggle
+    // writes KEY and overrides this on any platform.
+    private static int DefaultMode =>
+#if UNITY_STANDALONE
+        (int)Mode.Direct;
+#else
+        (int)Mode.Tap;
+#endif
+
+    public static Mode Current => (Mode)PlayerPrefs.GetInt(KEY, DefaultMode);
 
     public static bool IsTap => Current == Mode.Tap;
     public static bool IsDirect => Current == Mode.Direct;

@@ -230,6 +230,15 @@ public class GameMgr : MonoBehaviour, IGame
         EnsureMusicSource();
         NormalizeCampaignSceneOrder();
         LoadProgression();
+
+#if UNITY_STANDALONE
+        // M6 — On desktop (Steam) the game ships as the full paid campaign; there is no
+        // in-app purchase flow (see PurchaseUI, disabled on standalone). Unlock the whole
+        // campaign by default instead of leaving it gated behind the Google Play IAP.
+        if (!level2Unlocked)
+            UnlockLevel2();
+#endif
+
         LoadCheckpointFromDisk();
         LoadBossRelicsFromDisk();
 
@@ -276,6 +285,15 @@ public class GameMgr : MonoBehaviour, IGame
     public void Initialize()
     {
         AudioMute.Apply();
+
+#if UNITY_STANDALONE
+        // M8 — PC framerate cap. The Android build pins targetFrameRate=60 in each
+        // actor's Awake (gameplay tuning assumes 60 fps); those blocks are gated to
+        // UNITY_ANDROID and never run on desktop. Without this the game would run at
+        // the monitor's refresh rate (144/240 Hz), drifting 60 fps-calibrated behavior.
+        Application.targetFrameRate = 60;
+        QualitySettings.vSyncCount = 0;
+#endif
     }
 
     public void RegisterHero(Warrior warrior)
