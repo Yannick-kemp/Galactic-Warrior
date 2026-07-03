@@ -62,6 +62,8 @@ public class PauseButtonUI : MonoBehaviour, IPointerDownHandler
     {
         if (IsPaused) return;
 
+        EnsurePauseMenu();
+
         _timeScaleBeforePause = Time.timeScale > 0f ? Time.timeScale : 1f;
         Time.timeScale = 0f;
 
@@ -101,6 +103,19 @@ public class PauseButtonUI : MonoBehaviour, IPointerDownHandler
 
         IsPaused = false;
         RefreshIcon();
+    }
+
+    // If no pause menu was wired in the Inspector (the mobile/Dev build has none
+    // authored), build the runtime touch pause menu on first pause and use it as the
+    // menu root. When pauseMenuRoot IS assigned, this is a no-op and the authored
+    // panel is used unchanged.
+    private void EnsurePauseMenu()
+    {
+        if (pauseMenuRoot != null) return;
+
+        TouchPauseMenu menu = TouchPauseMenu.Create(this);
+        if (menu != null)
+            pauseMenuRoot = menu.gameObject;
     }
 
     private void RefreshIcon()
