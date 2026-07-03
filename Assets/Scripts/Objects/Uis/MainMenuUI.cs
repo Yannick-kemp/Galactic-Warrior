@@ -38,6 +38,15 @@ public class MainMenuUI : MonoBehaviour
     [TextArea]
     [SerializeField] private string menuUnlockDescription = "Unlock Level 1, new progression, rewards, and upgrades.";
 
+    [Header("Desktop navigation (Steam)")]
+    [Tooltip("Button focused first when the menu opens on desktop, so a gamepad/keyboard can " +
+             "navigate. If empty, the first navigable button found is used.")]
+    [SerializeField] private GameObject desktopFirstSelected;
+
+    // Set by the in-level PAUSE overlay (GameOverUI) before it loads the menu scene, so the
+    // Settings popup opens automatically once the main menu finishes its first Refresh.
+    public static bool OpenSettingsOnLoad;
+
     [Header("Optional Buttons To Toggle")]
     [SerializeField] private GameObject unlockFullGameButton;
     [SerializeField] private GameObject continueButton;
@@ -51,13 +60,38 @@ public class MainMenuUI : MonoBehaviour
 
     private void OnEnable()
     {
+        MenuNavigator.PushContext(NavRoot());
         StartCoroutine(RefreshNextFrame());
+    }
+
+    private void OnDisable()
+    {
+        MenuNavigator.PopContext(NavRoot());
+    }
+
+    // Root that scopes gamepad/keyboard navigation to the menu (the whole canvas of buttons).
+    private Transform NavRoot()
+    {
+        Canvas canvas = GetComponentInParent<Canvas>();
+        return canvas != null ? canvas.transform : transform;
     }
 
     private System.Collections.IEnumerator RefreshNextFrame()
     {
         yield return null;
         Refresh();
+
+#if UNITY_STANDALONE || UNITY_EDITOR
+        // Desktop: hand focus to a menu button so a gamepad/keyboard can drive the UI. If the
+        // Settings popup auto-opened (pause deep-link), it manages its own focus — don't steal.
+        if (settingsPopup == null || !settingsPopup.gameObject.activeSelf)
+        {
+            GameObject sel = (desktopFirstSelected != null && desktopFirstSelected.activeInHierarchy)
+                ? desktopFirstSelected
+                : UiNavigation.FindFirstSelectable(this);
+            UiNavigation.Select(sel);
+        }
+#endif
     }
 
     public void Refresh()
@@ -148,6 +182,14 @@ public class MainMenuUI : MonoBehaviour
 
         if (menuPurchaseUI == null)
             menuPurchaseUI = FindFirstObjectByType<PurchaseUI>(FindObjectsInactive.Include);
+
+        // Deep-link from the in-level PAUSE overlay: open Settings once, then clear the flag
+        // so a normal return to the menu doesn't reopen it.
+        if (OpenSettingsOnLoad)
+        {
+            OpenSettingsOnLoad = false;
+            Settings();
+        }
     }
 
     public void PlayDemo()

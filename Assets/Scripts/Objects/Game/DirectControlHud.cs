@@ -94,6 +94,13 @@ namespace Assets.Scripts.Objects.Game
             if (_instance != this)
                 return;
 
+            // While paused, the stick/keys drive the PAUSE menu navigation, not the Warrior.
+            if (PauseMenu.IsPaused)
+            {
+                _warrior?.DirectStop();
+                return;
+            }
+
             bool direct = ControlScheme.IsDirect;
 
             if (!direct)
@@ -103,8 +110,14 @@ namespace Assets.Scripts.Objects.Game
                 return;
             }
 
+#if !UNITY_STANDALONE
+            // The on-screen touch joystick + buttons are a mobile affordance. On desktop
+            // (Steam) Direct control is driven by keyboard/gamepad, so we skip building and
+            // showing the touch HUD entirely — SetActiveState below still flips the Warrior
+            // into Direct mode, and the Update input polling still reads keyboard/gamepad.
             if (!_built)
                 BuildUI();
+#endif
 
             if (_warrior == null)
                 AcquireWarrior();
@@ -113,8 +126,9 @@ namespace Assets.Scripts.Objects.Game
                 SetActiveState(true);
 
             // Re-apply the layout live if the handedness setting changed (e.g. toggled
-            // in the pause settings) without needing a scene reload.
-            if (ControlHandedness.IsLeft != _appliedLeftHanded)
+            // in the pause settings) without needing a scene reload. Only relevant when the
+            // touch HUD was actually built (mobile).
+            if (_built && ControlHandedness.IsLeft != _appliedLeftHanded)
                 ApplyLayout();
 
             if (_warrior == null)

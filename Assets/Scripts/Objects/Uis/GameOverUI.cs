@@ -13,6 +13,14 @@ public class GameOverUI : MonoBehaviour
     [SerializeField] private Button menuButton;
     [SerializeField] private Button reviveButton;
 
+    [Header("Pause Mode")]
+    [SerializeField] private Button settingsButton;   // opens Settings (in-game popup, or menu deep-link)
+    [SerializeField] private Button resumeButton;      // closes the overlay and un-pauses
+    [SerializeField] private string pauseTitle = "PAUSE";
+    [Tooltip("Optional in-game Settings popup, shown over the pause overlay so the level is kept. " +
+             "If left empty, the Settings button falls back to loading the main-menu Settings.")]
+    [SerializeField] private SettingsPopupUI inGameSettingsPopup;
+
     [Header("Menu Scene")]
     [SerializeField] private string menuSceneName = "menu";
 
@@ -35,6 +43,8 @@ public class GameOverUI : MonoBehaviour
         if (retryButton != null) retryButton.onClick.AddListener(OnRetryClicked);
         if (menuButton != null) menuButton.onClick.AddListener(OnMenuClicked);
         if (reviveButton != null) reviveButton.onClick.AddListener(OnReviveClicked);
+        if (settingsButton != null) settingsButton.onClick.AddListener(OnSettingsClicked);
+        if (resumeButton != null) resumeButton.onClick.AddListener(OnResumeClicked);
 
         ResetFadeOverlay();
         HideInstant(); // start hidden
@@ -60,6 +70,10 @@ public class GameOverUI : MonoBehaviour
         int retriesLeft = GameMgr.Instance != null ? GameMgr.Instance.RetriesRemaining : 0;
         bool noRetriesLeft = retriesLeft <= 0;
 
+        // Death layout: retry/menu/revive visible, pause-only buttons hidden.
+        SetPauseButtonsVisible(false);
+        SetDeathButtonsVisible(true);
+
         if (titleText != null) titleText.text = noRetriesLeft ? "GAME OVER" : "DEFEAT";
         if (scoreText != null)
         {
@@ -75,12 +89,19 @@ public class GameOverUI : MonoBehaviour
         group.blocksRaycasts = true;
         group.interactable = true;
 
+        // Desktop gamepad/keyboard: register this DEFEAT / GAME OVER screen as the active
+        // navigation context so Retry/Menu/Revive can be navigated and pressed.
+        MenuNavigator.PushContext(transform);
+
         _showRoutine = null;
     }
 
     public void HideInstant()
     {
         if (group == null) group = GetComponent<CanvasGroup>();
+
+        // Release the navigation context (covers both the DEFEAT and PAUSE hide paths).
+        MenuNavigator.PopContext(transform);
 
         group.alpha = 0f;
         group.blocksRaycasts = false;
@@ -89,6 +110,103 @@ public class GameOverUI : MonoBehaviour
         _isTransitioning = false;
         SetButtonsInteractable(true);
         ResetFadeOverlay();
+    }
+
+    // Shows the same overlay used for DEFEAT, but in PAUSE mode: title becomes "PAUSE",
+    // retry/revive are hidden, and Resume + Settings are offered. Driven by PauseMenu.
+    // No coroutine here because Time.timeScale is 0 while paused.
+    public void ShowPause()
+    {
+        if (_showRoutine != null) { StopCoroutine(_showRoutine); _showRoutine = null; }
+
+        if (!gameObject.activeSelf) gameObject.SetActive(true);
+        if (group == null) group = GetComponent<CanvasGroup>();
+
+        // Register as the active navigation context (desktop gamepad/keyboard).
+        MenuNavigator.PushContext(transform);
+
+        _isTransitioning = false;
+        ResetFadeOverlay();
+
+        if (titleText != null) titleText.text = pauseTitle;
+        if (scoreText != null) scoreText.text = string.Empty;
+
+        SetDeathButtonsVisible(false);
+        SetPauseButtonsVisible(true);
+
+        group.alpha = 1f;
+        group.blocksRaycasts = true;
+        group.interactable = true;
+
+        // On desktop there is no touch: give the keyboard/gamepad a selected button to start
+        // from, so Resume/Settings/Menu can be navigated (stick/arrows) and pressed (A/Enter).
+        Button first = resumeButton != null ? resumeButton
+                     : settingsButton != null ? settingsButton
+                     : menuButton;
+        if (first != null)
+            UiNavigation.Select(first.gameObject);
+    }
+
+    // Instant close for the resume path (un-pause) — no fade so gameplay resumes immediately.
+    public void HidePauseInstant()
+    {
+        HideInstant(); // releases the navigation context
+    }
+
+    private void OnResumeClicked()
+    {
+        // Restore timeScale/input/audio and hide this overlay, whatever triggered the pause
+        // (touch button on mobile, keyboard/gamepad on desktop).
+        PauseMenu.Resume();
+    }
+
+    private void OnSettingsClicked()
+    {
+        if (_isTransitioning) return;
+
+        // Preferred (desktop-friendly): open the Settings popup over the pause overlay so the
+        // level stays paused — no progress lost. Resolve a scene instance if none was wired.
+        SettingsPopupUI popup = inGameSettingsPopup;
+        if (popup == null)
+            popup = FindFirstObjectByType<SettingsPopupUI>(FindObjectsInactive.Include);
+
+        if (popup != null)
+        {
+            popup.Show();
+            return;
+        }
+
+        // Fallback: no in-game popup available → deep-link to the main-menu Settings.
+        StartCoroutine(SettingsTransitionRoutine());
+    }
+
+    private IEnumerator SettingsTransitionRoutine()
+    {
+        _isTransitioning = true;
+        SetButtonsInteractable(false);
+
+        if (settingsButton != null)
+            yield return StartCoroutine(ButtonPressFX(settingsButton));
+
+        // Deep-link: the main menu opens its Settings popup on load. LoadMenu() restores
+        // timeScale and tears down the paused level.
+        MainMenuUI.OpenSettingsOnLoad = true;
+        GameMgr.Instance?.LoadMenu(menuSceneName);
+
+        _isTransitioning = false;
+    }
+
+    private void SetDeathButtonsVisible(bool value)
+    {
+        if (retryButton != null) retryButton.gameObject.SetActive(value);
+        if (reviveButton != null) reviveButton.gameObject.SetActive(value);
+        // menuButton (Quit to menu) stays available in both modes.
+    }
+
+    private void SetPauseButtonsVisible(bool value)
+    {
+        if (settingsButton != null) settingsButton.gameObject.SetActive(value);
+        if (resumeButton != null) resumeButton.gameObject.SetActive(value);
     }
 
     private void OnRetryClicked()
@@ -278,6 +396,8 @@ public class GameOverUI : MonoBehaviour
         if (retryButton != null) retryButton.interactable = value;
         if (menuButton != null) menuButton.interactable = value;
         if (reviveButton != null) reviveButton.interactable = value;
+        if (settingsButton != null) settingsButton.interactable = value;
+        if (resumeButton != null) resumeButton.interactable = value;
     }
 
     private void ResetFadeOverlay()
@@ -295,6 +415,7 @@ public class GameOverUI : MonoBehaviour
 
     public void Hide()
     {
+        MenuNavigator.PopContext(transform);
         if (_showRoutine != null) StopCoroutine(_showRoutine);
         _showRoutine = StartCoroutine(HideRoutine());
     }

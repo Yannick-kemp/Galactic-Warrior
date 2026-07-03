@@ -155,9 +155,16 @@ public class SettingsPopupUI : MonoBehaviour
     {
         gameObject.SetActive(true);
         LayoutButtons(); // panel rect is valid once shown
+
+        // Becomes the top navigation context; closing pops back to the pause/menu underneath.
+        MenuNavigator.PushContext(transform);
     }
 
-    public void Hide() => gameObject.SetActive(false);
+    public void Hide()
+    {
+        MenuNavigator.PopContext(transform);
+        gameObject.SetActive(false);
+    }
 
     private void ToggleMute()
     {

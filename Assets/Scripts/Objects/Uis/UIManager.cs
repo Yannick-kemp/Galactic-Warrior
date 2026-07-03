@@ -64,6 +64,30 @@ public class UIManager : MonoBehaviour
         ui.Hide();
     }
 
+    public void ShowPauseOverlay()
+    {
+        var ui = ResolveGameOverUI();
+        if (ui == null)
+        {
+            Debug.LogError("[UIManager] GameOverUI not found in scene (pause overlay).");
+            return;
+        }
+
+        if (!ui.gameObject.activeSelf)
+            ui.gameObject.SetActive(true);
+
+        ui.ShowPause();
+    }
+
+    public void HidePauseOverlay()
+    {
+        var ui = ResolveGameOverUI();
+        if (ui == null)
+            return;
+
+        ui.HidePauseInstant();
+    }
+
     public void TryReviveFromGameOver()
     {
         var w = Assets.Scripts.Characteres.WarriorController.Warrior.Instance

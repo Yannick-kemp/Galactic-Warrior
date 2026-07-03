@@ -11,9 +11,15 @@ public class AudioMuteButtonUI : MonoBehaviour, IPointerDownHandler
 
     private void Awake()
     {
+#if UNITY_STANDALONE
+        // Desktop build (Steam): the touch mute button is a mobile affordance. Muting is
+        // available from the Settings popup instead, so hide this on-screen button.
+        gameObject.SetActive(false);
+#else
         if (icon == null) icon = GetComponent<Image>();
         AudioMute.Apply();
         Refresh();
+#endif
     }
 
     // Block world (gameplay) input the instant the button is pressed, before the

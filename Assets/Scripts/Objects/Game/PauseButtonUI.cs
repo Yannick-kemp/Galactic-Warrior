@@ -3,6 +3,11 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
+/// <summary>
+/// On-screen (touch) Pause button. The actual freeze lives in <see cref="PauseMenu"/>; this
+/// component is just the mobile trigger + icon. On desktop (Steam) it hides itself — pause is
+/// driven by keyboard/gamepad through DesktopPauseInput instead.
+/// </summary>
 public class PauseButtonUI : MonoBehaviour, IPointerDownHandler
 {
     [Header("Optional Pause Menu")]
@@ -14,27 +19,27 @@ public class PauseButtonUI : MonoBehaviour, IPointerDownHandler
     [SerializeField] private Sprite pauseSprite;
     [SerializeField] private Sprite resumeSprite;
 
-    public static bool IsPaused { get; private set; }
+    // Kept for compatibility with existing callers/scenes; the state now lives in PauseMenu.
+    public static bool IsPaused => PauseMenu.IsPaused;
 
-    private float _timeScaleBeforePause = 1f;
-    private bool _inputLockedBeforePause;
-    private bool _audioPausedBeforePause;
+    private void Awake()
+    {
+#if UNITY_STANDALONE
+        // Desktop build (Steam): the touch pause button is a mobile affordance. Hide it so it
+        // neither shows nor eats input — DesktopPauseInput handles pause on keyboard/gamepad.
+        gameObject.SetActive(false);
+#endif
+    }
 
     private void OnEnable()
     {
-        // Always show the icon that matches the current state when the button appears.
+        PauseMenu.StateChanged += OnPauseStateChanged;
         RefreshIcon();
     }
 
     private void OnDisable()
     {
-        // Scene unloads/reloads reset timeScale and input elsewhere (GameMgr), but not
-        // audio. If we get disabled/destroyed while paused, make sure we don't leave
-        // audio globally frozen for the next scene.
-        if (IsPaused)
-            AudioListener.pause = false;
-
-        IsPaused = false;
+        PauseMenu.StateChanged -= OnPauseStateChanged;
     }
 
     // Block world (gameplay) input the instant the button is pressed, before the
@@ -50,56 +55,18 @@ public class PauseButtonUI : MonoBehaviour, IPointerDownHandler
             warrior.NotifyUIConsumedInput();
     }
 
-    public void TogglePause()
+    // Wired from the button's onClick in the Inspector.
+    public void TogglePause() => PauseMenu.Toggle();
+
+    public void Pause() => PauseMenu.Pause();
+
+    public void Resume() => PauseMenu.Resume();
+
+    private void OnPauseStateChanged()
     {
-        if (IsPaused)
-            Resume();
-        else
-            Pause();
-    }
-
-    public void Pause()
-    {
-        if (IsPaused) return;
-
-        _timeScaleBeforePause = Time.timeScale > 0f ? Time.timeScale : 1f;
-        Time.timeScale = 0f;
-
-        if (InputMgr.Instance != null)
-        {
-            _inputLockedBeforePause = InputMgr.Instance.InputLocked;
-            InputMgr.Instance.InputLocked = true;
-        }
-
-        // Pause all audio globally. Music, ambience and already-playing SFX freeze and
-        // later resume from the exact sample position. AudioSources flagged with
-        // ignoreListenerPause = true are intentionally left playing by Unity.
-        _audioPausedBeforePause = AudioListener.pause;
-        AudioListener.pause = true;
-
         if (pauseMenuRoot != null)
-            pauseMenuRoot.SetActive(true);
+            pauseMenuRoot.SetActive(PauseMenu.IsPaused);
 
-        IsPaused = true;
-        RefreshIcon();
-    }
-
-    public void Resume()
-    {
-        if (!IsPaused) return;
-
-        Time.timeScale = _timeScaleBeforePause > 0f ? _timeScaleBeforePause : 1f;
-
-        if (InputMgr.Instance != null)
-            InputMgr.Instance.InputLocked = _inputLockedBeforePause;
-
-        // Resume all audio from where it was paused (restore prior listener state).
-        AudioListener.pause = _audioPausedBeforePause;
-
-        if (pauseMenuRoot != null)
-            pauseMenuRoot.SetActive(false);
-
-        IsPaused = false;
         RefreshIcon();
     }
 
@@ -107,7 +74,7 @@ public class PauseButtonUI : MonoBehaviour, IPointerDownHandler
     {
         if (iconGraphic == null) return;
 
-        Sprite target = IsPaused ? resumeSprite : pauseSprite;
+        Sprite target = PauseMenu.IsPaused ? resumeSprite : pauseSprite;
         if (target != null)
             iconGraphic.sprite = target;
     }
