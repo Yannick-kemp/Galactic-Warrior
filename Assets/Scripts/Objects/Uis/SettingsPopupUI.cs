@@ -186,6 +186,11 @@ public class SettingsPopupUI : MonoBehaviour
 
     private void RefreshControlSchemeLabel()
     {
+        // On Xbox (GameCore) the scheme is locked to Direct (no touch/mouse), so the toggle
+        // would be a dead/soft-lock control — hide it entirely. Desktop/mobile keep it.
+        if (controlSchemeButton != null)
+            controlSchemeButton.gameObject.SetActive(ControlScheme.CanChoose);
+
         if (controlSchemeLabel != null)
             controlSchemeLabel.text = ControlScheme.IsDirect ? directLabel : tapLabel;
 
