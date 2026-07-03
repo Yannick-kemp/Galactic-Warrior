@@ -279,6 +279,57 @@ public class RelicUIController : MonoBehaviour
         }
     }
 
+    // ── Public activation seam (gamepad / external callers) ────────────────────────────
+    // Activates a relic exactly as if its button was clicked, reusing the full click flow
+    // (consume / arm / disarm / refund / mutual exclusion / visuals). Returns false when no
+    // rule matches the definition. Used by RelicGamepadInput to map pad buttons to relics.
+    public bool ActivateRelic(RelicDefinition def)
+    {
+        int index = FindRuleIndex(def);
+        if (index < 0)
+            return false;
+
+        OnClickRule(index);
+        return true;
+    }
+
+    // True when a rule exists for this definition AND the player currently owns at least one
+    // stack. Handy for gamepad glyph hints / enabling. (Contextual relics like KeyRelic may
+    // still be non-activatable even when count > 0; ActivateRelic remains the source of truth.)
+    public bool HasUsableRelic(RelicDefinition def)
+    {
+        if (relicManager == null)
+            return false;
+
+        int index = FindRuleIndex(def);
+        if (index < 0)
+            return false;
+
+        string relicId = ResolveRelicId(rules[index]);
+        return !string.IsNullOrEmpty(relicId) && relicManager.GetCountById(relicId) > 0;
+    }
+
+    private int FindRuleIndex(RelicDefinition def)
+    {
+        if (def == null)
+            return -1;
+
+        for (int i = 0; i < rules.Count; i++)
+        {
+            RelicButtonRule r = rules[i];
+            if (r == null)
+                continue;
+
+            if (r.slot != null && r.slot.Definition == def)
+                return i;
+
+            if (!string.IsNullOrEmpty(r.relicIdOverride) && r.relicIdOverride == def.relicId)
+                return i;
+        }
+
+        return -1;
+    }
+
     private void HandleRelicClick(int index)
     {
         if (index < 0 || index >= rules.Count) return;

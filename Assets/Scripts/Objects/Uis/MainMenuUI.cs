@@ -69,10 +69,23 @@ public class MainMenuUI : MonoBehaviour
         MenuNavigator.PopContext(NavRoot());
     }
 
-    // Root that scopes gamepad/keyboard navigation to the menu (the whole canvas of buttons).
+    // Root that scopes gamepad/keyboard navigation to the menu (the Canvas holding the buttons).
+    // IMPORTANT: this controller (MenuController) lives at the SCENE ROOT, outside the UI Canvas,
+    // so GetComponentInParent<Canvas>() on 'this' returns null. If we returned our own transform
+    // the navigator would scope to an empty root and never select a button (menu unnavigable).
+    // Resolve the Canvas from an actual menu element (button groups, searched incl. inactive so it
+    // works whether the demo or full group is showing), then fall back to the scene's Canvas.
     private Transform NavRoot()
     {
         Canvas canvas = GetComponentInParent<Canvas>();
+
+        if (canvas == null && demoButtonsGroup != null)
+            canvas = demoButtonsGroup.GetComponentInParent<Canvas>(true);
+        if (canvas == null && fullButtonsGroup != null)
+            canvas = fullButtonsGroup.GetComponentInParent<Canvas>(true);
+        if (canvas == null)
+            canvas = FindFirstObjectByType<Canvas>();
+
         return canvas != null ? canvas.transform : transform;
     }
 
@@ -88,7 +101,7 @@ public class MainMenuUI : MonoBehaviour
         {
             GameObject sel = (desktopFirstSelected != null && desktopFirstSelected.activeInHierarchy)
                 ? desktopFirstSelected
-                : UiNavigation.FindFirstSelectable(this);
+                : UiNavigation.FindFirstSelectable(NavRoot());   // search the Canvas, not this root-level controller
             UiNavigation.Select(sel);
         }
 #endif
