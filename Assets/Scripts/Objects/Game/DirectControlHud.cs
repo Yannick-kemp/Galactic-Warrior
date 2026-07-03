@@ -110,7 +110,7 @@ namespace Assets.Scripts.Objects.Game
                 return;
             }
 
-#if !UNITY_STANDALONE
+#if !UNITY_STANDALONE && !UNITY_WSA && !UNITY_GAMECORE
             // The on-screen touch joystick + buttons are a mobile affordance. On desktop
             // (Steam) Direct control is driven by keyboard/gamepad, so we skip building and
             // showing the touch HUD entirely — SetActiveState below still flips the Warrior

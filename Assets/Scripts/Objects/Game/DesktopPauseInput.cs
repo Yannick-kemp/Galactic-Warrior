@@ -25,7 +25,7 @@ namespace Assets.Scripts.Objects.Game
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {
-#if UNITY_STANDALONE || UNITY_EDITOR
+#if UNITY_STANDALONE || UNITY_WSA || UNITY_GAMECORE || UNITY_EDITOR
             if (_instance != null)
                 return;
 
@@ -53,7 +53,7 @@ namespace Assets.Scripts.Objects.Game
 
         private void Update()
         {
-#if UNITY_STANDALONE || UNITY_EDITOR
+#if UNITY_STANDALONE || UNITY_WSA || UNITY_GAMECORE || UNITY_EDITOR
             if (_instance != this)
                 return;
 
@@ -69,7 +69,7 @@ namespace Assets.Scripts.Objects.Game
 #endif
         }
 
-#if UNITY_STANDALONE || UNITY_EDITOR
+#if UNITY_STANDALONE || UNITY_WSA || UNITY_GAMECORE || UNITY_EDITOR
         private static bool WantsToggle()
         {
             // Legacy Input (project uses the "Both" input backend) — same as DirectControlHud.

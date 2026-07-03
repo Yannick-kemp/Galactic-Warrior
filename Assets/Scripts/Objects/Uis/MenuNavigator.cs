@@ -60,7 +60,7 @@ public class MenuNavigator : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Bootstrap()
     {
-#if UNITY_STANDALONE || UNITY_EDITOR
+#if UNITY_STANDALONE || UNITY_WSA || UNITY_GAMECORE || UNITY_EDITOR
         if (_instance != null) return;
 
         var go = new GameObject("MenuNavigator");
@@ -82,7 +82,7 @@ public class MenuNavigator : MonoBehaviour
 
     private void Update()
     {
-#if UNITY_STANDALONE || UNITY_EDITOR
+#if UNITY_STANDALONE || UNITY_WSA || UNITY_GAMECORE || UNITY_EDITOR
         if (_instance != this) return;
 
         Transform ctx = CurrentContext();
@@ -140,7 +140,7 @@ public class MenuNavigator : MonoBehaviour
 #endif
     }
 
-#if UNITY_STANDALONE || UNITY_EDITOR
+#if UNITY_STANDALONE || UNITY_WSA || UNITY_GAMECORE || UNITY_EDITOR
     private static void MoveSelection(EventSystem es, Selectable current, Vector2 move)
     {
         Selectable next;

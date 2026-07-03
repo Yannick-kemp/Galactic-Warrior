@@ -24,8 +24,9 @@ public class PauseButtonUI : MonoBehaviour, IPointerDownHandler
 
     private void Awake()
     {
-#if UNITY_STANDALONE
-        // Desktop build (Steam): the touch pause button is a mobile affordance. Hide it so it
+#if UNITY_STANDALONE || UNITY_WSA || UNITY_GAMECORE
+        // Desktop (Steam) and Xbox (UWP/GameCore): the touch pause button is a mobile
+        // affordance. Hide it so it
         // neither shows nor eats input — DesktopPauseInput handles pause on keyboard/gamepad.
         gameObject.SetActive(false);
 #endif

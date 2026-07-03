@@ -64,7 +64,7 @@ public class PurchaseUI : MonoBehaviour
 #if UNITY_WEBGL
         // Pas d'IAP/Google Play sur le Web : le bouton renvoie vers la fiche Play Store.
         EnterWebDemoMode();
-#elif UNITY_STANDALONE
+#elif UNITY_STANDALONE || UNITY_WSA || UNITY_GAMECORE
         // M7 — Desktop (Steam) ships the full paid campaign, unlocked by default in
         // GameMgr under UNITY_STANDALONE. There is no mobile store here, so never open a
         // store connection nor show a dead purchase panel: just disable this UI outright.

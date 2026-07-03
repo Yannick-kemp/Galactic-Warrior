@@ -94,7 +94,7 @@ public class MainMenuUI : MonoBehaviour
         yield return null;
         Refresh();
 
-#if UNITY_STANDALONE || UNITY_EDITOR
+#if UNITY_STANDALONE || UNITY_WSA || UNITY_GAMECORE || UNITY_EDITOR
         // Desktop: hand focus to a menu button so a gamepad/keyboard can drive the UI. If the
         // Settings popup auto-opened (pause deep-link), it manages its own focus — don't steal.
         if (settingsPopup == null || !settingsPopup.gameObject.activeSelf)

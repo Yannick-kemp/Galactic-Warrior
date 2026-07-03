@@ -34,7 +34,7 @@ public static class UiNavigation
                 es.gameObject.AddComponent<StandaloneInputModule>();
         }
 
-#if UNITY_STANDALONE || UNITY_EDITOR
+#if UNITY_STANDALONE || UNITY_WSA || UNITY_GAMECORE || UNITY_EDITOR
         // MenuNavigator owns directional + submit input on desktop; silence the module's
         // built-in navigation so moves/submits don't fire twice. Pointer events are unaffected.
         es.sendNavigationEvents = false;

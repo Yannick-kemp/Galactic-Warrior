@@ -231,8 +231,9 @@ public class GameMgr : MonoBehaviour, IGame
         NormalizeCampaignSceneOrder();
         LoadProgression();
 
-#if UNITY_STANDALONE
-        // M6 — On desktop (Steam) the game ships as the full paid campaign; there is no
+#if UNITY_STANDALONE || UNITY_WSA || UNITY_GAMECORE
+        // M6 — On desktop (Steam) and Xbox (UWP/GameCore) the game ships as the full paid
+        // campaign; there is no
         // in-app purchase flow (see PurchaseUI, disabled on standalone). Unlock the whole
         // campaign by default instead of leaving it gated behind the Google Play IAP.
         if (!level2Unlocked)
@@ -286,8 +287,8 @@ public class GameMgr : MonoBehaviour, IGame
     {
         AudioMute.Apply();
 
-#if UNITY_STANDALONE
-        // M8 — PC framerate cap. The Android build pins targetFrameRate=60 in each
+#if UNITY_STANDALONE || UNITY_WSA || UNITY_GAMECORE
+        // M8 — PC/console framerate cap. The Android build pins targetFrameRate=60 in each
         // actor's Awake (gameplay tuning assumes 60 fps); those blocks are gated to
         // UNITY_ANDROID and never run on desktop. Without this the game would run at
         // the monitor's refresh rate (144/240 Hz), drifting 60 fps-calibrated behavior.
