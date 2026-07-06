@@ -1,8 +1,8 @@
 {
   "buildFiles": [
-    "C:\\Users\\yannk\\Documents\\Galactic-Warrior\\Library\\PramData\\AndroidApplicationController\\Cache\\com.polymart.GalacticWarrior\\gradle-project\\unityLibrary\\src\\main\\cpp\\CMakeLists.txt",
-    "C:\\Users\\yannk\\Documents\\Galactic-Warrior\\Library\\PramData\\AndroidApplicationController\\Cache\\com.polymart.GalacticWarrior\\gradle-project\\unityLibrary\\src\\main\\cpp\\FramePacing\\CMakeLists.txt",
-    "C:\\Users\\yannk\\Documents\\Galactic-Warrior\\Library\\PramData\\AndroidApplicationController\\Cache\\com.polymart.GalacticWarrior\\gradle-project\\unityLibrary\\src\\main\\cpp\\GameActivity\\CMakeLists.txt"
+    "C:\\Users\\yannk\\Documents\\Galactic-Warrior\\Library\\Bee\\Android\\Prj\\IL2CPP\\Gradle\\unityLibrary\\src\\main\\cpp\\CMakeLists.txt",
+    "C:\\Users\\yannk\\Documents\\Galactic-Warrior\\Library\\Bee\\Android\\Prj\\IL2CPP\\Gradle\\unityLibrary\\src\\main\\cpp\\FramePacing\\CMakeLists.txt",
+    "C:\\Users\\yannk\\Documents\\Galactic-Warrior\\Library\\Bee\\Android\\Prj\\IL2CPP\\Gradle\\unityLibrary\\src\\main\\cpp\\GameActivity\\CMakeLists.txt"
   ],
   "cleanCommandsComponents": [
     [
@@ -23,14 +23,14 @@
       "toolchain": "toolchain",
       "abi": "arm64-v8a",
       "artifactName": "game",
-      "output": "C:\\Users\\yannk\\Documents\\Galactic-Warrior\\Library\\PramData\\AndroidApplicationController\\Cache\\com.polymart.GalacticWarrior\\gradle-project\\unityLibrary\\build\\intermediates\\cxx\\Debug\\4o4t5d37\\obj\\arm64-v8a\\libgame.so",
+      "output": "C:\\Users\\yannk\\Documents\\Galactic-Warrior\\Library\\Bee\\Android\\Prj\\IL2CPP\\Gradle\\unityLibrary\\build\\intermediates\\cxx\\Debug\\4o4t5d37\\obj\\arm64-v8a\\libgame.so",
       "runtimeFiles": []
     },
     "swappywrapper::@7e25bd1f32ce224db4e9": {
       "toolchain": "toolchain",
       "abi": "arm64-v8a",
       "artifactName": "swappywrapper",
-      "output": "C:\\Users\\yannk\\Documents\\Galactic-Warrior\\Library\\PramData\\AndroidApplicationController\\Cache\\com.polymart.GalacticWarrior\\gradle-project\\unityLibrary\\build\\intermediates\\cxx\\Debug\\4o4t5d37\\obj\\arm64-v8a\\libswappywrapper.so",
+      "output": "C:\\Users\\yannk\\Documents\\Galactic-Warrior\\Library\\Bee\\Android\\Prj\\IL2CPP\\Gradle\\unityLibrary\\build\\intermediates\\cxx\\Debug\\4o4t5d37\\obj\\arm64-v8a\\libswappywrapper.so",
       "runtimeFiles": []
     }
   },

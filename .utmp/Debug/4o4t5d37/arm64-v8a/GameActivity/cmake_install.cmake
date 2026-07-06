@@ -1,4 +1,4 @@
-# Install script for directory: C:/Users/yannk/Documents/Galactic-Warrior/Library/PramData/AndroidApplicationController/Cache/com.polymart.GalacticWarrior/gradle-project/unityLibrary/src/main/cpp/GameActivity
+# Install script for directory: C:/Users/yannk/Documents/Galactic-Warrior/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/src/main/cpp/GameActivity
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

@@ -85,7 +85,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &8869326937545259549
 Transform:
   m_ObjectHideFlags: 0
@@ -456,6 +456,9 @@ MonoBehaviour:
   preventWarriorBodyVerticalLift: 1
   warriorBodyLiftAllowance: 0.04
   cancelWarriorBodyPushVelocity: 1
+  preventWarriorBodyPenetration: 1
+  warriorBodyPenetrationSkin: 0.02
+  warriorBodyPenetrationCheckRange: 0.75
   useGroundCheckPointForPatrolEdge: 1
   patrolEdgeAheadProbeDistance: 0.55
   patrolEdgeRayExtraLength: 0.2
