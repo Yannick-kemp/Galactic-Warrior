@@ -276,6 +276,7 @@ struct U3CSmoothStepBackU3Ed__301_t25413AD7402A577A8778D2F3187ABF999715E8D0;
 
 IL2CPP_EXTERN_C RuntimeClass* Action_tD00B0A84D7945E50C2DFFC28EFEE6ED44ED2AD07_il2cpp_TypeInfo_var;
 IL2CPP_EXTERN_C RuntimeClass* AnimationCurve_tCBFFAAD05CEBB35EF8D8631BD99914BE1A6BB354_il2cpp_TypeInfo_var;
+IL2CPP_EXTERN_C RuntimeClass* Application_tDB03BE91CDF0ACA614A5E0B67CFB77C44EB19B21_il2cpp_TypeInfo_var;
 IL2CPP_EXTERN_C RuntimeClass* BurstU5BU5D_tDA41130F3D99F5DC008FEA9668428D62016661C7_il2cpp_TypeInfo_var;
 IL2CPP_EXTERN_C RuntimeClass* ButtonClickHandler_tA7572D7FA472CBF42A98F5E6AE3E83CDFC707C26_il2cpp_TypeInfo_var;
 IL2CPP_EXTERN_C RuntimeClass* CanvasUpdateRegistry_t7A4CC63D880F418DCDE83152B6FDB3259DF14DD1_il2cpp_TypeInfo_var;
@@ -4656,9 +4657,12 @@ inline Image_tBC1D03F63BF71132E9A5E472B8742F172A011E7E* Component_GetComponent_T
 }
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void AudioMuteButtonUI_Refresh_mB46A02D4CB59D4053AD9A84EE4CC042A05CA296F (AudioMuteButtonUI_t0FE1FE982C51D7EACBDB5CF174659405FB618B41* __this, const RuntimeMethod* method) ;
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void AudioMute_Toggle_mE7049487138CD78011B311F2401EBE3295C81F16 (const RuntimeMethod* method) ;
+IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR bool Application_get_isMobilePlatform_mE0BBFDE72BBFE5877581FA67DDBBFC397608AFCA (const RuntimeMethod* method) ;
+IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR int32_t ControlHandedness_get_DefaultHand_m71EF2A0E51A2EBDC48495FE3BBCD2C12B4599884 (const RuntimeMethod* method) ;
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR int32_t ControlHandedness_get_Current_mBF9C7D1A73B8A61514C079DE279D2879ED1098BA (const RuntimeMethod* method) ;
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR bool ControlHandedness_get_IsLeft_m83469DFF30689629AA8678CB4DE157C65EA14CDC (const RuntimeMethod* method) ;
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void ControlHandedness_Set_mB02A1560FB3A1D178DD4D68A616E720ECD93D0DC (int32_t ___0_hand, const RuntimeMethod* method) ;
+IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR int32_t ControlScheme_get_DefaultMode_mCB45F4633BF36DD271729A35C3022DF7BE7CA2E6 (const RuntimeMethod* method) ;
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR int32_t ControlScheme_get_Current_mB825EFA5A84FB1D578EB8F0EEAF5AE09EEA022BD (const RuntimeMethod* method) ;
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR bool ControlScheme_get_IsDirect_m20A7712BE1F14A495A1B691CAACA14BF52B9FEDF (const RuntimeMethod* method) ;
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void ControlScheme_Set_m27618DE37CFB18155CCD5BFEB8214C97875AAB81 (int32_t ___0_mode, const RuntimeMethod* method) ;
@@ -14187,6 +14191,32 @@ IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void AudioMuteButtonUI__ctor_m7B4A13FE0CF3906
 #pragma clang diagnostic ignored "-Winvalid-offsetof"
 #pragma clang diagnostic ignored "-Wunused-variable"
 #endif
+IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR int32_t ControlHandedness_get_DefaultHand_m71EF2A0E51A2EBDC48495FE3BBCD2C12B4599884 (const RuntimeMethod* method) 
+{
+	static bool s_Il2CppMethodInitialized;
+	if (!s_Il2CppMethodInitialized)
+	{
+		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&Application_tDB03BE91CDF0ACA614A5E0B67CFB77C44EB19B21_il2cpp_TypeInfo_var);
+		s_Il2CppMethodInitialized = true;
+	}
+	{
+		il2cpp_codegen_runtime_class_init_inline(Application_tDB03BE91CDF0ACA614A5E0B67CFB77C44EB19B21_il2cpp_TypeInfo_var);
+		bool L_0;
+		L_0 = Application_get_isMobilePlatform_mE0BBFDE72BBFE5877581FA67DDBBFC397608AFCA(NULL);
+		if (L_0)
+		{
+			goto IL_0009;
+		}
+	}
+	{
+		return (int32_t)(0);
+	}
+
+IL_0009:
+	{
+		return (int32_t)(1);
+	}
+}
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR int32_t ControlHandedness_get_Current_mBF9C7D1A73B8A61514C079DE279D2879ED1098BA (const RuntimeMethod* method) 
 {
 	static bool s_Il2CppMethodInitialized;
@@ -14197,8 +14227,10 @@ IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR int32_t ControlHandedness_get_Current_mBF9C7D
 	}
 	{
 		int32_t L_0;
-		L_0 = PlayerPrefs_GetInt_m8AD1FA8BA54CC6CE2B2AEEE36B6D75587BB1692D(_stringLiteralE3678671D8F44FD4B040328FEB928FD8D09C4FAB, 0, NULL);
-		return (int32_t)(L_0);
+		L_0 = ControlHandedness_get_DefaultHand_m71EF2A0E51A2EBDC48495FE3BBCD2C12B4599884(NULL);
+		int32_t L_1;
+		L_1 = PlayerPrefs_GetInt_m8AD1FA8BA54CC6CE2B2AEEE36B6D75587BB1692D(_stringLiteralE3678671D8F44FD4B040328FEB928FD8D09C4FAB, L_0, NULL);
+		return (int32_t)(L_1);
 	}
 }
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR bool ControlHandedness_get_IsRight_m8110A869C9CECC31D48A3953FB4DB799708C6E96 (const RuntimeMethod* method) 
@@ -14275,6 +14307,32 @@ IL_000b:
 #pragma clang diagnostic ignored "-Winvalid-offsetof"
 #pragma clang diagnostic ignored "-Wunused-variable"
 #endif
+IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR int32_t ControlScheme_get_DefaultMode_mCB45F4633BF36DD271729A35C3022DF7BE7CA2E6 (const RuntimeMethod* method) 
+{
+	static bool s_Il2CppMethodInitialized;
+	if (!s_Il2CppMethodInitialized)
+	{
+		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&Application_tDB03BE91CDF0ACA614A5E0B67CFB77C44EB19B21_il2cpp_TypeInfo_var);
+		s_Il2CppMethodInitialized = true;
+	}
+	{
+		il2cpp_codegen_runtime_class_init_inline(Application_tDB03BE91CDF0ACA614A5E0B67CFB77C44EB19B21_il2cpp_TypeInfo_var);
+		bool L_0;
+		L_0 = Application_get_isMobilePlatform_mE0BBFDE72BBFE5877581FA67DDBBFC397608AFCA(NULL);
+		if (L_0)
+		{
+			goto IL_0009;
+		}
+	}
+	{
+		return (int32_t)(0);
+	}
+
+IL_0009:
+	{
+		return (int32_t)(1);
+	}
+}
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR int32_t ControlScheme_get_Current_mB825EFA5A84FB1D578EB8F0EEAF5AE09EEA022BD (const RuntimeMethod* method) 
 {
 	static bool s_Il2CppMethodInitialized;
@@ -14285,8 +14343,10 @@ IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR int32_t ControlScheme_get_Current_mB825EFA5A8
 	}
 	{
 		int32_t L_0;
-		L_0 = PlayerPrefs_GetInt_m8AD1FA8BA54CC6CE2B2AEEE36B6D75587BB1692D(_stringLiteral4B6F93B26CABA5058CDFD0B33B76CC1429003F6C, 0, NULL);
-		return (int32_t)(L_0);
+		L_0 = ControlScheme_get_DefaultMode_mCB45F4633BF36DD271729A35C3022DF7BE7CA2E6(NULL);
+		int32_t L_1;
+		L_1 = PlayerPrefs_GetInt_m8AD1FA8BA54CC6CE2B2AEEE36B6D75587BB1692D(_stringLiteral4B6F93B26CABA5058CDFD0B33B76CC1429003F6C, L_0, NULL);
+		return (int32_t)(L_1);
 	}
 }
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR bool ControlScheme_get_IsTap_m2F489CF3ADC4A60AFE00B28F4BD52E3FA42E0579 (const RuntimeMethod* method) 

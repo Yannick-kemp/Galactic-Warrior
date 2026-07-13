@@ -12,13 +12,21 @@ public static class ControlScheme
 {
     public enum Mode
     {
-        Tap = 0,     // original tap-to-navigate (auto A* nav) — default
-        Direct = 1,  // CoD-Mobile style joystick + action buttons
+        Tap = 0,     // original tap-to-navigate (auto A* nav) — default on non-touch
+        Direct = 1,  // CoD-Mobile style joystick + action buttons — default on touch
     }
 
     private const string KEY = "control_scheme";
 
-    public static Mode Current => (Mode)PlayerPrefs.GetInt(KEY, (int)Mode.Tap);
+    /// <summary>
+    /// Fallback used only when the player hasn't chosen yet. Touch devices
+    /// (phones/tablets) default to the on-screen joystick; every other platform
+    /// keeps the original Tap default. A saved choice always overrides this, so
+    /// existing players and the Tap option are unaffected.
+    /// </summary>
+    private static Mode DefaultMode => Application.isMobilePlatform ? Mode.Direct : Mode.Tap;
+
+    public static Mode Current => (Mode)PlayerPrefs.GetInt(KEY, (int)DefaultMode);
 
     public static bool IsTap => Current == Mode.Tap;
     public static bool IsDirect => Current == Mode.Direct;

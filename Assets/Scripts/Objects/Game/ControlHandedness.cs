@@ -11,13 +11,21 @@ public static class ControlHandedness
 {
     public enum Hand
     {
-        Right = 0, // joystick left, buttons right — default
-        Left = 1,  // mirrored
+        Right = 0, // joystick left, buttons right — default on non-touch
+        Left = 1,  // mirrored — default on touch
     }
 
     private const string KEY = "control_handedness";
 
-    public static Hand Current => (Hand)PlayerPrefs.GetInt(KEY, (int)Hand.Right);
+    /// <summary>
+    /// Fallback used only when the player hasn't chosen yet. Touch devices default
+    /// to the left-handed joystick layout; every other platform keeps the original
+    /// Right default. A saved choice always overrides this. Handedness only affects
+    /// the on-screen joystick HUD (Direct scheme), so non-touch is unaffected.
+    /// </summary>
+    private static Hand DefaultHand => Application.isMobilePlatform ? Hand.Left : Hand.Right;
+
+    public static Hand Current => (Hand)PlayerPrefs.GetInt(KEY, (int)DefaultHand);
 
     public static bool IsRight => Current == Hand.Right;
     public static bool IsLeft => Current == Hand.Left;
