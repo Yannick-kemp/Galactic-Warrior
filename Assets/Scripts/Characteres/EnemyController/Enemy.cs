@@ -1378,6 +1378,13 @@ namespace Assets.Scripts.Characteres.EnemyContoller
                 if (w == null) return;
 
                 w.CanMove = true;
+
+                // Do not re-enable the pair while the Warrior is deliberately phasing through
+                // this enemy after a jump started in contact with it (CrawlingMonster rule).
+                // That pass-through owns the ignore state until the two are separated.
+                if (w.IsCrawlingJumpPassThroughActiveWith(this))
+                    return;
+
                 Physics2D.IgnoreCollision(w.collider2, NormalCollider, false);
             }
         }

@@ -250,6 +250,11 @@ namespace Assets.Scripts.Characteres.WarriorController
                 Enemy enemy = hit.GetComponentInParent<Enemy>();
                 if (enemy == null) continue;
 
+                // Jump pass-through: the Warrior is deliberately phasing through this
+                // CrawlingMonster until they separate, so the overlap is intentional here and
+                // must not be read as a stuck penetration (no bounce, no nudge).
+                if (IsCrawlingJumpPassThroughActiveFor(enemy)) continue;
+
                 // Use the actual overlapping body collider for the depth measurement.
                 ColliderDistance2D cd = collider2.Distance(hit);
                 if (!cd.isValid || !cd.isOverlapped) continue;

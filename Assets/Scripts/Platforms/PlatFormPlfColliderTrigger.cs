@@ -68,6 +68,16 @@ namespace Assets.Scripts.Platforms
         private readonly Dictionary<int, Coroutine> _zalaytyJumpDownRestoreCoroutines =
             new Dictionary<int, Coroutine>();
 
+        // The locked Zalayty instances themselves, keyed the same way as the lock ids.
+        // Needed to RESTART a restore watchdog after this platform was deactivated (zone
+        // culling stops its coroutines): the id alone cannot be resolved back to the monster.
+        private readonly Dictionary<int, ZalaytyMonster> _zalaytyJumpDownLockedInstances =
+            new Dictionary<int, ZalaytyMonster>();
+
+        // Cached buffers for the edge-drop landing search below Zalayty.
+        private readonly List<RaycastHit2D> _zalaytyDropLandingHits = new List<RaycastHit2D>(8);
+        private ContactFilter2D _zalaytyDropLandingFilter = new ContactFilter2D();
+
         [Header("Anti-jitter")]
         [SerializeField] private float maxWarriorSpeed = 20f;
 
@@ -85,6 +95,15 @@ namespace Assets.Scripts.Platforms
 
         [Tooltip("Zalayty-only: how close to the source platform body still counts as physical contact during jump-down restore.")]
         [SerializeField, Min(0f)] private float zalaytyJumpDownRestoreContactSkin = 0.01f;
+
+        [Tooltip("Zalayty-only: OFF = Zalayty may drop off this platform edge even with nothing underneath (he falls into the void and is lost). ON (recommended) = the edge drop is only allowed when a real landing surface is found below; otherwise he stays solid on the edge and his normal chase logic jumps to the Warrior's platform instead.")]
+        [SerializeField] private bool zalaytyEdgeDropRequiresLandingBelow = true;
+
+        [Tooltip("How far below Zalayty a landing surface is searched before the edge drop is allowed. Nothing within this distance = bottomless gap = no drop.")]
+        [SerializeField, Min(0.5f)] private float zalaytyEdgeDropLandingSearchDistance = 10f;
+
+        [Tooltip("Zalayty-only HARD CAP on the jump-down pass-through. A controlled jump-down never lasts this long, so past this delay the platform becomes solid again no matter what. Without it, a pass-through whose restore watchdog died (zone culling deactivates this platform and Unity kills its coroutines) stayed ignored forever: Zalayty then never got CurrentplatForm back from this platform and froze in the air replaying the jump animation.")]
+        [SerializeField, Min(0.2f)] private float zalaytyJumpDownRestoreMaxSeconds = 3f;
 
         [SerializeField] private float edgeZoneWidth = 0.35f;
 
@@ -614,6 +633,7 @@ namespace Assets.Scripts.Platforms
                 return false;
 
             _zalaytyJumpDownLockedCharacters.Add(id);
+            _zalaytyJumpDownLockedInstances[id] = zalayty;
             _zalaytyJumpDownRestoredInsideTriggerCharacters.Remove(id);
 
             // The source platform is being intentionally left downward. It must not
@@ -668,11 +688,61 @@ namespace Assets.Scripts.Platforms
             if (id == 0)
                 return;
 
+            _zalaytyJumpDownLockedInstances[id] = zalayty;
+
             if (_zalaytyJumpDownRestoreCoroutines.ContainsKey(id))
+                return;
+
+            // A deactivated platform cannot run the watchdog. Leaving no entry behind is what
+            // lets OnEnable (or the next contact) start it for real instead of hitting the
+            // "already running" early-return above with a dead coroutine handle.
+            if (!gameObject.activeInHierarchy || !enabled)
                 return;
 
             _zalaytyJumpDownRestoreCoroutines[id] =
                 StartCoroutine(RestoreZalaytyJumpDownWhenBodyClear(zalayty, id));
+        }
+
+        /// <summary>
+        /// Zone culling does SetActive(false) on platforms, which kills every coroutine they
+        /// own — including the jump-down restore watchdog — while the Physics2D ignore pair it
+        /// was supposed to clear survives. Forget the dead handles here so the watchdog can be
+        /// restarted; the lock ids themselves are kept so OnEnable knows what to resume.
+        /// </summary>
+        protected virtual void OnDisable()
+        {
+            foreach (KeyValuePair<int, Coroutine> pair in _zalaytyJumpDownRestoreCoroutines)
+            {
+                if (pair.Value != null)
+                    StopCoroutine(pair.Value);
+            }
+
+            _zalaytyJumpDownRestoreCoroutines.Clear();
+        }
+
+        protected virtual void OnEnable()
+        {
+            if (_zalaytyJumpDownLockedCharacters.Count == 0)
+                return;
+
+            // Restart a watchdog for every pass-through still owed a restore.
+            List<int> lockedIds = new List<int>(_zalaytyJumpDownLockedCharacters);
+
+            for (int i = 0; i < lockedIds.Count; i++)
+            {
+                int id = lockedIds[i];
+
+                if (!_zalaytyJumpDownLockedInstances.TryGetValue(id, out ZalaytyMonster zalayty) ||
+                    zalayty == null)
+                {
+                    // The monster is gone: drop the stale lock, nothing left to restore.
+                    _zalaytyJumpDownLockedCharacters.Remove(id);
+                    _zalaytyJumpDownLockedInstances.Remove(id);
+                    continue;
+                }
+
+                StartRestoreZalaytyJumpDownWhenBodyClear(zalayty);
+            }
         }
 
         private IEnumerator RestoreZalaytyJumpDownWhenBodyClear(ZalaytyMonster zalayty, int id)
@@ -682,19 +752,47 @@ namespace Assets.Scripts.Platforms
             // Let the IgnoreCollision call affect the physics step first.
             yield return wait;
 
+            // Hard deadline: a jump-down is a fraction of a second. Anything longer means the
+            // clear condition can no longer be reached (Zalayty stranded beside/over the edge,
+            // stale flags, interrupted arc), and holding the pass-through open would strand him
+            // permanently platform-less.
+            float deadline = Time.time + zalaytyJumpDownRestoreMaxSeconds;
+
             while (zalayty != null && platformCollider != null)
             {
                 if (!IsAnyCharacterColliderTouchingOrOverlappingPlatformBody(zalayty, zalaytyJumpDownRestoreContactSkin) &&
                     !ShouldKeepZalaytyJumpDownPassThrough(zalayty))
                     break;
+
+                if (Time.time >= deadline)
+                {
+                    Debug.Log(
+                        $"Zalayty jump-down pass-through timed out on '{name}' for {zalayty.name} -> platform restored solid.",
+                        this);
+                    break;
+                }
+
                 SetIgnoreForCharacter(zalayty, true);
                 yield return wait;
             }
 
             if (zalayty != null && platformCollider != null)
+            {
                 ClearZalaytyJumpDownLock(zalayty, restoreCollision: true);
+
+                // The pass-through can be cancelled before the drop ever happened: a resting
+                // Zalayty is already "clear" of the platform body on the first check (he sits a
+                // landing offset above the top). The request had nulled his CurrentplatForm and
+                // flagged him airborne, and nothing else gives the platform back while he floats
+                // a few centimetres above the top with no contact -> he froze at the edge,
+                // replaying the jump animation, with the drop re-armed every 0.20s.
+                // No-op when he really left the top (a genuine drop keeps falling).
+                zalayty.ReclaimPlatformAfterCancelledEdgeDrop(this);
+            }
             else
+            {
                 ClearZalaytyJumpDownLock(zalayty, restoreCollision: false);
+            }
         }
 
         private void ClearZalaytyJumpDownLock(ZalaytyMonster zalayty, bool restoreCollision)
@@ -704,6 +802,7 @@ namespace Assets.Scripts.Platforms
                 return;
 
             _zalaytyJumpDownLockedCharacters.Remove(id);
+            _zalaytyJumpDownLockedInstances.Remove(id);
 
             if (_zalaytyJumpDownRestoreCoroutines.TryGetValue(id, out Coroutine coroutine) && coroutine != null)
                 StopCoroutine(coroutine);
@@ -747,7 +846,87 @@ namespace Assets.Scripts.Platforms
             if (zalayty.IsWarriorPressingOnTop)
                 return false;
 
-            return zalayty.CountGroundPointsOnSpecificPlatform(this) <= 1;
+            // Cheap edge test first: the surface search below only runs on the rare frames
+            // where Zalayty really is hanging off this edge.
+            if (zalayty.CountGroundPointsOnSpecificPlatform(this) > 1)
+                return false;
+
+            // A chasing Zalayty must never throw himself into a bottomless gap. The edge drop
+            // exists to let him go DOWN to a lower platform (jump-down through the source
+            // platform); with nothing underneath it just deletes him from the fight. Staying
+            // solid here keeps his CurrentplatForm, so the normal chase logic performs the
+            // platform-change jump toward the Warrior instead.
+            if (zalaytyEdgeDropRequiresLandingBelow && !HasLandingSurfaceBelowForZalaytyDrop(zalayty))
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// True when a real (non-trigger) platform surface exists under Zalayty, close enough to
+        /// be a landing. This platform's own colliders and Zalayty's own colliders are excluded,
+        /// so standing ON this platform never counts as "ground below".
+        /// </summary>
+        private bool HasLandingSurfaceBelowForZalaytyDrop(ZalaytyMonster zalayty)
+        {
+            Collider2D body = zalayty.NormalCollider != null && zalayty.NormalCollider.enabled
+                ? zalayty.NormalCollider
+                : zalayty.collider2;
+
+            if (body == null)
+                return false;
+
+            Bounds bodyBounds = body.bounds;
+
+            Vector2 origin = new Vector2(bodyBounds.center.x, bodyBounds.min.y - 0.02f);
+            Vector2 size = new Vector2(Mathf.Max(0.05f, bodyBounds.size.x * 0.9f), 0.02f);
+
+            // Allocation-free: this can be evaluated every physics frame while Zalayty waits
+            // on the edge for his jump.
+            _zalaytyDropLandingFilter.useTriggers = false;
+            _zalaytyDropLandingFilter.useLayerMask = true;
+            _zalaytyDropLandingFilter.SetLayerMask(zalayty.PlatformLayer);
+
+            _zalaytyDropLandingHits.Clear();
+
+            Physics2D.BoxCast(
+                origin,
+                size,
+                0f,
+                Vector2.down,
+                _zalaytyDropLandingFilter,
+                _zalaytyDropLandingHits,
+                zalaytyEdgeDropLandingSearchDistance);
+
+            for (int i = 0; i < _zalaytyDropLandingHits.Count; i++)
+            {
+                Collider2D hit = _zalaytyDropLandingHits[i].collider;
+
+                if (hit == null || hit.isTrigger)
+                    continue;
+
+                // Never count the platform he is leaving, nor his own colliders.
+                if (hit == platformCollider)
+                    continue;
+
+                if (hit.transform.IsChildOf(zalayty.transform))
+                    continue;
+
+                PlatFormColliderTrigger platform = hit.GetComponentInParent<PlatFormColliderTrigger>();
+                if (platform == this)
+                    continue;
+
+                if (platform == null || platform.platformCollider == null)
+                    continue;
+
+                // The surface must really be BELOW his feet to be a landing.
+                if (platform.platformCollider.bounds.max.y >= bodyBounds.min.y)
+                    continue;
+
+                return true;
+            }
+
+            return false;
         }
 
         // ─── Anti-jitter helpers ──────────────────────────────────────────────

@@ -443,6 +443,11 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             ApplyActiveZalaytyBodyImpactAbsorber();
 
+            // Crawling-monster jump pass-through: restores the ignored collisions as soon as the
+            // Warrior is no longer in contact with the monster he jumped off. Runs before the
+            // overlap guardian so that guardian sees the up-to-date pass-through state.
+            UpdateCrawlingJumpPassThrough();
+
             // Guaranteed-separation backstop: runs every frame on the final resolved
             // position (after anti-tunnel + absorber). Self-defers while a bounce is
             // already active, so it must run before the post-bounce early-return below.
@@ -923,12 +928,14 @@ namespace Assets.Scripts.Characteres.WarriorController
         private void OnDisable()
         {
             ForceStopSprint();
+            ClearAllCrawlingJumpPassThrough();
             CancelIceBallCastVisualState(restoreMovementAfterCancel: false);
         }
 
         private void OnDestroy()
         {
             ForceStopSprint();
+            ClearAllCrawlingJumpPassThrough();
             CancelIceBallCastVisualState(restoreMovementAfterCancel: false);
         }
 

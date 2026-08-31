@@ -13985,6 +13985,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: plf-blk_1 (3)
       objectReference: {fileID: 0}
+    - target: {fileID: 2453544159609105807, guid: 600ff9f5b05e2d44e91721494c69429d, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 6350657475409537425, guid: 600ff9f5b05e2d44e91721494c69429d, type: 3}
       propertyPath: m_Sprite
       value: 
@@ -38551,11 +38555,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4918953235271323384, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -999.58
+      value: -995.44
       objectReference: {fileID: 0}
     - target: {fileID: 4918953235271323384, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 65.85
+      value: 65.89
       objectReference: {fileID: 0}
     - target: {fileID: 4918953235271323384, guid: bce61a31d57d18e46acb500df951a64d, type: 3}
       propertyPath: m_LocalPosition.z

@@ -919,8 +919,10 @@ namespace Assets.Scripts.Platforms
             }
         }
 
-        private void OnDisable()
+        protected override void OnDisable()
         {
+            base.OnDisable();
+
             foreach (KeyValuePair<int, Coroutine> pair in _exitValidationCoroutines)
             {
                 if (pair.Value != null)

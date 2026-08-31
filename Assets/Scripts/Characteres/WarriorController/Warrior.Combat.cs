@@ -1038,6 +1038,10 @@ namespace Assets.Scripts.Characteres.WarriorController
             LastJumpStartTime = Time.time;
             LastJumpStartFrame = Time.frameCount;
 
+            // Jumping while touching a CrawlingMonster must phase through it (restored as soon
+            // as the two separate). Single hook: every jump entry point goes through here.
+            BeginCrawlingJumpPassThroughOnJumpStart();
+
             PlayJumpSfx(); // <-- NEW
         }
         #endregion

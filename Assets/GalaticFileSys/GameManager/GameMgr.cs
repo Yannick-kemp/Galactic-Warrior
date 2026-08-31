@@ -1476,7 +1476,12 @@ public class GameMgr : MonoBehaviour, IGame
     // HighestReachedSceneIndex is never lowered, so all unlocked levels stay available afterwards.
     private string EnforceTutorialGate(string requestedSceneName)
     {
-        if (IsTutorialCompleted)
+        // Direct (joystick) mode deliberately skips the tap-based tutorial (see
+        // WarriorTutorialController) and never sets GW_TutorialCompleted. Since joystick is now the
+        // default scheme, without this exemption Direct players are redirected AgeOfIce → WarriorScene
+        // forever after finishing the tutorial scene. Treat Direct mode as gate-exempt; the flag stays
+        // 0 so Tap players still get the tutorial if they switch schemes.
+        if (IsTutorialCompleted || ControlScheme.IsDirect)
             return requestedSceneName;
         if (string.IsNullOrEmpty(warriorSceneName))
             return requestedSceneName;
@@ -1693,6 +1698,11 @@ public class GameMgr : MonoBehaviour, IGame
         if (platform.platformCollider == null)
             return platform.transform.position;
 
+        // Same cull guard as the static path: a culled zone collapses platformCollider.bounds
+        // onto the pivot, which GetSafeRespawnPositionFor would read as the surface.
+        EnsurePlatformZoneActive(platform);
+        Physics2D.SyncTransforms();
+
         float preferredX = warrior.LastSafePosition != Vector3.zero
             ? warrior.LastSafePosition.x
             : warrior.transform.position.x;
@@ -1707,6 +1717,11 @@ public class GameMgr : MonoBehaviour, IGame
 
         if (platform.platformCollider == null)
             return platform.transform.position;
+
+        // Same cull guard as the static path: a culled zone collapses platformCollider.bounds
+        // onto the pivot, which GetSafeRespawnPositionFor would read as the surface.
+        EnsurePlatformZoneActive(platform);
+        Physics2D.SyncTransforms();
 
         float preferredX = warrior.LastSafePosition != Vector3.zero
             ? warrior.LastSafePosition.x
@@ -1723,11 +1738,33 @@ public class GameMgr : MonoBehaviour, IGame
         if (platform.platformCollider == null)
             return platform.transform.position;
 
+        // Same cull guard as the static path: a culled zone collapses platformCollider.bounds
+        // onto the pivot, which GetSafeRespawnPositionFor would read as the surface.
+        EnsurePlatformZoneActive(platform);
+        Physics2D.SyncTransforms();
+
         float preferredX = warrior.LastSafePosition != Vector3.zero
             ? warrior.LastSafePosition.x
             : warrior.transform.position.x;
 
         return platform.GetSafeRespawnPositionFor(warrior, preferredX);
+    }
+
+    /// <summary>
+    /// Reactivates the ZoneCullable that owns <paramref name="platform"/> if it is currently
+    /// culled, so the platform's collider reports valid (non-degenerate) bounds. Found via
+    /// GetComponentInParent with includeInactive: true — reliable even when the zone GameObject
+    /// is inactive, and independent of any point-in-zone geometry test (the platform pivot can
+    /// sit below the zone's own bounds collider).
+    /// </summary>
+    private static void EnsurePlatformZoneActive(PlatFormColliderTrigger platform)
+    {
+        if (platform == null)
+            return;
+
+        ZoneCullable zone = platform.GetComponentInParent<ZoneCullable>(true);
+        if (zone != null && !zone.IsZoneActive)
+            zone.SetZoneActive(true);
     }
 
     /// <summary>
@@ -1743,16 +1780,47 @@ public class GameMgr : MonoBehaviour, IGame
         if (platform.platformCollider == null)
             return platform.transform.position;
 
+        // The platform's zone may be culled (its GameObject SetActive(false)) at this moment —
+        // the camera followed the Warrior down as he fell off the edge. A Collider2D on a
+        // DISABLED GameObject reports a DEGENERATE bounds collapsed onto the platform pivot,
+        // which for these platforms sits well BELOW the real surface (pivot y≈113.98 vs surface
+        // y≈116.65 for plf-blk_1 (3)). Reading that produced a respawn ~2.7 units too low and
+        // horizontally centered — the AgeOfIce/Zone2 "plf-blk_1 (3)" below-surface bug. Bring
+        // the zone back to life and resync physics FIRST so platformCollider.bounds reports the
+        // true surface. ApplyRespawnToWarrior re-ensures the zone shortly after; this is just
+        // earlier and idempotent.
+        EnsurePlatformZoneActive(platform);
+        Physics2D.SyncTransforms();
+
         Bounds pb = platform.platformCollider.bounds;
 
-        // Use the real collider half-height; fall back only if the collider is not yet enabled.
-        float halfHeight = (warrior.collider2 != null && warrior.collider2.enabled)
-            ? warrior.collider2.bounds.extents.y
-            : 0.8f;
+        // IMPORTANT: on the retry path this runs BEFORE TryRevive() re-enables the Warrior
+        // collider (death disabled it via disableCollidersOnDeath), so warrior.collider2 is
+        // disabled here and its live .bounds is unreliable. Derive the half-extents from the
+        // serialized BoxCollider2D size/offset (valid while disabled), scaled by the transform.
+        //
+        // The Warrior collider has a vertical offset (offset.y ≈ -0.5), so we must seat his
+        // FEET on the surface using the real pivot->feet distance. The old code used
+        // extents.y — and, because the collider was disabled, actually fell back to 0.8f —
+        // which placed the pivot ~0.5–1.0 too low, dropping his feet BELOW the (thin) platform
+        // top and leaving him trapped UNDERNEATH it (the AgeOfIce/Zone2 "plf-blk_1 (3)"
+        // bad-respawn bug). Seat by feetToPivot instead, mirroring Warrior.LateUpdate and
+        // PerformWarriorEdgeFall which both seat by feetToPivot for exactly this reason.
+        BoxCollider2D box = warrior.collider2;
+        Vector3 lossy = warrior.transform.lossyScale;
 
-        float halfWidth = (warrior.collider2 != null && warrior.collider2.enabled)
-            ? warrior.collider2.bounds.extents.x
-            : 0.4f;
+        float feetToPivot;
+        float halfWidth;
+        if (box != null)
+        {
+            feetToPivot = (box.size.y * 0.5f - box.offset.y) * Mathf.Abs(lossy.y);
+            halfWidth = (box.size.x * 0.5f) * Mathf.Abs(lossy.x);
+        }
+        else
+        {
+            feetToPivot = 1.3f;
+            halfWidth = 0.4f;
+        }
 
         // Clamp X inside the platform surface with a small horizontal skin.
         const float horizontalSkin = 0.08f;
@@ -1767,7 +1835,9 @@ public class GameMgr : MonoBehaviour, IGame
             ? Mathf.Clamp(preferredX, minX, maxX)
             : pb.center.x;
 
-        float safeY = pb.max.y + halfHeight + movingPlatformRespawnSeatOffset;
+        // safeY is the Warrior PIVOT position; pivot - feetToPivot puts the feet at
+        // pb.max.y + seatOffset, i.e. just above the platform surface.
+        float safeY = pb.max.y + feetToPivot + movingPlatformRespawnSeatOffset;
 
         return new Vector3(safeX, safeY, warrior.transform.position.z);
     }
