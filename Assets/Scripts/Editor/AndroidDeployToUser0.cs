@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using UnityEditor;
@@ -24,7 +25,7 @@ using Debug = UnityEngine.Debug;
 /// </summary>
 public static class AndroidDeployToUser0
 {
-    private const string PackageName = "com.polymart.GalacticWarrior";
+    internal const string PackageName = "com.polymart.GalacticWarrior";
     private const string ApkRelativePath = "Builds/Android/Galactic-Warrior.apk";
 
     [MenuItem("Tools/Galactic Warrior/Android/Build APK + Deploy to User 0")]
@@ -67,6 +68,16 @@ public static class AndroidDeployToUser0
             return null;
         }
 
+        // Assert APK mode. AndroidReleaseBundleBuilder sets buildAppBundle = true and leaves it
+        // that way, so without this the deploy silently produces an AAB with a .apk name. The
+        // device then rejects it with INSTALL_PARSE_FAILED_UNEXPECTED_EXCEPTION on
+        // AndroidManifest.xml, which reads like a manifest problem and is not one.
+        if (EditorUserBuildSettings.buildAppBundle)
+        {
+            EditorUserBuildSettings.buildAppBundle = false;
+            Debug.Log("[AndroidDeploy] Editor was in App Bundle mode; switched to APK for this deploy.");
+        }
+
         string apkPath = Path.GetFullPath(Path.Combine(GetProjectRoot(), ApkRelativePath));
         Directory.CreateDirectory(Path.GetDirectoryName(apkPath));
 
@@ -94,8 +105,41 @@ public static class AndroidDeployToUser0
 
     // --- Install / launch --------------------------------------------------
 
+    /// <summary>
+    /// An AAB is a zip too, so a mislabelled bundle installs "successfully" as far as the file
+    /// system is concerned and only fails on the device with a confusing manifest parse error.
+    /// Checking the archive layout here turns that into a clear message.
+    /// </summary>
+    private static bool LooksLikeApk(string path)
+    {
+        try
+        {
+            using (var archive = System.IO.Compression.ZipFile.OpenRead(path))
+            {
+                if (archive.GetEntry("AndroidManifest.xml") != null)
+                    return true;
+
+                if (archive.GetEntry("BundleConfig.pb") != null)
+                    Debug.LogError($"[AndroidDeploy] {Path.GetFileName(path)} is an App Bundle, not an APK. " +
+                                   "Rebuild with 'Build APK + Deploy to User 0'.");
+                else
+                    Debug.LogError($"[AndroidDeploy] {Path.GetFileName(path)} has no AndroidManifest.xml at its root.");
+
+                return false;
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[AndroidDeploy] Cannot read {path} as an archive: {e.Message}");
+            return false;
+        }
+    }
+
     private static bool InstallToUser0(string apkPath)
     {
+        if (!LooksLikeApk(apkPath))
+            return false;
+
         string serial = GetSingleDeviceSerial();
         if (serial == null)
             return false;
@@ -134,7 +178,7 @@ public static class AndroidDeployToUser0
 
     // --- ADB plumbing ------------------------------------------------------
 
-    private static string GetSingleDeviceSerial()
+    internal static string GetSingleDeviceSerial()
     {
         var (code, stdout, stderr) = RunAdb("devices");
         if (code != 0)
@@ -164,7 +208,7 @@ public static class AndroidDeployToUser0
         return serials[0];
     }
 
-    private static (int code, string stdout, string stderr) RunAdb(string args)
+    internal static (int code, string stdout, string stderr) RunAdb(string args)
     {
         string adb = GetAdbPath();
         if (adb == null)
@@ -194,7 +238,7 @@ public static class AndroidDeployToUser0
         }
     }
 
-    private static string GetAdbPath()
+    internal static string GetAdbPath()
     {
         var candidates = new List<string>();
 

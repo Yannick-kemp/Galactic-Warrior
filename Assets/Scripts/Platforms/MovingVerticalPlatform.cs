@@ -465,7 +465,12 @@ namespace Assets.Scripts.Platforms
             if (_respawnSeatCoroutines.TryGetValue(id, out Coroutine oldRoutine) && oldRoutine != null)
                 StopCoroutine(oldRoutine);
 
-            _respawnSeatCoroutines[id] = StartCoroutine(RespawnSeatGraceRoutine(character, id));
+            Coroutine respawnSeat = TryStartPlatformCoroutine(RespawnSeatGraceRoutine(character, id));
+
+            if (respawnSeat != null)
+                _respawnSeatCoroutines[id] = respawnSeat;
+            else
+                _respawnSeatCoroutines.Remove(id);
         }
 
         private IEnumerator RespawnSeatGraceRoutine(CharacterController character, int id)
@@ -869,7 +874,12 @@ namespace Assets.Scripts.Platforms
             if (_exitValidationCoroutines.TryGetValue(id, out Coroutine routine) && routine != null)
                 StopCoroutine(routine);
 
-            _exitValidationCoroutines[id] = StartCoroutine(ValidateExitAfterPhysics(character, id));
+            Coroutine exitValidation = TryStartPlatformCoroutine(ValidateExitAfterPhysics(character, id));
+
+            if (exitValidation != null)
+                _exitValidationCoroutines[id] = exitValidation;
+            else
+                _exitValidationCoroutines.Remove(id);
         }
 
         private IEnumerator ValidateExitAfterPhysics(CharacterController character, int id)

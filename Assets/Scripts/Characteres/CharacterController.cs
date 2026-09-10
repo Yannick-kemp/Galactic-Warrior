@@ -575,6 +575,25 @@ public class CharacterController : Character, ICharacterController
 
         while (!targetReached)
         {
+            // L'arc a perdu le corps: quelque chose l'a deplace loin de la trajectoire (poussee,
+            // depenetration, descente forcee, respawn). Toute tentative de le ramener se voit
+            // comme une repulsion: mesure, la branche d'atterrissage predit le replacait de 3.85
+            // unites d'un coup pour un ecart de 3.83. On rend la main a la physique.
+            float divergenceAbort = MaxJumpArcDivergenceBeforeAbort;
+
+            if (divergenceAbort > 0f)
+            {
+                Vector2 bodyPosition = rigidbody2 != null ? rigidbody2.position : (Vector2)transform.position;
+
+                if (Vector2.Distance(bodyPosition, previousPosition) > divergenceAbort)
+                {
+                    targetReached = true;
+                    _isJumping = false;
+                    activesJumpCoroutine = null;
+                    yield break;
+                }
+            }
+
             float stepTime = Time.fixedDeltaTime > 0f ? Time.fixedDeltaTime : Time.deltaTime;
             elapsedTime += stepTime;
             float t = duration > 0f ? elapsedTime / duration : 1f;
@@ -591,7 +610,15 @@ public class CharacterController : Character, ICharacterController
                 if (rigidbody2 != null)
                     rigidbody2.gravityScale = Mathf.Max(rigidbody2.gravityScale, 2.5f);
 
-                desiredPosition = (Vector2)transform.position + currentVelocity * stepTime;
+                // JAMAIS a partir de transform.position ici. currentVelocity est ensuite recalculee
+                // par (desiredPosition - previousPosition) / stepTime: en partant de la position
+                // REELLE, tout ecart entre le corps et la trajectoire est divise par le pas de
+                // temps, donc multiplie par 50, et reinjecte dans la vitesse a chaque pas. La
+                // boucle s'emballe: mesure en jeu, 21 unites par pas physique (1065 unites/s), le
+                // Warrior projete jusqu'a x=-155 y=2440 alors que le niveau est autour de
+                // x=-940 y=70 — la "repulsion tres violente" observee. Repartir de la position
+                // theorique rend la vitesse stable par construction.
+                desiredPosition = previousPosition + currentVelocity * stepTime;
             }
 
             bool movingDown = desiredPosition.y < previousPosition.y;
@@ -602,6 +629,9 @@ public class CharacterController : Character, ICharacterController
             if (movingDown &&
        TryResolveDestinationPlatformTopLanding(previousPosition, desiredPosition, out Vector2 predictedLandingPosition, out PlatFormColliderTrigger destinationPlatform))
             {
+                ReportBigJumpArcStep(
+                    "atterrissage predit (anti-tunnel)", predictedLandingPosition, desiredPosition, previousPosition);
+
                 MoveCharacterTo(predictedLandingPosition);
                 CompletePredictedTopLanding(destinationPlatform);
 
@@ -620,10 +650,29 @@ public class CharacterController : Character, ICharacterController
 
                 yield break;
             }
-            MoveCharacterTo(desiredPosition);
+            // L'arc est calcule depuis SA propre position de depart, pas depuis la position reelle
+            // du corps. Si la physique a deplace le personnage entretemps (poussee d'ennemi,
+            // depenetration, descente forcee), l'etape suivante le ramene d'un coup sur la
+            // trajectoire: mesure sur le Warrior, 1.65 unite en un seul pas physique, ressenti
+            // comme une repulsion violente. On borne donc ce que l'arc applique reellement; la
+            // trajectoire theorique, elle, continue d'avancer normalement.
+            Vector2 appliedPosition = ApplyJumpArcStep(previousPosition, desiredPosition);
+
+            ReportBigJumpArcStep("arc", appliedPosition, desiredPosition, previousPosition);
+
+            MoveCharacterTo(appliedPosition);
 
             if (stepTime > 0f)
+            {
                 currentVelocity = (desiredPosition - previousPosition) / stepTime;
+
+                // Ceinture et bretelles: meme si une autre source injecte un ecart enorme, l'arc
+                // ne peut plus se transformer en catapulte.
+                float maxArcSpeed = MaxJumpArcSpeed;
+
+                if (maxArcSpeed > 0f && currentVelocity.magnitude > maxArcSpeed)
+                    currentVelocity = currentVelocity.normalized * maxArcSpeed;
+            }
 
             DescendentPhase = desiredPosition.y < previousY;
             previousY = desiredPosition.y;
@@ -816,6 +865,74 @@ public class CharacterController : Character, ICharacterController
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Recalage maximal, par pas physique, entre la position reelle du corps et la trajectoire
+    /// theorique de l'arc. 0 = pas de limite (comportement d'origine, conserve pour les ennemis).
+    /// </summary>
+    protected virtual float MaxJumpArcRejoinPerStep => 0f;
+
+    /// <summary>
+    /// Applique une etape d'arc SANS jamais rappeler brutalement le corps sur la trajectoire.
+    /// L'arc avance de son propre delta a partir de la position REELLE; l'ecart accumule (le corps
+    /// a ete pousse, depenetre ou deplace pendant l'arc) n'est rattrape que par petites doses.
+    /// Sans cela l'etape suivante replace le corps d'un coup: 1.65 unite en un pas physique sur le
+    /// Warrior, ressenti comme une repulsion violente. Un arc non perturbe est inchange: l'ecart
+    /// est nul, donc la position appliquee est exactement la position desiree.
+    /// </summary>
+    private Vector2 ApplyJumpArcStep(Vector2 arcPreviousPosition, Vector2 desiredPosition)
+    {
+        float maxRejoin = MaxJumpArcRejoinPerStep;
+
+        if (maxRejoin <= 0f)
+            return desiredPosition;
+
+        Vector2 current = rigidbody2 != null ? rigidbody2.position : (Vector2)transform.position;
+        Vector2 divergence = arcPreviousPosition - current;
+
+        if (divergence.sqrMagnitude <= maxRejoin * maxRejoin)
+            return desiredPosition;
+
+        Vector2 arcStep = desiredPosition - arcPreviousPosition;
+
+        return current + arcStep + divergence.normalized * maxRejoin;
+    }
+
+    /// <summary>
+    /// Ecart maximal tolere entre le corps et la trajectoire d'un arc de saut avant d'abandonner
+    /// l'arc. 0 = jamais abandonner (comportement d'origine, conserve pour les ennemis).
+    /// </summary>
+    protected virtual float MaxJumpArcDivergenceBeforeAbort => 0f;
+
+    /// <summary>
+    /// Vitesse maximale que la phase de vol libre d'un arc de saut peut atteindre.
+    /// 0 = pas de limite (comportement d'origine, conserve pour les ennemis).
+    /// </summary>
+    protected virtual float MaxJumpArcSpeed => 0f;
+
+    /// <summary>Diagnostic: journalise les etapes d'arc qui deplacent le corps trop fort.</summary>
+    protected virtual float BigJumpArcStepLogThreshold => 0f;
+
+    private void ReportBigJumpArcStep(
+        string branch, Vector2 appliedPosition, Vector2 desiredPosition, Vector2 arcPreviousPosition)
+    {
+        float threshold = BigJumpArcStepLogThreshold;
+
+        if (threshold <= 0f)
+            return;
+
+        Vector2 current = rigidbody2 != null ? rigidbody2.position : (Vector2)transform.position;
+        float applied = Vector2.Distance(appliedPosition, current);
+
+        if (applied < threshold)
+            return;
+
+        Debug.Log(
+            $"[ARC] branche={branch} deplacement applique={applied:F2} " +
+            $"| ecart corps/trajectoire={Vector2.Distance(arcPreviousPosition, current):F2} " +
+            $"| pas theorique de l'arc={Vector2.Distance(desiredPosition, arcPreviousPosition):F2} " +
+            $"| de ({current.x:F2}, {current.y:F2}) vers ({appliedPosition.x:F2}, {appliedPosition.y:F2})", this);
     }
 
     protected void MoveCharacterTo(Vector2 position)

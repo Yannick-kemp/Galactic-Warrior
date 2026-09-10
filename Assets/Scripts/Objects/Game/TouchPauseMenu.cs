@@ -9,7 +9,7 @@ using UnityEngine.UI;
 /// (RuntimeSprites + BuildRuntimeButton, like SettingsPopupUI / DirectControlHud).
 ///
 /// Layout:
-///   - PAUSE view    : Resume, Settings
+///   - PAUSE view    : Resume, Settings, Main Menu
 ///   - SETTINGS view : Sound + control-scheme + handedness toggles (same underlying
 ///                     statics as the MainMenu SettingsPopupUI) + Back.
 /// Closing Settings returns to the PAUSE view; Resume hands back to PauseButtonUI.
@@ -78,6 +78,7 @@ public class TouchPauseMenu : MonoBehaviour
         MakeTitle(_pauseView.transform, "PAUSE", 220f);
         MakeButton(_pauseView.transform, "Resume", 60f, OnResume);
         MakeButton(_pauseView.transform, "Settings", -80f, ShowSettings);
+        MakeButton(_pauseView.transform, "Main Menu", -220f, OnMainMenu);
 
         // ---- SETTINGS view (hidden until Settings is pressed) ----
         _settingsView = MakeView("SettingsView");
@@ -111,6 +112,27 @@ public class TouchPauseMenu : MonoBehaviour
     }
 
     // --- Actions ---
+
+    /// <summary>
+    /// Leaves the run and goes back to the main menu, which is the only route to the chapter
+    /// picker. Resume() first on purpose: LoadMenu restores Time.timeScale but knows nothing about
+    /// PauseButtonUI's own state, so without it the menu would come up with IsPaused still true and
+    /// input still locked.
+    /// </summary>
+    private void OnMainMenu()
+    {
+        if (_owner != null)
+            _owner.Resume();
+        else
+            gameObject.SetActive(false);
+
+        GameMgr mgr = GameMgr.Instance != null
+            ? GameMgr.Instance
+            : FindFirstObjectByType<GameMgr>();
+
+        if (mgr != null)
+            mgr.LoadMainMenu();
+    }
 
     private void OnResume()
     {

@@ -180,7 +180,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   hand: {fileID: 4488550059434017147}
-  target: {fileID: 0}
+  target: {fileID: 7944958181468063004}
   offset: {x: -80, y: 80}
   startDown: 55
   moveDistance: 0
@@ -2511,7 +2511,7 @@ MonoBehaviour:
   powerComboId: relic_power_combo
   shieldId: relic_shield
   sprintId: relic_sprint
-  iceBallId: relic-ice-evolve
+  iceBallId: relic_IceBall
   keyId: relic_key
   showWhenCountAtLeast: 1
 --- !u!114 &4023821984472475709

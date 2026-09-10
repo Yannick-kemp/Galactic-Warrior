@@ -435,6 +435,12 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void FixedUpdate()
         {
+            TrackViolentEnemyRepulse();
+
+            TrackWedgeBetweenEnemies();
+
+            TrackPingPongEpisode();
+
             RememberZalaytyImpactPrePhysicsPosition();
 
             ApplyDestinationPlatformAntiTunnelDuringPhysicsFall();

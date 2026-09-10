@@ -333,6 +333,11 @@ public class GameMgr : MonoBehaviour, IGame
         _isSceneTransitionRunning = false;
         Time.timeScale = 1f;
 
+        // A boss fight never survives a scene change; a stale flag here would keep the level track
+        // from ever coming back.
+        _bossMusicActive = false;
+        _musicBeforeBoss = null;
+
         if (UIManager.Instance != null)
         {
             UIManager.Instance.HidePurchaseScreen();
@@ -441,6 +446,68 @@ public class GameMgr : MonoBehaviour, IGame
             clip = Resources.Load<AudioClip>(level4MusicResourcesPath);
 
         StartMusic(clip);
+    }
+
+    // --- Boss battle music ---------------------------------------------------
+
+    private AudioClip _musicBeforeBoss;
+    private float _musicTimeBeforeBoss;
+    private bool _bossMusicActive;
+
+    public bool IsBossMusicPlaying => _bossMusicActive;
+
+    /// <summary>
+    /// Swaps the level track for a boss track. The level track and its playhead are remembered so
+    /// the fight can hand it back where it left off instead of restarting it from the top, which
+    /// would be obvious right after a boss dies.
+    /// </summary>
+    public void PlayBossMusic(AudioClip clip)
+    {
+        if (clip == null) return;
+
+        EnsureMusicSource();
+
+        if (_bossMusicActive && _musicSource.clip == clip)
+            return;
+
+        if (!_bossMusicActive)
+        {
+            _musicBeforeBoss = _musicSource.clip;
+            _musicTimeBeforeBoss = _musicSource.clip != null ? _musicSource.time : 0f;
+        }
+
+        _bossMusicActive = true;
+
+        _musicSource.Stop();
+        _musicSource.clip = clip;
+        _musicSource.time = 0f;
+        _musicSource.volume = musicVolume;
+        _musicSource.loop = true;
+        _musicSource.Play();
+    }
+
+    /// <summary>Ends the boss track and resumes the level track where it was.</summary>
+    public void StopBossMusic()
+    {
+        if (!_bossMusicActive) return;
+
+        _bossMusicActive = false;
+        EnsureMusicSource();
+        _musicSource.Stop();
+
+        if (_musicBeforeBoss == null)
+        {
+            _musicSource.clip = null;
+            return;
+        }
+
+        _musicSource.clip = _musicBeforeBoss;
+        _musicSource.time = Mathf.Clamp(_musicTimeBeforeBoss, 0f, Mathf.Max(0f, _musicBeforeBoss.length - 0.05f));
+        _musicSource.volume = musicVolume;
+        _musicSource.loop = true;
+        _musicSource.Play();
+
+        _musicBeforeBoss = null;
     }
 
     private void StartMusic(AudioClip clip)
@@ -553,7 +620,11 @@ public class GameMgr : MonoBehaviour, IGame
         SceneManager.LoadScene(menuSceneName);
     }
 
-    private void LoadMainMenu()
+    /// <summary>
+    /// Public so the in-game pause menu can offer a way back. Without it a player who starts a
+    /// chapter is stuck in it until they win or die, and the chapter picker becomes unreachable.
+    /// </summary>
+    public void LoadMainMenu()
     {
         LoadMenu(mainMenuSceneName);
     }
@@ -973,6 +1044,9 @@ public class GameMgr : MonoBehaviour, IGame
         StartCoroutine(HandleBossFinalDeathLevelCompleteRoutine());
     }
 
+    /// <summary>Safety net on the wait for the boss death cinematic, in real seconds.</summary>
+    private const float MaxWaitForDeathCinematic = 4f;
+
     private IEnumerator HandleBossFinalDeathLevelCompleteRoutine()
     {
         _bossFinalDeathFlowRunning = true;
@@ -985,10 +1059,20 @@ public class GameMgr : MonoBehaviour, IGame
         while (_bossSlowMoPlaying)
             yield return null;
 
+        // Then let the death cinematic finish. It owns the camera and fires the explosion chain,
+        // and the relic rising in the middle of that reads as one muddled event instead of two
+        // beats. Bounded on purpose: a cinematic that somehow never ends must not strand the level
+        // in an uncompletable state.
+        float finisherDeadline = Time.realtimeSinceStartup + MaxWaitForDeathCinematic;
+        while (Assets.Scripts.Objects.BossFinisherFx.BossFinisher.IsRunning
+               && Time.realtimeSinceStartup < finisherDeadline)
+            yield return null;
+
         yield return new WaitForSecondsRealtime(bossDeathCompletionDelay);
 
-        // After the slow-mo: play the boss MemoryRelic sequence (reused VFX + SFX + new "rise"
-        // animation), then increment the persistent boss-relic counter, before the end-of-level UI.
+        // After the death cinematic: play the boss MemoryRelic sequence (reused VFX + SFX + new
+        // "rise" animation), then increment the persistent boss-relic counter, before the
+        // end-of-level UI.
         yield return GrantBossRelicSequence(_pendingBossRelicType, _pendingBossDeathPosition);
 
         CompleteCurrentCampaignSceneInternal();
@@ -2388,6 +2472,20 @@ public class GameMgr : MonoBehaviour, IGame
     public string GetContinueSceneDisplayName()
     {
         return NicifySceneName(GetContinueSceneName());
+    }
+
+    /// <summary>
+    /// Display name of a campaign scene, for the chapter picker. Returns empty for an index outside
+    /// the campaign so the caller can simply skip it rather than special-case the count.
+    /// </summary>
+    public string GetCampaignSceneDisplayName(int sceneIndex)
+    {
+        NormalizeCampaignSceneOrder();
+
+        if (sceneIndex < 0 || sceneIndex >= campaignSceneOrder.Count)
+            return string.Empty;
+
+        return NicifySceneName(campaignSceneOrder[sceneIndex]);
     }
 
     public bool IsSceneUnlockedForMenu(int sceneIndex)

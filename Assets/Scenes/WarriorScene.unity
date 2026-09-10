@@ -780,7 +780,7 @@ PrefabInstance:
     - target: {fileID: 8011252079992086742, guid: 384b7513a09b53a4591e122485529fbc, type: 3}
       propertyPath: initialTheme
       value: 
-      objectReference: {fileID: 11400000, guid: f7b280a668e6a564da0f70982f077cc0, type: 2}
+      objectReference: {fileID: 11400000, guid: d84b2e1041381bf4d8be477ef33e048f, type: 2}
     - target: {fileID: 8417131332459000963, guid: 384b7513a09b53a4591e122485529fbc, type: 3}
       propertyPath: m_LocalPosition.x
       value: 113.17
@@ -4414,6 +4414,10 @@ PrefabInstance:
     - target: {fileID: 7380026520225986154, guid: da63d03bc28b95548a99a4b5a30aae6a, type: 3}
       propertyPath: m_LocalPosition.y
       value: 10.3
+      objectReference: {fileID: 0}
+    - target: {fileID: 7454684654226280698, guid: da63d03bc28b95548a99a4b5a30aae6a, type: 3}
+      propertyPath: m_IsActive
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7717709043581423937, guid: da63d03bc28b95548a99a4b5a30aae6a, type: 3}
       propertyPath: m_LocalPosition.x

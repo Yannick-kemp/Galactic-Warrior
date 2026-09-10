@@ -12,6 +12,11 @@ namespace Assets.Scripts.Characteres.WarriorController
     public partial class Warrior : CharacterController
     {
 
+        [Header("Enemy hit counts")]
+        [Tooltip("Asset holding how many hits each enemy takes. Leave empty to fall back to the " +
+                 "values hard-coded below, which are identical to the asset's seeded values.")]
+        [SerializeField] private EnemyHitCountTable enemyHitCounts;
+
         #region Hit Reaction
 
         [Header("Hit Reaction - Spark")]
@@ -87,16 +92,21 @@ namespace Assets.Scripts.Characteres.WarriorController
                     _ => attack1KnockbackForce
                 };
 
-                int damage = enemy switch
-                {
-                    M97Monster => 6,
-                    CrawlingMonster => 25,
-                    P39Monster_WithHealthBar => 20,
-                    RakaMonster => 4,
-                    ZalaytyMonster => 10,
-                    HashagarMonster => 2,
-                    _ => attack1Damage
-                };
+                // Hit counts live in the EnemyHitCountTable asset so they can be tuned without a
+                // recompile. The switch stays as the fallback for an unassigned table and mirrors
+                // the asset's seeded values exactly.
+                int damage = enemyHitCounts != null
+                    ? enemyHitCounts.Attack1Damage(enemy)
+                    : enemy switch
+                    {
+                        M97Monster => 6,
+                        CrawlingMonster => 25,
+                        P39Monster_WithHealthBar => 20,
+                        RakaMonster => 4,
+                        ZalaytyMonster => 10,
+                        HashagarMonster => 2,
+                        _ => attack1Damage
+                    };
 
                 KnockbackEnemiesInRange(KnockBack, enemy, damage);
             }
@@ -729,16 +739,21 @@ namespace Assets.Scripts.Characteres.WarriorController
                     _ => attack1KnockbackForce
                 };
 
-                int damage = enemy switch
-                {
-                    M97Monster => 6,
-                    CrawlingMonster => 8,
-                    P39Monster_WithHealthBar => 3,
-                    RakaMonster => 4,
-                    ZalaytyMonster => 5,
-                    HashagarMonster => 2,
-                    _ => attack1Damage
-                };
+                // Hit counts live in the EnemyHitCountTable asset so they can be tuned without a
+                // recompile. The switch stays as the fallback for an unassigned table and mirrors
+                // the asset's seeded values exactly.
+                int damage = enemyHitCounts != null
+                    ? enemyHitCounts.Attack2Damage(enemy)
+                    : enemy switch
+                    {
+                        M97Monster => 6,
+                        CrawlingMonster => 8,
+                        P39Monster_WithHealthBar => 3,
+                        RakaMonster => 4,
+                        ZalaytyMonster => 5,
+                        HashagarMonster => 2,
+                        _ => attack1Damage
+                    };
                 if (TryApplyZalaytyWarriorSafeHit(
                         enemy,
                         WarriorZalaytyHitKind.Attack2,

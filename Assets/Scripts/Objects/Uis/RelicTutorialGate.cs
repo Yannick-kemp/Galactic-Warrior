@@ -16,7 +16,9 @@ public class RelicTutorialGate : MonoBehaviour
     [SerializeField] private string powerComboId;
     [SerializeField] private string shieldId;
     [SerializeField] private string sprintId;
-    [SerializeField] private string iceBallId = "relic-ice-evolve";
+    // Must match SO_IceBallRelic.relicId. The old default (relic-ice-evolve) matched nothing, so
+    // the Ice hint hand could never be shown.
+    [SerializeField] private string iceBallId = "relic_IceBall";
     [SerializeField] private string keyId = "relic_key";
 
     [Header("Rule")]

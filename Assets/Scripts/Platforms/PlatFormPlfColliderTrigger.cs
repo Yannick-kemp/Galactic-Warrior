@@ -592,7 +592,7 @@ namespace Assets.Scripts.Platforms
             }
 
             if (IsValidPlatformCharacter(character) && !IsSourceFallThroughLocked(character))
-                StartCoroutine(ClearPlatformMemoryWhenCharacterFullyLeft(character));
+                TryStartPlatformCoroutine(ClearPlatformMemoryWhenCharacterFullyLeft(character));
 
             if (character is Warrior w)
             {
@@ -642,6 +642,10 @@ namespace Assets.Scripts.Platforms
 
             _firstContactByCharacter[id] = FirstPlatformContact.TriggerFirst;
             _firstContactFrameByCharacter[id] = Time.frameCount;
+
+            // Tell Zalayty this crossing is granted, so his fall-through guard (which blocks
+            // every Warrior-induced top-to-bottom crossing) lets this one happen.
+            zalayty.NotifyAuthorizedPlatformPassThrough(this);
 
             SetIgnoreForCharacter(zalayty, true);
             StartRestoreZalaytyJumpDownWhenBodyClear(zalayty);
@@ -699,8 +703,13 @@ namespace Assets.Scripts.Platforms
             if (!gameObject.activeInHierarchy || !enabled)
                 return;
 
-            _zalaytyJumpDownRestoreCoroutines[id] =
-                StartCoroutine(RestoreZalaytyJumpDownWhenBodyClear(zalayty, id));
+            Coroutine jumpDownRestore = TryStartPlatformCoroutine(
+                RestoreZalaytyJumpDownWhenBodyClear(zalayty, id));
+
+            // No entry when it could not start: that is what lets OnEnable (or the next contact)
+            // launch the watchdog for real instead of hitting the "already running" early-return.
+            if (jumpDownRestore != null)
+                _zalaytyJumpDownRestoreCoroutines[id] = jumpDownRestore;
         }
 
         /// <summary>
@@ -843,7 +852,20 @@ namespace Assets.Scripts.Platforms
             // edge loss, otherwise this source platform turns pass-through and Zalayty
             // tunnels straight through it. Keep him solid while pressed; normal edge-fall
             // resumes automatically once the press grace window expires.
-            if (zalayty.IsWarriorPressingOnTop)
+            // Any Warrior constraint, not only a clean top press: in a ping-pong cluster the
+            // Warrior bounces on one Zalayty while his pushes shove the neighbours off their
+            // ground points on this platform. Those neighbours never get a press of their own,
+            // so the press-only test let this platform turn pass-through under them and they
+            // crossed it from top to bottom under a Warrior action. Never grant that.
+            if (zalayty.IsWarriorConstraintActive)
+                return false;
+
+            // A chase transition owns this moment: Zalayty is standing on his take-off edge
+            // (body hanging over it, hence <= 1 ground point) waiting to leap to the Warrior's
+            // platform. Dropping him here is exactly the "fell into the void instead of jumping"
+            // bug, and the landing-surface gate below cannot catch it because in a real level
+            // there usually IS something further down.
+            if (zalayty.IsPreparingPlatformTransition)
                 return false;
 
             // Cheap edge test first: the surface search below only runs on the rare frames
@@ -1029,8 +1051,11 @@ namespace Assets.Scripts.Platforms
             if (_sourceFallRestoreCoroutines.ContainsKey(id))
                 return;
 
-            _sourceFallRestoreCoroutines[id] =
-                StartCoroutine(RestoreSourceFallThroughWhenFullyClear(character, id));
+            Coroutine sourceFallRestore = TryStartPlatformCoroutine(
+                RestoreSourceFallThroughWhenFullyClear(character, id));
+
+            if (sourceFallRestore != null)
+                _sourceFallRestoreCoroutines[id] = sourceFallRestore;
         }
 
         private IEnumerator RestoreSourceFallThroughWhenFullyClear(CharacterController character, int id)
@@ -1710,6 +1735,12 @@ namespace Assets.Scripts.Platforms
 
             if (ShouldLetZalaytyFallFromThisPlatform(z))
             {
+                Debug.Log(
+                    $"[Zalayty] edge drop from '{name}' (groundPointsOnIt=" +
+                    $"{z.CountGroundPointsOnSpecificPlatform(this)}, landingBelowRequired=" +
+                    $"{zalaytyEdgeDropRequiresLandingBelow}) -> pass-through + natural fall.",
+                    this);
+
                 // This is the important part: do not just mark Zalayty as jumping.
                 // The source platform must ignore only Zalayty, then restore itself
                 // when Zalayty is no longer touching/overlapping its body.

@@ -1,4 +1,4 @@
-using Assets.Scripts.Characteres.EnemyContoller;
+﻿using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Characteres.WarriorController;
 using System.Collections;
 using System.Collections.Generic;
@@ -243,7 +243,11 @@ namespace Assets.Scripts.Platforms
             if (!_pendingRemove.Contains(passenger.id))
             {
                 _pendingRemove.Add(passenger.id);
-                StartCoroutine(RemovePassengerIfReallyLeft(passenger.id));
+
+                // Culled platform: the deferred check cannot run, so do not leave the id marked
+                // as pending — otherwise it would block the retry after the zone comes back.
+                if (TryStartPlatformCoroutine(RemovePassengerIfReallyLeft(passenger.id)) == null)
+                    _pendingRemove.Remove(passenger.id);
             }
         }
 

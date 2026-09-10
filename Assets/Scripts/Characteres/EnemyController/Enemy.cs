@@ -768,6 +768,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             OnDamaged(damage, killed);
 
+            // Boss finisher: every hit that lands on a boss is offered to the cinematic runner. It
+            // stays silent until the boss is on its last hits, and it needs the killing blow too,
+            // so this sits before OnDeath() tears the boss down.
+            if (IsBoss)
+                Assets.Scripts.Objects.BossFinisherFx.BossFinisher.NotifyBossDamaged(this, killed);
+
             if (killed)
             {
                 _isDead = true;

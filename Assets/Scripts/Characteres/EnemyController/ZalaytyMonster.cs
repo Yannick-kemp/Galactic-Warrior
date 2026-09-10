@@ -242,6 +242,285 @@ public class ZalaytyMonster : Enemy
             NotifyWarriorPressingOnTop();
     }
 
+    #region Platform Fall-Through Guard - no Warrior-induced top-to-bottom crossing
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Zalayty must NEVER cross the platform he belongs to from top to bottom because of a
+    // constraint or an action coming from the Warrior, whatever it is: resting/landing on
+    // his top bound, body push, solver depenetration between the two dynamic bodies, shield
+    // stomp, bounce, knockback, forced repositioning. The only legitimate way under the
+    // surface is a pass-through the platform itself granted him (his own jump-down via
+    // RequestZalaytyJumpDownThroughSourcePlatform, or the platform's edge drop) — those are
+    // recognized here by the platform actually ignoring his colliders.
+    // Two layers, both running before the physics step:
+    //   1. preventive — while the Warrior is interacting with him, a platform that went
+    //      pass-through for him is forced back to solid before he can sink into it;
+    //   2. corrective — if he ended up under the top surface of a platform that is SOLID for
+    //      him (physically impossible without an external push), he is put back on it.
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    [Header("Platform Fall-Through Guard - Zalayty Only")]
+    [Tooltip("ON = Zalayty can never be pushed through the platform he stands on from top to bottom by the Warrior (press on his top, body push, depenetration, stomp, knockback...). His own jump-down and the platform's edge drop stay fully allowed. Leave ON.")]
+    [SerializeField] private bool blockWarriorInducedPlatformFallThrough = true;
+
+    [Tooltip("Proximity band around the Warrior body used to consider that he is interacting with Zalayty. While it lasts, the platform Zalayty stands on is forced back to solid if anything turned it pass-through for him.")]
+    [SerializeField, Min(0f)] private float fallThroughGuardWarriorBand = 0.35f;
+
+    [Tooltip("How long a Warrior interaction keeps the guard armed after the last contact/proximity frame.")]
+    [SerializeField, Min(0f)] private float fallThroughGuardWarriorGrace = 0.35f;
+
+    [Tooltip("Penetration under the platform top tolerated before Zalayty is put back on the surface.")]
+    [SerializeField, Min(0.001f)] private float fallThroughGuardSkin = 0.03f;
+
+    [Tooltip("Maximum depth under the platform top that is still rescued. Below it the crossing is already consumed and the normal fall / void recovery systems own the situation.")]
+    [SerializeField, Min(0.1f)] private float fallThroughGuardRescueMaxDepth = 3f;
+
+    [Tooltip("Horizontal inset: the guard only acts while Zalayty's body CENTER is really above the platform, so a normal fall past an edge is never turned into a snap-back.")]
+    [SerializeField, Min(0f)] private float fallThroughGuardXInset = 0.15f;
+
+    [Tooltip("How long a pass-through granted by the platform keeps the corrective layer quiet, so a legitimate drop is never cancelled once the platform turned solid again behind him.")]
+    [SerializeField, Min(0.1f)] private float fallThroughGuardAuthorizedMemory = 1.5f;
+
+    [Tooltip("Radius around Zalayty inside which an AIRBORNE Warrior (zero ground points of his own) counts as constraining him. This is what covers a ping-pong cluster: the Warrior bounces on one head and his pushes travel through the neighbours, which never get a top press of their own.")]
+    [SerializeField, Min(0f)] private float fallThroughGuardWarriorAirborneRadius = 3f;
+
+    [Tooltip("How long the guard keeps remembering the platform Zalayty was really standing on after CurrentplatForm is cleared. Must outlive a long ping-pong sequence, during which the platform keeps nulling his CurrentplatForm.")]
+    [SerializeField, Min(0.2f)] private float fallThroughGuardAnchorMemory = 2.5f;
+
+    private float _fallThroughGuardWarriorArmedUntil = -999f;
+    private PlatFormColliderTrigger _fallThroughGuardAuthorizedPlatform;
+    private float _fallThroughGuardAuthorizedTime = -999f;
+    private PlatFormColliderTrigger _fallThroughGuardAnchorPlatform;
+    private float _fallThroughGuardAnchorTime = -999f;
+
+    private void EnforcePlatformFallThroughGuard()
+    {
+        if (!blockWarriorInducedPlatformFallThrough)
+            return;
+
+        if (rigidbody2 == null)
+            return;
+
+        if (_deathStarted || currentHealth <= 0f)
+            return;
+
+        Collider2D body = GetZalaytyBodyCollider();
+        if (body == null)
+            return;
+
+        RefreshFallThroughGuardAnchor();
+
+        PlatFormColliderTrigger platform = CurrentplatForm != null
+            ? CurrentplatForm
+            : _fallThroughGuardAnchorPlatform;
+
+        if (platform == null || platform.platformCollider == null)
+            return;
+
+        bool anchorStillValid =
+            CurrentplatForm == platform ||
+            Time.time <= _fallThroughGuardAnchorTime + fallThroughGuardAnchorMemory;
+
+        if (!anchorStillValid)
+            return;
+
+        // A pass-through the platform itself granted him — his own intentional jump-down, or an
+        // edge drop decided while NO Warrior constraint was active (both the platform and
+        // NotifyAuthorizedPlatformPassThrough refuse to grant one under constraint) — is the
+        // only legitimate way under the surface. The memory is refreshed every frame while he
+        // still belongs to the platform so the rescue cannot cancel the drop afterwards.
+        if (_activeJumpDownSourcePlatform == platform ||
+            IsPlatformPassThroughStillAuthorized(platform))
+        {
+            RememberAuthorizedPlatformPassThrough(platform);
+            return;
+        }
+
+        bool warriorConstraint = IsWarriorInteractingForFallThroughGuard();
+
+        Bounds platformBounds = platform.platformCollider.bounds;
+        Bounds bodyBounds = body.bounds;
+
+        float inset = Mathf.Max(0f, fallThroughGuardXInset);
+
+        bool bodyOverlapsSpan =
+            bodyBounds.max.x > platformBounds.min.x + inset &&
+            bodyBounds.min.x < platformBounds.max.x - inset;
+
+        bool centeredAbovePlatform =
+            bodyBounds.center.x > platformBounds.min.x + inset &&
+            bodyBounds.center.x < platformBounds.max.x - inset;
+
+        // Under a Warrior constraint the rule is absolute, so any overlap with the platform is
+        // enough — a cluster ping-pong pushes the neighbours toward the edges, exactly where the
+        // centered test used to let them slip through. Without a constraint we stay conservative
+        // and act only when he is really centered above it, so a normal fall past an edge is
+        // never turned into a snap-back.
+        if (!(warriorConstraint ? bodyOverlapsSpan : centeredAbovePlatform))
+            return;
+
+        float topY = platformBounds.max.y;
+        float depthUnderTop = topY - bodyBounds.min.y;
+
+        bool platformIgnoresZalayty =
+            Physics2D.GetIgnoreCollision(platform.platformCollider, body);
+
+        // Still on / above the surface: preventive layer only.
+        if (depthUnderTop <= fallThroughGuardSkin)
+        {
+            // No pass-through may stay open under him while the Warrior constrains him,
+            // whatever branch opened it (edge-loss misread, trigger-first bookkeeping, ...).
+            if (warriorConstraint && platformIgnoresZalayty)
+                platform.ForceRestoreZalaytyJumpDownSourcePlatform(this);
+
+            return;
+        }
+
+        // He is already under the top surface, and no authorized crossing explains it.
+        // Without a Warrior constraint, an open pass-through is somebody else's decision:
+        // leave it alone. Under a constraint, it IS the bug — rescue him even then.
+        if (!warriorConstraint && platformIgnoresZalayty)
+            return;
+
+        if (depthUnderTop > fallThroughGuardRescueMaxDepth)
+            return;
+
+        // Put him back on the surface FIRST, then close the pass-through: restoring the
+        // collision while his body is still inside the platform would trap him in it.
+        Vector2 position = rigidbody2.position;
+        float bodyBottomOffsetFromPosition = bodyBounds.min.y - position.y;
+        position.y = topY + landingYOffset - bodyBottomOffsetFromPosition;
+        rigidbody2.position = position;
+        Physics2D.SyncTransforms();
+
+        Vector2 velocity = rigidbody2.linearVelocity;
+        if (velocity.y < 0f)
+        {
+            velocity.y = 0f;
+            rigidbody2.linearVelocity = velocity;
+        }
+
+        if (platformIgnoresZalayty)
+            platform.ForceRestoreZalaytyJumpDownSourcePlatform(this);
+
+        CurrentplatForm = platform;
+        _lastKnownPlatform = platform;
+        _lastKnownPlatformTime = Time.time;
+        _fallThroughGuardAnchorPlatform = platform;
+        _fallThroughGuardAnchorTime = Time.time;
+    }
+
+    /// <summary>
+    /// Keeps the platform Zalayty really belongs to alive for the guard. During a ping-pong the
+    /// platform repeatedly clears his CurrentplatForm, and the 0.45s generic grace expires long
+    /// before the sequence ends — the guard would then have nothing to protect.
+    /// </summary>
+    private void RefreshFallThroughGuardAnchor()
+    {
+        if (CurrentplatForm != null && CurrentplatForm.platformCollider != null)
+        {
+            _fallThroughGuardAnchorPlatform = CurrentplatForm;
+            _fallThroughGuardAnchorTime = Time.time;
+            return;
+        }
+
+        if (_fallThroughGuardAnchorPlatform == null &&
+            _lastKnownPlatform != null &&
+            Time.time <= _lastKnownPlatformTime + temporaryPlatformLossGraceTime)
+        {
+            _fallThroughGuardAnchorPlatform = _lastKnownPlatform;
+            _fallThroughGuardAnchorTime = _lastKnownPlatformTime;
+        }
+    }
+
+    /// <summary>
+    /// Called by a platform that deliberately grants Zalayty a downward pass-through (his own
+    /// jump-down request, or the platform's edge drop). It tells the fall-through guard that
+    /// going under this surface is legitimate this time, so the guard neither restores the
+    /// collision nor puts him back on top.
+    /// </summary>
+    public void NotifyAuthorizedPlatformPassThrough(PlatFormColliderTrigger platform)
+    {
+        // Absolute rule: nothing may authorize a top-to-bottom crossing while the Warrior is
+        // constraining him. The platform side refuses to grant it too; this is the second lock,
+        // for any other caller.
+        if (IsWarriorInteractingForFallThroughGuard())
+            return;
+
+        RememberAuthorizedPlatformPassThrough(platform);
+    }
+
+    /// <summary>
+    /// True while the Warrior is constraining Zalayty in any way — pressing/landing on his top
+    /// bound, rebounding on him, body against body, or simply airborne right above the group he
+    /// belongs to. Read by the platforms so no edge drop / pass-through is ever granted under a
+    /// Warrior action, whatever that action is.
+    /// </summary>
+    public bool IsWarriorConstraintActive => IsWarriorInteractingForFallThroughGuard();
+
+    private void RememberAuthorizedPlatformPassThrough(PlatFormColliderTrigger platform)
+    {
+        _fallThroughGuardAuthorizedPlatform = platform;
+        _fallThroughGuardAuthorizedTime = Time.time;
+    }
+
+    private bool IsPlatformPassThroughStillAuthorized(PlatFormColliderTrigger platform)
+    {
+        return platform != null &&
+               _fallThroughGuardAuthorizedPlatform == platform &&
+               Time.time <= _fallThroughGuardAuthorizedTime + fallThroughGuardAuthorizedMemory;
+    }
+
+    /// <summary>
+    /// True while the Warrior is (or just was) in contact with / pressing on / right against
+    /// Zalayty. Deliberately generous: the rule is "no Warrior-induced crossing, whatever the
+    /// constraint or the action", so any form of proximity arms the preventive layer.
+    /// </summary>
+    private bool IsWarriorInteractingForFallThroughGuard()
+    {
+        if (Time.time <= _fallThroughGuardWarriorArmedUntil)
+            return true;
+
+        bool interacting = IsWarriorPressingOnTop || _warriorTopReboundActive;
+
+        if (!interacting)
+        {
+            Warrior warrior = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
+
+            if (warrior != null && !warrior.IsDead)
+            {
+                BoxCollider2D zBox = GetMainBoxColliderForPhysicalContact();
+                BoxCollider2D wBox = GetWarriorMainBoxCollider(warrior);
+
+                if (zBox != null && wBox != null)
+                {
+                    Bounds warriorBounds = wBox.bounds;
+                    warriorBounds.Expand(fallThroughGuardWarriorBand);
+                    interacting = zBox.bounds.Intersects(warriorBounds);
+
+                    // Ping-pong cluster: the Warrior bounces on ONE head while his pushes travel
+                    // through the whole group. The neighbours never get a top press nor a direct
+                    // contact, yet they are the ones the platform lets fall through. An airborne
+                    // Warrior (no ground of his own) close to the group constrains all of it.
+                    if (!interacting &&
+                        fallThroughGuardWarriorAirborneRadius > 0f &&
+                        warrior.CountGroundPoints() == 0)
+                    {
+                        float distance = Vector2.Distance(zBox.bounds.center, wBox.bounds.center);
+                        interacting = distance <= fallThroughGuardWarriorAirborneRadius;
+                    }
+                }
+            }
+        }
+
+        if (interacting)
+            _fallThroughGuardWarriorArmedUntil = Time.time + fallThroughGuardWarriorGrace;
+
+        return interacting;
+    }
+
+    #endregion
+
     [Header("Independent Movement - Zalayty Only")]
     [Tooltip("If true, Zalayty does not use CharacterController MoveToward/JumpToward and is not clamped by platform edges.")]
     [SerializeField] private bool useIndependentMovement = true;
@@ -816,6 +1095,12 @@ public class ZalaytyMonster : Enemy
         RefreshWarriorTopPressGraceFromGeometry();
 
         PreventUnauthorizedTakeoffLift();
+
+        // Absolute rule: nothing coming from the Warrior (top press, body push, physics
+        // depenetration, stomp, knockback, ...) may push Zalayty through the platform he
+        // stands on, from top to bottom. Only a pass-through the platform itself granted
+        // (his own jump-down, or the platform's edge drop) may take him below the surface.
+        EnforcePlatformFallThroughGuard();
 
         // Anti soft-lock: a Zalayty left without CurrentplatForm while physically pinned
         // (typically perched on a platform corner after a short jump) can never move nor jump
@@ -1567,6 +1852,16 @@ public class ZalaytyMonster : Enemy
         if (!useIndependentMovement)
             return ClampToCurrentPlatform(warrior.transform.position.x);
 
+        // Deliberately the RAW Warrior X, never clamped to the current platform span.
+        //
+        // Clamping it here (to takeoffEdgeMargin inside the edge) looks like the obvious cure for
+        // the walk-off-the-edge strand, and it is wrong: MoveAndJumpToPlatform nudges a DOWNWARD
+        // take-off slightly OUTSIDE the platform on purpose (dropSideOutEpsilon) so Zalayty does
+        // not land back on it. A clamp pulls him back in while the transition pushes him out, the
+        // transition restarts on every cycle, and he vibrates on the spot at the edge, flipping
+        // his sprite — measured at 27 direction reversals and 9 transition restarts in a couple of
+        // seconds, against 2 and 1 once the clamp was removed. The edge is owned by the
+        // transition; the chase must not fight it for the position.
         return warrior.transform.position.x;
     }
 
@@ -2697,6 +2992,44 @@ public class ZalaytyMonster : Enemy
     private Coroutine _restoreWarriorTopReboundCollisionCoroutine;
     private readonly List<Collider2D> _ignoredWarriorTopReboundColliders = new List<Collider2D>();
 
+    #region Platform Transition Edge-Drop Suppression
+
+    // While Zalayty walks to his take-off edge for a platform-change jump he stands with his
+    // body hanging over the edge (takeoffEdgeMargin = 0.25 is smaller than his body half-width),
+    // so the source platform sees <= 1 ground point and its 0.20s edge timer arms a DROP.
+    // That reflex used to fire before the leap and send him down instead of across — the
+    // "instead of jumping to the Warrior's platform, Zalayty fell into the void" case. The
+    // landing-surface gate on the platform side cannot cover it: in a real level there usually
+    // IS something below, so the drop was legitimately allowed. The chase transition has to own
+    // this moment instead.
+
+    [Header("Platform Transition - Edge Drop Suppression")]
+    [Tooltip("ON = while Zalayty is walking to his take-off edge (and for the short grace below), the source platform's edge-drop reflex is suppressed, so the platform-change jump toward the Warrior always wins over a drop. Leave ON.")]
+    [SerializeField] private bool suppressEdgeDropWhilePreparingPlatformJump = true;
+
+    [Tooltip("How long the suppression survives after the last refresh. Kept short so a transition that dies silently cannot disable the edge drop for good.")]
+    [SerializeField, Min(0.1f)] private float platformTransitionPrepareGrace = 0.35f;
+
+    [Tooltip("Logs one line per platform-change transition (source -> destination, direction, landing point). Cheap: fires only on an actual transition, not per frame.")]
+    [SerializeField] private bool logPlatformTransitionDecisions = true;
+
+    private float _platformTransitionPreparingUntil = -999f;
+
+    /// <summary>
+    /// True while a platform-change transition is walking Zalayty to his take-off edge or is
+    /// about to launch the leap. Read by the source platform to stand its edge drop down.
+    /// </summary>
+    public bool IsPreparingPlatformTransition =>
+        suppressEdgeDropWhilePreparingPlatformJump &&
+        Time.time <= _platformTransitionPreparingUntil;
+
+    private void MarkPreparingPlatformTransition()
+    {
+        _platformTransitionPreparingUntil = Time.time + platformTransitionPrepareGrace;
+    }
+
+    #endregion
+
     [Header("Platform Jump Warrior Collision Gate - Zalayty Only")]
     [Tooltip("When Zalayty jumps to the platform where Warrior is standing, temporarily ignore Warrior collision until Zalayty safely lands on that platform.")]
     [SerializeField] private bool ignoreWarriorCollisionWhileJumpingToWarriorPlatform = true;
@@ -2723,6 +3056,9 @@ public class ZalaytyMonster : Enemy
 
     private IEnumerator MoveAndJumpToPlatform(PlatFormColliderTrigger nextPlatform, Transform warrior)
     {
+        // This transition owns the take-off edge from here on: no edge drop in the middle of it.
+        MarkPreparingPlatformTransition();
+
         PlatFormColliderTrigger sourcePlatform = CurrentplatForm;
 
         if (sourcePlatform == null || sourcePlatform.platformCollider == null ||
@@ -2772,6 +3108,10 @@ public class ZalaytyMonster : Enemy
         float moveTimeout = 1.25f;
         while (moveTimeout > 0f)
         {
+            // Refreshed every frame of the walk: the whole approach is protected, not just the
+            // frame where the transition started.
+            MarkPreparingPlatformTransition();
+
             if (CurrentplatForm == null && sourcePlatform == null) yield break;
             if (CurrentplatForm == nextPlatform) yield break;
             if (activesMoveCoroutine == null) break;
@@ -2870,7 +3210,18 @@ public class ZalaytyMonster : Enemy
         float jumpHeight = goingDown ? 1.25f : Mathf.Clamp(dy + 2.5f, 2.5f, 10f);
         float duration = Mathf.Clamp((dx / Mathf.Max(0.01f, Speed)) * 0.65f, 0.25f, 0.8f);
         // ExitWaitAnimation();
+        MarkPreparingPlatformTransition();
+
         bool platformJumpStarted = StartZalaytyJumpTo(landing, jumpHeight, duration, nextPlatform);
+
+        if (logPlatformTransitionDecisions)
+        {
+            Debug.Log(
+                $"[Zalayty] transition {(sourcePlatform != null ? sourcePlatform.name : "?")} -> " +
+                $"{nextPlatform.name} | goingDown={goingDown} started={platformJumpStarted} " +
+                $"landing={landing.ToString("F2")} height={jumpHeight:F2} dx={dx:F2}",
+                this);
+        }
 
         if (!platformJumpStarted)
         {
@@ -4928,12 +5279,23 @@ public class ZalaytyMonster : Enemy
 
     private void UpdateNoPlatformVoidFreezeRecovery()
     {
+        // A corner perch does NOT keep CurrentplatForm strictly null: the 1 cm contact still
+        // fires OnCollisionStay2D, so the platform is handed back on some frames while
+        // IsZalaytyReallyGroundedOnPlatform (horizontal skin) rejects it on the others.
+        // Arming on "CurrentplatForm == null" made every flicker frame reset the window, and
+        // the watchdog could never reach its delay on the very state it was written for.
+        // The dead state is therefore measured on what actually blocks him: having no platform
+        // he is really grounded on — neither walking nor jumping accepts anything less.
+        bool standsOnUsablePlatform =
+            CurrentplatForm != null &&
+            IsZalaytyReallyGroundedOnPlatform(CurrentplatForm);
+
         if (!enableNoPlatformVoidFreezeRecovery ||
             rigidbody2 == null ||
             _deathStarted ||
             currentHealth <= 0f ||
             IsStunned ||
-            CurrentplatForm != null ||
+            standsOnUsablePlatform ||
             activesJumpCoroutine != null)
         {
             ResetNoPlatformVoidFreezeTracking();
@@ -4982,7 +5344,12 @@ public class ZalaytyMonster : Enemy
         RestoreOrphanIgnoredPlatformCollisions();
 
         // 1. Real ground under his feet after all (the normal recovery path): just adopt it.
-        if (TryRecoverCurrentPlatformFromGroundPoints())
+        //    The grounded test is re-checked here because the recovery accepts an already
+        //    assigned CurrentplatForm as-is, and a corner perch does have one on the frames
+        //    where its 1 cm contact fires. Adopting that sliver would resume the chase on a
+        //    platform he still cannot walk on, so it is sent to the re-seating path below.
+        if (TryRecoverCurrentPlatformFromGroundPoints() &&
+            IsZalaytyReallyGroundedOnPlatform(CurrentplatForm))
         {
             PlatFormColliderTrigger recovered = CurrentplatForm;
             FinishIndependentJumpOnPlatform(recovered);

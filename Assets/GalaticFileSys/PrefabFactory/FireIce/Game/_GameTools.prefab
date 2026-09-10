@@ -308,7 +308,7 @@ MonoBehaviour:
   powerComboId: relic_power_combo
   shieldId: relic_shield
   sprintId: relic_sprint
-  iceBallId: relic-ice-evolve
+  iceBallId: relic_IceBall
   keyId: relic_key
   showWhenCountAtLeast: 1
 --- !u!114 &8691029005696633790

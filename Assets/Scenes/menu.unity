@@ -5407,15 +5407,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   canvasGroup: {fileID: 2037486022}
   popupCard: {fileID: 0}
-  titleText: {fileID: 0}
-  level1Button: {fileID: 107319462}
-  level1TitleText: {fileID: 0}
-  level1SubtitleText: {fileID: 0}
-  level2Button: {fileID: 783626258}
-  level2TitleText: {fileID: 602324573}
-  level2SubtitleText: {fileID: 0}
-  level2LockOverlay: {fileID: 0}
-  level2LockText: {fileID: 0}
+  titleText: {fileID: 994577991}
+  demoButton: {fileID: 107319462}
+  chapterTemplate: {fileID: 783626258}
+  legacyRows:
+  - {fileID: 1716192501}
+  - {fileID: 1484365581}
 --- !u!1 &2052726786
 GameObject:
   m_ObjectHideFlags: 0
