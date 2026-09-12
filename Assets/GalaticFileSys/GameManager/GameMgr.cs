@@ -215,6 +215,12 @@ public class GameMgr : MonoBehaviour, IGame
     public int CampaignSceneCount => campaignSceneOrder != null ? campaignSceneOrder.Count : 0;
     public string PurchasePriceText => purchasePriceText;
 
+    /// <summary>
+    /// Index de la scene de campagne active (0 = demo), ou -1 hors campagne (le menu).
+    /// Expose pour que l'octroi des reliques de progression sache dans quel chapitre il entre.
+    /// </summary>
+    public int CurrentCampaignSceneIndex => GetCurrentCampaignSceneIndex();
+
     private void Awake()
     {
         if (Instance != null && Instance != this)
@@ -1191,12 +1197,14 @@ public class GameMgr : MonoBehaviour, IGame
     {
         level2Unlocked = true;
 
-        int level2Index = GetCampaignSceneIndex(level2SceneName);
-        if (level2Index >= 0)
-            MarkSceneAsReached(level2Index);
+        // L'achat ouvre le chapitre 1 tout de suite, sans attendre que la demo soit finie.
+        // La reserve d'origine ("il n'aurait jamais la relique memoire") est levee: la relique
+        // manquante est accordee a l'entree du chapitre par ProgressionRelicGrant.
+        _highestReachedSceneIndex = Mathf.Max(_highestReachedSceneIndex, 1);
+        _highestReachedSceneIndex = Mathf.Clamp(_highestReachedSceneIndex, 0, Mathf.Max(0, campaignSceneOrder.Count - 1));
 
         SaveProgression();
-        Debug.Log("[GameMgr] Campaign purchased / Level 2 unlocked.");
+        Debug.Log("[GameMgr] Campagne achetee: chapitre 1 ouvert immediatement (relique accordee a l'entree).");
     }
 
     public void OnPurchaseConfirmed()
@@ -1515,11 +1523,33 @@ public class GameMgr : MonoBehaviour, IGame
     public void StartNewGame()
     {
         ResetMenuLaunchState();
-        ClearSavedCheckpoint(); // New Game always restarts the campaign from the very beginning.
-        ClearBossRelics();      // New Game also wipes boss-relic progress.
+        ClearSavedCheckpoint();   // New Game always restarts the campaign from the very beginning.
+        ClearBossRelics();        // New Game also wipes boss-relic progress.
+        ResetCampaignProgress();  // ...and how far the player got, which used to survive.
         _suppressCheckpointRespawnOnce = true;
         ScoreManager.Instance?.StartNewRun();
         SceneManager.LoadScene(warriorSceneName);
+    }
+
+    /// <summary>
+    /// Wipes how far the player reached. New Game used to clear only the checkpoint and the boss
+    /// relics, so every level unlocked in the previous run stayed selectable in the chapter picker
+    /// and Continue still pointed deep into the campaign.
+    ///
+    /// The purchase is deliberately NOT cleared: it is an entitlement, not progress. A fresh start
+    /// therefore means the demo alone for everybody, owner included — the demo is where the memory
+    /// relic is awarded, so it stays a mandatory step.
+    /// </summary>
+    private void ResetCampaignProgress()
+    {
+        NormalizeCampaignSceneOrder();
+
+        _highestReachedSceneIndex = 0;
+        _continueSceneIndex = 0;
+
+        SaveProgression();
+
+        Debug.Log("[GameMgr] New Game: campaign progress reset to the demo (purchase kept).");
     }
 
     public void ContinueGame()
@@ -1549,7 +1579,19 @@ public class GameMgr : MonoBehaviour, IGame
         ResetMenuLaunchState();
         _suppressCheckpointRespawnOnce = true; // Level Select always plays the chosen level from its start.
         ScoreManager.Instance?.StartNewRun();
-        SceneManager.LoadScene(EnforceTutorialGate(campaignSceneOrder[sceneIndex]));
+
+        // Un acheteur qui DESIGNE un chapitre dans le selecteur y va, sans detour par le tutoriel.
+        // Le rediriger ici viderait de son sens la ligne qu'il vient de toucher, et contredirait la
+        // promesse de l'achat. Le garde-fou reste entier partout ailleurs: Continuer et les
+        // enchainements automatiques passent toujours par EnforceTutorialGate, donc un acheteur qui
+        // n'a encore rien joue et appuie simplement sur Continuer recoit bien le tutoriel.
+        bool explicitPaidChapter = sceneIndex >= 1 && Level2Unlocked;
+
+        string target = explicitPaidChapter
+            ? campaignSceneOrder[sceneIndex]
+            : EnforceTutorialGate(campaignSceneOrder[sceneIndex]);
+
+        SceneManager.LoadScene(target);
     }
 
     // Onboarding gate: until the WarriorScene tutorial has been completed once, every campaign
@@ -2367,17 +2409,29 @@ public class GameMgr : MonoBehaviour, IGame
 
         level2Unlocked = purchased == 1 || legacyUnlocked == 1;
 
-        int defaultReachedIndex = level2Unlocked ? 1 : 0;
+        // L'achat ouvre le chapitre 1 immediatement.
+        //
+        // Ce plancher avait ete retire parce que la demo etait le seul endroit ou la relique memoire
+        // etait accordee: un acheteur qui la sautait restait coince plus loin. Cette raison n'existe
+        // plus, ProgressionRelicGrant donne la relique manquante a l'entree de tout chapitre. Rendre
+        // le plancher est donc ce qui fait tenir la promesse "l'achat debloque tout le jeu".
+        int defaultReachedIndex = purchased == 1 ? 1 : 0;
         int maxIndex = Mathf.Max(0, campaignSceneOrder.Count - 1);
 
         _highestReachedSceneIndex = PlayerPrefs.GetInt(HighestReachedSceneIndexKey, defaultReachedIndex);
+
+        // Le defaut ci-dessus ne couvre que les saves neuves. Une save existante porte deja un 0
+        // ecrit du temps de l'ancienne regle, il faut donc relever aussi les valeurs deja stockees.
+        if (purchased == 1)
+            _highestReachedSceneIndex = Mathf.Max(_highestReachedSceneIndex, 1);
+
         _highestReachedSceneIndex = Mathf.Clamp(_highestReachedSceneIndex, 0, maxIndex);
 
-        if (level2Unlocked)
-            _highestReachedSceneIndex = Mathf.Max(_highestReachedSceneIndex, Mathf.Min(1, maxIndex));
-
-        // Continue target defaults to the first playable level; it is set explicitly on level completion.
-        _continueSceneIndex = PlayerPrefs.GetInt(ContinueSceneIndexKey, defaultReachedIndex);
+        // Continue reste sur la demo tant que rien n'a ete joue, acheteur compris: le plancher
+        // ci-dessus ouvre le CHOIX du chapitre 1, il ne doit pas faire sauter l'entree en matiere a
+        // quelqu'un qui appuie simplement sur Continuer. La valeur est posee explicitement a chaque
+        // fin de niveau.
+        _continueSceneIndex = PlayerPrefs.GetInt(ContinueSceneIndexKey, 0);
         _continueSceneIndex = Mathf.Clamp(_continueSceneIndex, 0, maxIndex);
     }
 

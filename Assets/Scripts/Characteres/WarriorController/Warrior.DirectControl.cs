@@ -177,15 +177,66 @@ namespace Assets.Scripts.Characteres.WarriorController
         /// </summary>
         public void DirectJump(float dirX)
         {
+            // Trace decisive: elle separe "le joueur n'a pas appuye" de "il a appuye et quelque
+            // chose a bloque". Sans elle, un sursis qui finit en mort reste ambigu.
+            NoteSqueezeJumpRequestedIfWindowOpen();
+
             if (IsHardActionLocked || _frozenByHivernox || !CanAttackWarrior)
-                return;
+            {
+                NoteSqueezeJumpRefusedIfWindowOpen(
+                    "verrouDur=" + IsHardActionLocked +
+                    ", gele=" + _frozenByHivernox +
+                    ", CanAttackWarrior=" + CanAttackWarrior);
 
-            if (!CanMove)
-                return;
+                NoteJumpRefused("joystick",
+                    "verrouDur=" + IsHardActionLocked +
+                    ", gele=" + _frozenByHivernox +
+                    ", CanAttackWarrior=" + CanAttackWarrior);
 
-            if (activesJumpCoroutine != null || IsFallingEdge || CountGroundPoints() == 0
-                || IsFallingGrazesEdge || CanDie)
                 return;
+            }
+
+            // Ecrasement lateral: pendant le sursis, le saut est la sortie qu'on veut offrir au
+            // joueur. Coince entre deux corps il n'a plus de point de sol, donc les conditions
+            // normales le refuseraient exactement au moment ou il en a besoin.
+            bool squeezeEscape = IsSqueezeEscapeJumpAllowed;
+
+            // Support reel sous les pieds: le saut ne depend alors plus du comptage des points de
+            // sol (qui clignote a 0 pendant la descente d'une plateforme mouvante) ni de CanMove
+            // (que le blocage par un corps d'ennemi remet a false a chaque frame). Sauter est
+            // justement la sortie de ces deux situations.
+            bool supported = HasConfirmedSupportForJump;
+
+            if (!CanMove && !squeezeEscape && !supported)
+            {
+                NoteJumpRefused("joystick", "CanMove=false");
+                return;
+            }
+
+            if (activesJumpCoroutine != null || CanDie)
+            {
+                NoteSqueezeJumpRefusedIfWindowOpen(
+                    "sautDejaEnCours=" + (activesJumpCoroutine != null) + ", CanDie=" + CanDie);
+
+                NoteJumpRefused("joystick",
+                    "sautDejaEnCours=" + (activesJumpCoroutine != null) + ", CanDie=" + CanDie);
+
+                return;
+            }
+
+            if (!squeezeEscape && !supported &&
+                (IsFallingEdge || CountGroundPoints() == 0 || IsFallingGrazesEdge))
+            {
+                NoteJumpRefused("joystick",
+                    "chuteBord=" + IsFallingEdge +
+                    ", pointsSol=" + CountGroundPoints() +
+                    ", frolementBord=" + IsFallingGrazesEdge);
+
+                return;
+            }
+
+            if (supported && CountGroundPoints() == 0)
+                NoteJumpGrantedByMovingPlatformSupport("joystick");
 
             float dist = collider2 != null ? collider2.bounds.size.x * 2f : 1.5f;
             int sign = dirX > 0.001f ? 1 : (dirX < -0.001f ? -1 : (rightFacing ? 1 : -1));
@@ -199,6 +250,9 @@ namespace Assets.Scripts.Characteres.WarriorController
             CheckIfAvoidCollider(true);
             MarkJumpStarted();
             JumpAnimationDisplay();
+
+            if (squeezeEscape)
+                NotifySqueezeEscapeJumpStarted();
 
             activesJumpCoroutine = JumpTowardPositionAction(
                 new Vector2(targetX, transform.position.y),

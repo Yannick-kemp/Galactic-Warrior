@@ -252,6 +252,52 @@ namespace Assets.Scripts.Platforms
             //StartExitValidation(character);
         }
 
+        [Tooltip("Duree pendant laquelle un saut volontaire parti de la plateforme est protege: elle ne le recolle pas sur sa surface et n'annule pas sa coroutine de saut. Au-dela, la plateforme reprend la main.")]
+        [SerializeField, Min(0.2f)] private float riderJumpProtectionSeconds = 1.2f;
+
+        [Tooltip("Diagnostic: ON = journalise une ligne par saut protege. Sert a verifier que la plateforme lache bien prise; inutile en jeu normal.")]
+        [SerializeField] private bool logRiderJumpProtection = false;
+
+        /// <summary>
+        /// Le passager est en train d'executer un saut VOLONTAIRE parti de cette plateforme.
+        ///
+        /// L'exemption existait deja pour Zalayty ("Do not glue/cancel an active controlled jump
+        /// that starts from the lift") mais pas pour le Warrior. Or le saut du Warrior est un ARC
+        /// pilote par la POSITION, pas par la vitesse: le test de decrochage
+        /// (`linearVelocity.y > jumpOffVelocity`) ne le voit jamais, pendant que
+        /// `ConfirmWarriorLiftLandingState` appelle `StopJumpTowardCoroutine()` a chaque frame de
+        /// contact. Resultat mesure: l'appui declenche bien le saut (36 appuis sur 36 journalises
+        /// "-> SAUT"), mais l'arc est tue dans la frame et le Warrior ne decolle jamais.
+        /// </summary>
+        private bool IsRiderPerformingControlledJump(CharacterController rider)
+        {
+            if (rider == null || rider.activesJumpCoroutine == null)
+                return false;
+
+            if (rider is Warrior warrior)
+            {
+                bool protectedJump = Time.time - warrior.LastJumpStartTime <= riderJumpProtectionSeconds;
+
+                // Une seule ligne par saut protege: c'est la preuve que la plateforme a lache
+                // prise au lieu de tuer l'arc.
+                if (logRiderJumpProtection && protectedJump && !Mathf.Approximately(_lastProtectedJumpTime, warrior.LastJumpStartTime))
+                {
+                    _lastProtectedJumpTime = warrior.LastJumpStartTime;
+
+                    Debug.Log("[LIFT-SAUT] saut du Warrior protege sur " + name +
+                              " | la plateforme ne le rassoit plus et n'annule plus son arc" +
+                              " | pieds=" + (warrior.collider2 != null ? warrior.collider2.bounds.min.y.ToString("F2") : "?") +
+                              " sommet=" + (platformCollider != null ? platformCollider.bounds.max.y.ToString("F2") : "?"), this);
+                }
+
+                return protectedJump;
+            }
+
+            return true;
+        }
+
+        private float _lastProtectedJumpTime = -999f;
+
         private void TryRegisterRiderFromCollision(Collision2D collision, bool snapImmediately)
         {
             if (!carryCharactersLikeLift || platformCollider == null)
@@ -259,6 +305,11 @@ namespace Assets.Scripts.Platforms
 
             CharacterController character = collision.collider.GetComponentInParent<CharacterController>();
             if (character == null)
+                return;
+
+            // Saut volontaire en cours: la plateforme ne doit ni le rasseoir, ni confirmer un
+            // atterrissage, ni annuler son arc. Elle le reprendra a son retour sur la surface.
+            if (IsRiderPerformingControlledJump(character))
                 return;
 
             if (IsPlatformIgnoredByCharacter(character))
@@ -303,6 +354,11 @@ namespace Assets.Scripts.Platforms
         private void ConfirmWarriorLiftLandingState(Warrior warrior)
         {
             if (warrior == null)
+                return;
+
+            // Un saut volontaire parti de la plateforme n'est PAS un atterrissage a confirmer.
+            // Sans cette garde, l'appel ci-dessous tuait l'arc du saut a chaque frame de contact.
+            if (IsRiderPerformingControlledJump(warrior))
                 return;
 
             // The lift already confirmed a real top-surface contact.
@@ -661,9 +717,11 @@ namespace Assets.Scripts.Platforms
 
             // Do not glue/cancel an active controlled jump that starts from the lift.
             // Landing confirmation is done by OnCollisionEnter2D / OnCollisionStay2D.
-            if (rider is ZalaytyMonster && rider.activesJumpCoroutine != null)
+            // Vaut pour TOUS les passagers: le Warrior en etait exclu alors que son arc de saut,
+            // pilote par la position, est justement invisible au test de vitesse ci-dessus.
+            if (IsRiderPerformingControlledJump(rider))
             {
-                GwLog.Verbose("[LiftDetach] Zalayty active jump coroutine for " + rider.name);
+                GwLog.Verbose("[LiftDetach] saut controle en cours pour " + rider.name);
                 return false;
             }
 

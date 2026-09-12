@@ -141,11 +141,14 @@ namespace Assets.Scripts.Characteres.WarriorController
         [Tooltip("ON = during the forced descent between the enemies, the Warrior keeps the X the rule committed to until he is grounded. Without it the enemies of the group push him out mid-fall and he lands beside them instead of among them. Only the fall is held; normal pushes resume on landing.")]
         [SerializeField] private bool holdLandingXWhileFallingBetweenEnemies = true;
 
-        [Tooltip("Distance horizontale maximale entre le Warrior et l'ecart retenu. Au-dela ce n'est plus 'atterrir entre les ennemis' mais une teleportation laterale, vue comme une repulsion violente (8.97 unites en un pas physique, mesure). Aucun candidat assez proche => failsafe absolu (chute verticale sur place).")]
-        [SerializeField, Min(0.5f)] private float middleLandingMaxSnapDistanceX = 3f;
+        [Tooltip("Plafond d'absurdite sur la distance horizontale du point d'arrivee. Ce n'est PLUS un plafond de teleportation: le point est rejoint en GLISSANT pendant la chute, jamais par un saut de position, donc une distance moyenne ne produit aucune repulsion. Regle a 3 il refusait quasiment tout (mesure: 109 candidats refuses a 3,2 a 6,8 unites, la regle degeneree en traversee + ennemis sonnes 20 fois).")]
+        [SerializeField, Min(0.5f)] private float middleLandingMaxSnapDistanceX = 10f;
 
         [Tooltip("Vitesse horizontale utilisee pour rejoindre l'ecart PENDANT la chute, au lieu d'un saut de position instantane.")]
         [SerializeField, Min(1f)] private float middleLandingGlideSpeedX = 8f;
+
+        [Tooltip("Duree pendant laquelle une nouvelle prise de contact sur le MEME ennemi n'est plus comptee comme un rebond. Protege du double comptage: le callback de collision se declenche par paire de colliders, et le detecteur geometrique alimente maintenant le meme compteur. Un vrai rebond est espace d'au moins 0,2 s.")]
+        [SerializeField, Min(0f)] private float middleLandingSameContactDebounce = 0.15f;
 
         [Tooltip("Nombre de declenchements de la regle dans la fenetre ci-dessous a partir duquel on considere qu'elle tourne en rond et qu'il faut vraiment sortir le Warrior de la zone.")]
         [SerializeField, Min(2)] private int middleLandingRepeatEscalationCount = 3;
@@ -199,11 +202,12 @@ namespace Assets.Scripts.Characteres.WarriorController
         protected override float MaxJumpArcDivergenceBeforeAbort => maxJumpArcDivergenceBeforeAbort;
 
         [Tooltip("TEMP DIAGNOSTIC: logs every counted bounce and the whole decision of the 'N bounces then land between the enemies' rule (cluster, candidates, why each is rejected, outcome). Turn OFF once the rule is validated.")]
-        [SerializeField] private bool logMiddleLandingDecisions = true;
+        [SerializeField] private bool logMiddleLandingDecisions = false;
 
         private float _middleLandingTargetX;
         private Coroutine _middleLandingIgnoreRoutine;
         private readonly Dictionary<int, int> _middleLandingSameEnemyBounces = new Dictionary<int, int>();
+        private readonly Dictionary<int, float> _middleLandingLastCountedContact = new Dictionary<int, float>();
         private int _middleLandingBounceCount;
         private float _middleLandingLastContactTime = -999f;
         private float _middleLandingSettleUntil = -999f;
@@ -477,10 +481,15 @@ namespace Assets.Scripts.Characteres.WarriorController
             var enemy = collision.collider.GetComponentInParent<Enemy>();
 
             if (enemy != null && TryStopPlatformStoneRepulseOnEnemyContact(enemy))
+            {
+                NoteRuleSkip(enemy, "contact consomme par l'arret de repulsion de pierre de plateforme");
                 return;
+            }
 
             if (_sprintActive && enemy != null && collision.collider != null)
             {
+                NoteRuleSkip(enemy, "sprint actif: le contact ennemi est ignore avant la regle");
+
                 if (_ignoredEnemyCollidersDuringSprint.Add(collision.collider))
                     SetIgnoreWithAllWarriorColliders(collision.collider, true);
 
@@ -660,13 +669,23 @@ namespace Assets.Scripts.Characteres.WarriorController
         private bool TryBreakEnemyTopPingPongTrap(Enemy enemy, Collision2D collision, bool registerBounceContact)
         {
             if (!enableEnemyTopPingPongEscape)
+            {
+                if (registerBounceContact)
+                    NoteRuleSkip(enemy, "echappatoire de ping-pong desactivee sur le Warrior");
+
                 return false;
+            }
 
             if (enemy == null || collider2 == null)
                 return false;
 
             if (!CanEnemyParticipateInTopPingPong(enemy))
+            {
+                if (registerBounceContact)
+                    NoteRuleSkip(enemy, "ennemi non eligible: " + DescribeEnemyParticipation(enemy));
+
                 return false;
+            }
 
             bool warriorOnEnemyTop =
                 WarriorSitsOnEnemyTop(enemy) ||
@@ -674,7 +693,15 @@ namespace Assets.Scripts.Characteres.WarriorController
                 IsWarriorLandingOnEnemyTopByCollision(collision);
 
             if (!warriorOnEnemyTop)
+            {
+                if (registerBounceContact)
+                    NoteRuleSkip(enemy, "pas reconnu sur le haut de l'ennemi (assis=" +
+                                        WarriorSitsOnEnemyTop(enemy) + ", chevauchement=" +
+                                        WarriorOverlay(enemy) + ", contact=" +
+                                        IsWarriorLandingOnEnemyTopByCollision(collision) + ")");
+
                 return false;
+            }
 
             // A forced middle landing was just committed: hold it. No escape may relaunch the
             // Warrior from the surface he was placed on before the settle window expires — and,
@@ -683,13 +710,22 @@ namespace Assets.Scripts.Characteres.WarriorController
             // caught him mid-fall, started a new chain, and the pass-through was then restored
             // in mid-air on timeout (measured 3 restorations out of 6 with groundPoints=0).
             if (Time.time < _middleLandingSettleUntil || _middleLandingIgnoreRoutine != null)
+            {
+                if (registerBounceContact)
+                    NoteRuleSkip(enemy, "garde anti-relance de l'atterrissage force (descente en cours=" +
+                                        (_middleLandingIgnoreRoutine != null) + ")");
+
                 return true;
+            }
 
             // ── Règle absolue "N rebonds puis atterrissage au milieu" ────────────────────
             // Independent of the enemy type, of the enemy identity and of the 1.2s window:
             // after N ping-pong bounces on enemy tops without a safe landing spot of his own,
             // the Warrior is forced down in the MIDDLE of that enemy group instead of bouncing
             // again. Skipped while the deeper absolute failsafe already owns the resolution.
+            if (_absoluteFailsafeActive && registerBounceContact)
+                NoteRuleSkip(enemy, "failsafe absolu actif: la regle des rebonds est court-circuitee");
+
             if (!_absoluteFailsafeActive &&
                 UpdateAndCheckEnemyTopMiddleLanding(enemy, registerBounceContact))
                 return true;
@@ -1101,7 +1137,12 @@ namespace Assets.Scripts.Characteres.WarriorController
         private bool UpdateAndCheckEnemyTopMiddleLanding(Enemy enemy, bool registerBounceContact)
         {
             if (!enableEnemyTopMiddleLandingAfterBounces)
+            {
+                if (registerBounceContact)
+                    NoteRuleSkip(enemy, "regle des rebonds desactivee dans l'Inspector");
+
                 return false;
+            }
 
             if (enemy == null || collider2 == null)
                 return false;
@@ -1131,9 +1172,27 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (!registerBounceContact)
                 return false;
 
+            int enemyId = enemy.GetInstanceID();
+
+            // Anti double-comptage d'une MEME prise de contact. Deux sources l'alimentent
+            // maintenant (le callback de collision et le detecteur geometrique), et le callback
+            // lui-meme se declenche par PAIRE de colliders: mesure en jeu, deux contacts sur le
+            // meme ennemi au meme instant (t=0,00s) et a la meme position, donc un rebond compte
+            // double. Une vraie chaine de rebonds est espacee d'au moins 0,2 s (arc de saut).
+            if (_middleLandingLastCountedContact.TryGetValue(enemyId, out float lastCounted) &&
+                Time.time - lastCounted < middleLandingSameContactDebounce)
+            {
+                if (logMiddleLandingDecisions)
+                    Debug.Log($"[MIDLAND] contact ignore sur {enemy.name} : meme prise de contact " +
+                              $"deja comptee il y a {(Time.time - lastCounted):F3}s", this);
+
+                return false;
+            }
+
+            _middleLandingLastCountedContact[enemyId] = Time.time;
+
             _middleLandingBounceCount++;
 
-            int enemyId = enemy.GetInstanceID();
             _middleLandingSameEnemyBounces.TryGetValue(enemyId, out int sameEnemyBounces);
             sameEnemyBounces++;
             _middleLandingSameEnemyBounces[enemyId] = sameEnemyBounces;
@@ -1262,8 +1321,8 @@ namespace Assets.Scripts.Characteres.WarriorController
 
                     if (logMiddleLandingDecisions)
                         Debug.Log($"[MIDLAND]   candidat x={candidateXs[i]:F2} REFUSE : {travelX:F2} unites " +
-                                  $"a parcourir (max {middleLandingMaxSnapDistanceX:F2}) — ce serait une " +
-                                  $"repulsion laterale, pas un atterrissage entre les ennemis.", this);
+                                  $"a parcourir, au-dela du plafond d'absurdite " +
+                                  $"({middleLandingMaxSnapDistanceX:F2}).", this);
 
                     continue;
                 }

@@ -99,6 +99,15 @@ public class PurchaseUI : MonoBehaviour
             Debug.Log($"[PurchaseUI] FetchProducts for {productId}");
             storeController.FetchProducts(productsToFetch);
 
+            // Interrupteur de developpement: sans ce saut, l'appareil de test se redeverrouille
+            // tout seul quelques secondes apres le lancement, parce que le compte Google possede
+            // deja le produit. Effacer les preferences ne suffit donc jamais.
+            if (DevPurchaseSimulation.IsActive)
+            {
+                Debug.Log("[DEV-ACHAT] restauration ignoree: simulation 'jamais achete' armee.");
+                return;
+            }
+
             // Restore: if this non-consumable was already bought (e.g. a previous
             // closed-testing purchase), Google won't let it be re-bought. Query the
             // existing purchases so an owner is unlocked automatically.
@@ -193,6 +202,16 @@ public class PurchaseUI : MonoBehaviour
 
     public void OnBuyPressed()
     {
+        // Interrupteur de developpement: achat simule localement. Google refuserait de revendre un
+        // non consommable deja possede, donc sans ce raccourci la sequence d'achat serait injouable
+        // sur l'appareil de test. Le parcours d'ecrans, lui, est identique a un vrai achat.
+        if (DevPurchaseSimulation.IsActive)
+        {
+            Debug.Log("[DEV-ACHAT] achat SIMULE (aucun appel a Google).");
+            Unlock(navigate: true);
+            return;
+        }
+
         if (storeController == null)
         {
             Debug.LogWarning("[PurchaseUI] StoreController is null.");
@@ -235,6 +254,14 @@ public class PurchaseUI : MonoBehaviour
     {
         if (orders == null)
             return;
+
+        // Ceinture et bretelles: une requete lancee avant l'armement de l'interrupteur pourrait
+        // encore repondre ici et redeverrouiller dans le dos du testeur.
+        if (DevPurchaseSimulation.IsActive)
+        {
+            Debug.Log("[DEV-ACHAT] reponse de restauration ignoree: simulation 'jamais achete' armee.");
+            return;
+        }
 
         Debug.Log($"[PurchaseUI] OnPurchasesFetched confirmed={orders.ConfirmedOrders?.Count ?? 0} pending={orders.PendingOrders?.Count ?? 0}");
 

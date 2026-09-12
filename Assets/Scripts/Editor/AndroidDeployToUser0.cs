@@ -31,9 +31,30 @@ public static class AndroidDeployToUser0
     [MenuItem("Tools/Galactic Warrior/Android/Build APK + Deploy to User 0")]
     public static void BuildAndDeploy()
     {
-        string apkPath = BuildApk();
+        string apkPath = BuildApk(forceDevelopmentBuild: false);
         if (apkPath == null)
             return; // build failed/cancelled; BuildApk already logged.
+
+        if (InstallToUser0(apkPath))
+            LaunchApp();
+    }
+
+    /// <summary>
+    /// Meme deploiement, mais en FORCANT la build de developpement, quel que soit l'etat de la case
+    /// des Build Settings.
+    ///
+    /// Pourquoi une entree separee: l'outillage de test (le geste qui simule un joueur n'ayant
+    /// jamais paye, les raccourcis de remise a zero) est derriere
+    /// <c>#if UNITY_EDITOR || DEVELOPMENT_BUILD</c>. Avec la case decochee, ce code est purement
+    /// supprime du binaire et le testeur cherche un geste qui n'existe pas dans l'application. La
+    /// case a deja ete decochee au mauvais moment une fois, sans que rien ne le signale.
+    /// </summary>
+    [MenuItem("Tools/Galactic Warrior/Android/Build DEV APK + Deploy to User 0")]
+    public static void BuildAndDeployDevelopment()
+    {
+        string apkPath = BuildApk(forceDevelopmentBuild: true);
+        if (apkPath == null)
+            return;
 
         if (InstallToUser0(apkPath))
             LaunchApp();
@@ -55,7 +76,7 @@ public static class AndroidDeployToUser0
 
     // --- Build -------------------------------------------------------------
 
-    private static string BuildApk()
+    private static string BuildApk(bool forceDevelopmentBuild)
     {
         string[] scenes = EditorBuildSettings.scenes
             .Where(s => s.enabled)
@@ -81,16 +102,28 @@ public static class AndroidDeployToUser0
         string apkPath = Path.GetFullPath(Path.Combine(GetProjectRoot(), ApkRelativePath));
         Directory.CreateDirectory(Path.GetDirectoryName(apkPath));
 
+        // Development est pose a la fois dans EditorUserBuildSettings et dans les BuildOptions.
+        // La case des Build Settings est ce que lit le compilateur pour definir DEVELOPMENT_BUILD;
+        // l'option seule ne suffit donc pas a faire exister le code de test dans le binaire.
+        if (forceDevelopmentBuild && !EditorUserBuildSettings.development)
+        {
+            EditorUserBuildSettings.development = true;
+            Debug.Log("[AndroidDeploy] Development Build force pour ce deploiement.");
+        }
+
         var options = new BuildPlayerOptions
         {
             scenes = scenes,
             locationPathName = apkPath,
             target = BuildTarget.Android,
             targetGroup = BuildTargetGroup.Android,
-            options = BuildOptions.None, // mirror current Player Settings; no forced dev build.
+
+            // Sans forcage: on suit les Player Settings, comme avant.
+            options = forceDevelopmentBuild ? BuildOptions.Development : BuildOptions.None,
         };
 
-        Debug.Log($"[AndroidDeploy] Building {scenes.Length} scene(s) -> {apkPath}");
+        Debug.Log($"[AndroidDeploy] Building {scenes.Length} scene(s) -> {apkPath}" +
+                  (forceDevelopmentBuild ? " (DEVELOPPEMENT)" : string.Empty));
         BuildReport report = BuildPipeline.BuildPlayer(options);
 
         if (report.summary.result != BuildResult.Succeeded)

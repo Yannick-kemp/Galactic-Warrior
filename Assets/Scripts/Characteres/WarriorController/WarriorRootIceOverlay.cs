@@ -17,6 +17,10 @@ namespace Assets.Scripts.Characteres.WarriorController
         [SerializeField] private Transform warriorRoot;
         [SerializeField] private SpriteRenderer overlayRenderer;
 
+        /// <summary>Exposed so the Warrior's invisibility failsafe can tell the freeze overlay apart
+        /// from the body sprites: a visible overlay must never count as "the Warrior is drawn".</summary>
+        public SpriteRenderer OverlayRenderer { get { return overlayRenderer; } }
+
         [Header("Normal Warrior Renderer To Restore")]
         [SerializeField] private SpriteRenderer defaultWarriorSpriteRenderer;
         [SerializeField] private bool forceDefaultRendererEnabledAfterFreeze = true;

@@ -90,6 +90,20 @@ namespace Assets.Scripts.Relics.World
             _currentWarrior = null;
         }
 
+        private void Start()
+        {
+            // Garde-fou de configuration. Une serrure qui pointe une plateforme a deplacer et qui
+            // reste en mode immediat consomme la cle AU SIMPLE CONTACT, sans aucune demande au
+            // joueur: mesure en jeu sur Plf-bck_moving_VarZ (1) de Zone3, la cle disparaissait
+            // pile a l'atterrissage sur la plateforme. Les serrures correctement reglees utilisent
+            // ArmKeyToEnablePlatformMotion et attendent l'accord du joueur.
+            if (mode == KeyLockMode.ImmediateUnlockObject && platformMotionTarget != null)
+                Debug.LogWarning("[KeyRelicLock] '" + name + "' vise la plateforme '" +
+                                 platformMotionTarget.name + "' mais reste en mode immediat: " +
+                                 "la cle sera consommee au simple contact, sans demande au joueur. " +
+                                 "Mode attendu: ArmKeyToEnablePlatformMotion.", this);
+        }
+
         private void OnTriggerEnter2D(Collider2D other)
         {
             HandleEnterCollider(other);
@@ -370,6 +384,15 @@ namespace Assets.Scripts.Relics.World
         {
             if (relicManager == null)
                 return false;
+
+            // Diagnostic: nomme la serrure qui prend la cle. Plusieurs serrures peuvent exister sur
+            // le trajet, et certaines se declenchent au simple contact (mode ImmediateUnlockObject),
+            // donc "la cle a disparu en cours de route" peut simplement etre une autre serrure.
+            Debug.Log("[SERRURE] " + name + " consomme " + requiredKeys + " cle(s)" +
+                      " | mode=" + mode +
+                      " | position=(" + transform.position.x.ToString("F2") + ", " +
+                      transform.position.y.ToString("F2") + ")" +
+                      " | parent=" + (transform.parent != null ? transform.parent.name : "racine"), this);
 
             if (keyRelic != null)
                 return relicManager.TryConsume(keyRelic, requiredKeys);

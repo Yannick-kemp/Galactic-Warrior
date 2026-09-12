@@ -191,6 +191,7 @@ GameObject:
   - component: {fileID: 8301747116142928273}
   - component: {fileID: 7468573880501422439}
   - component: {fileID: 2915362853751619885}
+  - component: {fileID: 519266350127503851}
   m_Layer: 8
   m_Name: Warrior
   m_TagString: Warrior
@@ -373,7 +374,7 @@ MonoBehaviour:
   squeezeKnockback: 0.35
   squeezeStunSeconds: 0.12
   squeezeCheckInterval: 0.05
-  squeezeKillDelay: 0.35
+  squeezeKillDelay: 1
   minEscapeDistance: 1
 --- !u!114 &2375869154341470219
 MonoBehaviour:
@@ -475,8 +476,9 @@ MonoBehaviour:
   enemyTopMiddleLandingSameEnemyBounceLimit: 2
   middleLandingGapClearance: 0.2
   holdLandingXWhileFallingBetweenEnemies: 1
-  middleLandingMaxSnapDistanceX: 3
+  middleLandingMaxSnapDistanceX: 10
   middleLandingGlideSpeedX: 8
+  middleLandingSameContactDebounce: 0.15
   middleLandingRepeatEscalationCount: 3
   middleLandingRepeatWindowSeconds: 12
   middleLandingLoopEscapeSeconds: 1.5
@@ -490,7 +492,7 @@ MonoBehaviour:
   bigJumpArcStepLogThreshold: 0
   maxJumpArcSpeed: 30
   maxJumpArcDivergenceBeforeAbort: 1.2
-  logMiddleLandingDecisions: 1
+  logMiddleLandingDecisions: 0
   enableEnemyOverlapRecovery: 1
   overlapRecoveryPenetrationEpsilon: 0.04
   overlapRecoveryScanPad: 0.05
@@ -649,23 +651,44 @@ MonoBehaviour:
   minIceAimDistance: 0.12
   attack3FailsafeSeconds: 1.25
   castOrphanGraceSeconds: 0.4
+  platformAlignSinkTolerance: 0.3
+  platformAlignFloatTolerance: 0.12
+  logJumpBlockDiagnostics: 0
+  jumpRefusalLogThrottle: 0.3
+  logCanMoveCallers: 0
   meteorDamageMinInterval: 0.12
   meteorShieldBlockCost: 5
   meteorHitStunSeconds: 0.08
   meteorShieldBlockGrace: 0.06
-  logPingPongEpisodes: 1
+  enableMovingPlatformJumpSupport: 1
+  movingPlatformSupportGap: 0.75
+  movingPlatformSupportSkin: 0.05
+  logMovingPlatformJumpSupport: 0
+  logPingPongEpisodes: 0
   pingPongEpisodeEndSeconds: 2
   logViolentEnemyRepulse: 0
   violentRepulseSpeedJump: 6
   violentRepulseStepDistance: 0.6
   violentRepulseEnemySearchRadius: 1.5
+  logRealVsCountedTopBounces: 0
+  topDetectionBand: 0.35
+  countTopBouncesGeometrically: 1
+  logRuleSkips: 0
+  ruleSkipThrottleSeconds: 0.25
+  logPlatformDownwardCrossing: 0
+  platformCrossingThrottleSeconds: 0.4
+  enableSqueezeEscapeWindow: 1
+  squeezeEscapeJumpPassThroughSeconds: 0.6
+  logSqueezeEscapeWindow: 0
+  invisibleRecoveryGraceSeconds: 0.6
+  logInvisibleRecovery: 1
   enableWedgeBetweenEnemiesEscape: 1
   wedgeEscapeStuckSeconds: 0.6
   wedgeEscapeMaxSeconds: 1.2
   wedgeEscapeSpeedX: 6
   wedgeEscapeMinProgressX: 0.4
   wedgeEscapeClearance: 0.06
-  logWedgeEscape: 1
+  logWedgeEscape: 0
 --- !u!61 &3465371927222814794
 BoxCollider2D:
   m_ObjectHideFlags: 0
@@ -739,6 +762,7 @@ MonoBehaviour:
   startingRelics: []
   maxCollectsPerFramePerRelic: 1
   maxConsumesPerFramePerRelic: 1
+  logRelicInventoryChanges: 0
 --- !u!114 &7290767003425656282
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -974,6 +998,27 @@ MonoBehaviour:
   fallbackToDirectCollectIfPrefabMissing: 1
   resetProgressOnSceneLoad: 1
   debugLogs: 0
+--- !u!114 &519266350127503851
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2119685233829817584}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 385acc85b25506c4589b604521b5c8cf, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  grantDemoBossRelic: 1
+  demoBossType: 6
+  progressionRelics: []
+  grantMissingProgressionRelics: 1
+  firstChapterIndexRequiringGrant: 1
+  requirePurchase: 1
+  targetCount: 1
+  logGrants: 1
+  maxFramesWaitingForGameMgr: 120
 --- !u!1 &2894118238035918133
 GameObject:
   m_ObjectHideFlags: 0

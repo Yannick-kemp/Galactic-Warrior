@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 198b797b462f76f41aac1dc107033892, type: 3}
+  m_Name: SO_EnemyHitCounts
+  m_EditorClassIdentifier: 
+  hashagar:
+    attack1Hits: 150
+    attack2Hits: 100
+  zalayty:
+    attack1Hits: 5
+    attack2Hits: 10
+  m97:
+    attack1Hits: 4
+    attack2Hits: 10
+  p39:
+    attack1Hits: 3
+    attack2Hits: 10
+  raka:
+    attack1Hits: 25
+    attack2Hits: 50
+  crawling:
+    attack1Hits: 2
+    attack2Hits: 10
+  otherEnemies:
+    attack1Hits: 150
+    attack2Hits: 100

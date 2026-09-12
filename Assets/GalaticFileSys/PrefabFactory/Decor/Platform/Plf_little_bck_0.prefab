@@ -197,11 +197,36 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   platformCollider: {fileID: 6055086693222358346}
   platformTrigger: {fileID: 6354342429499754600}
+  platformMotionEnabled: 1
+  defaultRenderer: {fileID: 0}
   mainRenderer: {fileID: 5479728474304975613}
   overlayRenderer: {fileID: 1895537208695910406}
   initialTheme: {fileID: 11400000, guid: 2f0a6f5c3fe9bfe4d89015ae2e84c5a2, type: 2}
   applyInitialThemeOnStart: 1
+  hideDefaultRendererWhenThemeApplied: 1
+  autoBindDefaultRenderer: 1
+  autoBindThemeRenderers: 1
+  edgeFallRequiresRealOverhang: 1
+  edgeFallOverhangMargin: 0.1
+  edgeFallMaxFeetAboveTop: 0.2
+  warriorEdgeFallPassThroughSeconds: 1
+  warriorEdgeFallPassThroughMaxSeconds: 2.5
+  logWarriorPassThroughDecisions: 0
+  maxWarriorSpeed: 20
+  passThroughBuffer: 0.08
+  landingBand: 0.14
+  horizontalLandingSkin: 0.03
+  restoreAfterTriggerExitTimeout: 0.75
+  zalaytyJumpDownRestoreContactSkin: 0.01
+  zalaytyEdgeDropRequiresLandingBelow: 1
+  zalaytyEdgeDropLandingSearchDistance: 10
+  zalaytyJumpDownRestoreMaxSeconds: 3
   edgeZoneWidth: 0.35
+  enableWarriorAntiLedgeSnag: 1
+  warriorAntiSnagMinUpVelocity: 0.05
+  warriorAntiSnagBelowTopSkin: 0.04
+  warriorAntiSnagTopNormalY: 0.55
+  warriorAntiSnagSideNormalX: 0.35
 --- !u!1 &6920117692049058846
 GameObject:
   m_ObjectHideFlags: 0

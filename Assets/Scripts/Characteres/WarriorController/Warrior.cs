@@ -431,6 +431,7 @@ namespace Assets.Scripts.Characteres.WarriorController
             }
 
             EnsureDefaultWarriorSpriteVisibleWhenNotCasting();
+            EnsureWarriorNeverStaysInvisible();
         }
 
         private void FixedUpdate()
@@ -440,6 +441,10 @@ namespace Assets.Scripts.Characteres.WarriorController
             TrackWedgeBetweenEnemies();
 
             TrackPingPongEpisode();
+
+            TrackRuleMissDiagnostics();
+
+            TrackMovingPlatformSupport();
 
             RememberZalaytyImpactPrePhysicsPosition();
 
