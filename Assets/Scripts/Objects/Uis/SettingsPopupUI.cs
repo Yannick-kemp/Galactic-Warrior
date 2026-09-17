@@ -38,6 +38,10 @@ public class SettingsPopupUI : MonoBehaviour
     private bool _autoScheme;
     private bool _autoHand;
 
+    // The popup is saved inactive in the scene, so its Awake first runs INSIDE Show()'s
+    // SetActive(true). Awake must not hide it then, or the first open shows nothing.
+    private bool _opening;
+
     private void Awake()
     {
         closeButton.onClick.AddListener(Hide);
@@ -69,7 +73,9 @@ public class SettingsPopupUI : MonoBehaviour
         RefreshControlSchemeLabel();
         RefreshHandednessLabel();
         LayoutButtons();
-        Hide();
+
+        if (!_opening)
+            Hide();
     }
 
     // Builds a labeled toggle button inside the popup so a choice appears with no manual
@@ -153,7 +159,10 @@ public class SettingsPopupUI : MonoBehaviour
 
     public void Show()
     {
+        _opening = true;
         gameObject.SetActive(true);
+        _opening = false;
+
         LayoutButtons(); // panel rect is valid once shown
     }
 
@@ -181,6 +190,10 @@ public class SettingsPopupUI : MonoBehaviour
     {
         if (controlSchemeLabel != null)
             controlSchemeLabel.text = ControlScheme.IsDirect ? directLabel : tapLabel;
+
+        // Desktop browser forces Tap: nothing to choose, so no toggle.
+        if (controlSchemeButton != null)
+            controlSchemeButton.gameObject.SetActive(ControlScheme.IsSelectable);
 
         // Handedness only matters for the joystick — hide it in tap mode.
         if (handednessButton != null)

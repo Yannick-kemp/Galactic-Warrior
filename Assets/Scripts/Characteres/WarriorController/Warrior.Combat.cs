@@ -827,7 +827,20 @@ namespace Assets.Scripts.Characteres.WarriorController
             }
             return false;
 #else
-            return EventSystem.current.IsPointerOverGameObject();
+            if (EventSystem.current.IsPointerOverGameObject())
+                return true;
+
+#if UNITY_WEBGL
+            // Navigateur mobile : la build WebGL ne passe pas par la branche Android/iOS,
+            // alors on teste aussi chaque doigt, sinon un tap sur un bouton peut lancer
+            // un deplacement vers ce point.
+            for (int i = 0; i < Input.touchCount; i++)
+            {
+                if (EventSystem.current.IsPointerOverGameObject(Input.GetTouch(i).fingerId))
+                    return true;
+            }
+#endif
+            return false;
 #endif
         }
 

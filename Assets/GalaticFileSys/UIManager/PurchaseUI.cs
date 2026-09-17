@@ -362,13 +362,18 @@ public class PurchaseUI : MonoBehaviour
     }
 #endif
 
+    // The GameObject can stay active while faded out, so activeSelf is not a visibility test.
+    public bool IsVisible => _visible && gameObject.activeInHierarchy;
+
     public void Show()
     {
         if (_routine != null)
             StopCoroutine(_routine);
 
-        _visible = true;
+        // Activate first: on a first open the Awake runs here and its HideImmediate would
+        // reset _visible to false, making IsVisible lie while the popup is on screen.
         gameObject.SetActive(true);
+        _visible = true;
         _routine = StartCoroutine(ShowRoutine());
     }
 

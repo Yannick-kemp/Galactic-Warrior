@@ -25,6 +25,7 @@ public class TouchPauseMenu : MonoBehaviour
     private GameObject _settingsView;
 
     private TMP_Text _soundLabel;
+    private Button _schemeButton;
     private TMP_Text _schemeLabel;
     private Button _handednessButton;
     private TMP_Text _handednessLabel;
@@ -84,7 +85,7 @@ public class TouchPauseMenu : MonoBehaviour
         _settingsView = MakeView("SettingsView");
         MakeTitle(_settingsView.transform, "SETTINGS", 260f);
         MakeButton(_settingsView.transform, "Sound", 110f, OnToggleSound, out _soundLabel);
-        MakeButton(_settingsView.transform, "Controls", -10f, OnToggleScheme, out _schemeLabel);
+        _schemeButton = MakeButton(_settingsView.transform, "Controls", -10f, OnToggleScheme, out _schemeLabel);
         _handednessButton = MakeButton(_settingsView.transform, "Layout", -130f, OnToggleHandedness, out _handednessLabel);
         MakeButton(_settingsView.transform, "Back", -270f, ShowPause);
         _settingsView.SetActive(false);
@@ -134,6 +135,18 @@ public class TouchPauseMenu : MonoBehaviour
             mgr.LoadMainMenu();
     }
 
+    /// <summary>
+    /// Esc / back: leaves Settings first, otherwise resumes — one level at a time, like
+    /// the on-screen Back then Resume buttons.
+    /// </summary>
+    public void HandleBack()
+    {
+        if (_settingsView != null && _settingsView.activeSelf)
+            ShowPause();
+        else
+            OnResume();
+    }
+
     private void OnResume()
     {
         // Hand back to PauseButtonUI, which restores timeScale/audio/input and hides us.
@@ -168,6 +181,10 @@ public class TouchPauseMenu : MonoBehaviour
 
         if (_schemeLabel != null)
             _schemeLabel.text = ControlScheme.IsDirect ? "Controls: Joystick" : "Controls: Tap";
+
+        // Desktop browser forces Tap: nothing to choose, so no toggle.
+        if (_schemeButton != null)
+            _schemeButton.gameObject.SetActive(ControlScheme.IsSelectable);
 
         // Handedness only matters for the on-screen joystick — hide it in tap mode.
         if (_handednessButton != null)

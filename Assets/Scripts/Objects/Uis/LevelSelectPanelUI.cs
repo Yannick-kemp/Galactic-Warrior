@@ -67,10 +67,16 @@ public class LevelSelectPanelUI : MonoBehaviour
     // Captured before anything can grow the card, so collapsing always restores the authored size.
     private float _cardBaseHeight = -1f;
 
+    // The popup is saved inactive in the scene, so its Awake first runs INSIDE Show()'s
+    // SetActive(true). Awake must not hide it then, or the first open shows nothing.
+    private bool _opening;
+
     private void Awake()
     {
         CacheCardHeight();
-        HideImmediate();
+
+        if (!_opening)
+            HideImmediate();
     }
 
     private RectTransform CardRect
@@ -92,9 +98,13 @@ public class LevelSelectPanelUI : MonoBehaviour
         // Always opens closed: the popup is a menu, not a place that remembers where you were.
         _expanded = false;
 
-        RefreshState();
-
+        // Activate BEFORE RefreshState: the first activation runs Awake, which caches the
+        // authored card height — it must see the card before any row grows it.
+        _opening = true;
         gameObject.SetActive(true);
+        _opening = false;
+
+        RefreshState();
 
         if (popupCard != null)
             popupCard.SetActive(true);
