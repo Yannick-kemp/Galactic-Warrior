@@ -207,7 +207,9 @@ public class GameMgr : MonoBehaviour, IGame
     public event System.Action OnRetryConsumed;
 
     // Treat this as "campaign purchased / rest unlocked"
-    public bool Level2Unlocked => autoUnlockForTesting || level2Unlocked;
+    // Web demo (YouTube or polymart.be): nothing is sold there, so every demo chapter is open (the
+    // campaign itself is cut to the demo chapters in NormalizeCampaignSceneOrder).
+    public bool Level2Unlocked => WebDemo.IsBuild || autoUnlockForTesting || level2Unlocked;
 
     // Menu-facing properties
     public bool HasCampaignPurchase => Level2Unlocked;
@@ -851,6 +853,12 @@ public class GameMgr : MonoBehaviour, IGame
         // The level is finished: any checkpoint inside it is no longer a valid resume point.
         ClearSavedCheckpoint();
 
+        if (!HasNextCampaignScene(currentIndex) && WebDemo.IsBuild)
+        {
+            ShowDemoEndScreen();
+            return;
+        }
+
         if (!HasNextCampaignScene(currentIndex))
         {
             // Dernier niveau du jeu terminé (boss final vaincu) → écran de victoire
@@ -920,6 +928,26 @@ public class GameMgr : MonoBehaviour, IGame
         int retries = ScoreManager.Instance != null ? ScoreManager.Instance.RetryCount : 0;
 
         UIManager.Instance?.ShowVictoryScreen(score, dur, retries, finalRewardCoins, finalRewardTokens);
+    }
+
+    /// <summary>
+    /// Web demo: the last demo chapter is cleared. YouTube requires telling the player there is no
+    /// more content (and, there, no store link; the polymart.be build adds a Google Play button),
+    /// so this replaces both the purchase gate and the final victory screen of the full game.
+    /// </summary>
+    private void ShowDemoEndScreen()
+    {
+        // Nothing may happen behind this screen (a late hit would open DEFEAT under it).
+        // LoadMenu restores the time scale when the player leaves.
+        Time.timeScale = 0f;
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = true;
+
+        SaveProgression();
+
+        Debug.Log("[GameMgr] Last demo chapter cleared. Showing the end-of-demo screen.");
+        DemoEndScreen.Show(ReturnToMenuFromVictory);
     }
 
     // Called by the victory screen buttons.
@@ -2368,6 +2396,11 @@ public class GameMgr : MonoBehaviour, IGame
         EnsureCampaignSceneAfter(level2SceneName, warriorSceneName);
         EnsureCampaignSceneAfter(level3SceneName, level2SceneName);
         EnsureCampaignSceneAfter(level4SceneName, level3SceneName);
+
+        // The web demo ships the demo chapters only (the other scenes are not even in the build).
+        if (WebDemo.IsBuild && campaignSceneOrder.Count > WebDemo.DemoChapterCount)
+            campaignSceneOrder.RemoveRange(WebDemo.DemoChapterCount,
+                campaignSceneOrder.Count - WebDemo.DemoChapterCount);
     }
 
     private void EnsureCampaignSceneFirst(string sceneName)

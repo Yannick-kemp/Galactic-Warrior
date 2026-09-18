@@ -346,7 +346,7 @@ MonoBehaviour:
     scrollPos: {x: 0, y: 369}
     m_SelectedIDs: b01e0900
     m_LastClickedID: 597680
-    m_ExpandedIDs: 000000009ef40000a0f40000a2f40000a4f40000a6f40000a8f400007a03010098030100aa030100e2360100d048010000ca9a3b
+    m_ExpandedIDs: 00000000caf40000ccf40000cef40000d0f40000d2f40000d4f40000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -375,7 +375,7 @@ MonoBehaviour:
     scrollPos: {x: 0, y: 0}
     m_SelectedIDs: 
     m_LastClickedID: 0
-    m_ExpandedIDs: 000000009ef40000a0f40000a2f40000a4f40000a6f40000a8f40000
+    m_ExpandedIDs: 00000000caf40000ccf40000cef40000d0f40000d2f40000d4f40000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -454,8 +454,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Inspector\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 3259
-    y: 79
+    x: 1340
+    y: 24
     width: 580
     height: 907
   m_SerializedDataModeController:
@@ -503,8 +503,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Hierarchy\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1920
-    y: 79
+    x: 0
+    y: 24
     width: 324
     height: 574
   m_SerializedDataModeController:
@@ -526,18 +526,18 @@ MonoBehaviour:
       m_ExpandedIDs: 08eaf3ff20eaf3ff7411f4ffa632f4ff6e53f4ffb45df4ffae5ef4ff0c74f4ff2474f4ff789bf4ffaabcf4ff72ddf4ffb8e7f4ffb2e8f4ffe20df5ff463ff5ff3a54f5ff5254f5ffa67bf5ffd89cf5ffa0bdf5ffe6c7f5ffe0c8f5ffe6edf5ffae17f6ff4224f6ff5a24f6ffae4bf6ffe06cf6ffa88df6ffee97f6ffe898f6ffe4aef6fffcaef6ff50d6f6ff82f7f6ff4a18f7ff9022f7ff8a23f7ffee71f7ff0672f7ff5899f7ff8abaf7ff52dbf7ff98e5f7ff92e6f7ff1ef7f7ff36f7f7ff941ef8ffd23ff8ffa660f8fff86af8fff86bf8ff5a7ff8ff727ff8ffd0a6f8ff0ec8f8ffe2e8f8ff34f3f8ff34f4f8ff961ef9ffae1ef9ff2046f9ff7267f9ff5a88f9ffc092f9ffd493f9ffb8a4f9ffd0a4f9ff1eccf9ff4eedf9ff140efaff5618faff5019faff502dfaff682dfaffc254fafffe75faffd096faff1ea1faff1ea2fafffed6fcffb2e1fcff00e5fcff0ae5fcffaee9fcffeaeafcff7aebfcff82ebfcff98ebfcffaaebfcff68edfcff72edfcff7cedfcff76eefcff48f1fcff52f1fcff26f3fcff3ef5fcff4af7fcfffaa7fdff12a8fdffb6cefdfff2effdffc410feff121bfeff121cfeff02e6feff0ce6feff18e6feff74e6feff9c04ffffd639ffffc05dffff5680ffffcc8bffff08b4ffffd2b7ffff12daffff02fbfffff4ffffffac1601002a1701005c1f01009a3c01000252010026570100a4570100c882010046830100c0840100acc4050032c6050042c60500ccca050050cc050060a1080038a20800eea208006ea308007aa4080086a4080054a508007aa60800dca80800fc2d110008bd130038d71300d4e21300
       m_RenameOverlay:
         m_UserAcceptedRename: 0
-        m_Name: Plf-bck_moving_VarZ
-        m_OriginalName: Plf-bck_moving_VarZ
+        m_Name: 
+        m_OriginalName: 
         m_EditFieldRect:
           serializedVersion: 2
           x: 0
           y: 0
           width: 0
           height: 0
-        m_UserData: -204366
+        m_UserData: 0
         m_IsWaitingForDelay: 0
         m_IsRenaming: 0
-        m_OriginalEventType: 0
+        m_OriginalEventType: 11
         m_IsRenamingFilename: 0
         m_TrimLeadingAndTrailingWhitespace: 0
         m_ClientGUIView: {fileID: 4}
@@ -569,8 +569,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Scene\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 2245
-    y: 79
+    x: 326
+    y: 24
     width: 1012
     height: 574
   m_SerializedDataModeController:
@@ -1379,8 +1379,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Console\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1920
-    y: 679
+    x: 0
+    y: 624
     width: 1338
     height: 307
   m_SerializedDataModeController:

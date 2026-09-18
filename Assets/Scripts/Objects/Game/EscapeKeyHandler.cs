@@ -27,7 +27,16 @@ public class EscapeKeyHandler : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Escape))
+        bool pressed = Input.GetKeyDown(KeyCode.Escape);
+
+#if ENABLE_INPUT_SYSTEM
+        // Gamepad Start (Xbox ☰ / PlayStation Options) behaves like Esc: pause, then back / resume.
+        var pad = GamepadSupport.Pad;
+        if (pad != null && pad.startButton.wasPressedThisFrame)
+            pressed = true;
+#endif
+
+        if (pressed)
             HandleEscape();
     }
 

@@ -143,11 +143,60 @@ public class MainMenuUI : MonoBehaviour
             }
         }
 
+        if (WebDemo.IsBuild)
+            ApplyWebDemoMenu();
+
         if (levelSelectPanel != null)
             levelSelectPanel.HideImmediate();
 
         if (menuPurchaseUI == null)
             menuPurchaseUI = FindFirstObjectByType<PurchaseUI>(FindObjectsInactive.Include);
+    }
+
+    /// <summary>
+    /// Root of the menu buttons, for gamepad navigation. MainMenuUI sits on MenuController, a
+    /// scene-root object OUTSIDE the buttons' Canvas, so its own transform would contain nothing.
+    /// </summary>
+    public Transform NavigationRoot
+    {
+        get
+        {
+            GameObject group = fullButtonsGroup != null ? fullButtonsGroup : demoButtonsGroup;
+            Canvas canvas = group != null ? group.GetComponentInParent<Canvas>(true) : null;
+            return canvas != null ? canvas.rootCanvas.transform : null;
+        }
+    }
+
+    // Web demo (YouTube or polymart.be): the demo it ships is open (so the menu takes the
+    // "purchased" layout), but it is still the demo; a browser tab has no Quit, and YouTube
+    // forbids anything about buying.
+    private void ApplyWebDemoMenu()
+    {
+        if (modeBadgeText != null)
+            modeBadgeText.text = "DEMO";
+
+        if (subtitleText != null)
+            subtitleText.text = "Play the Galactic Warrior demo.";
+
+        if (unlockFullGameButton != null)
+            unlockFullGameButton.SetActive(false);
+
+        // MainMenuUI sits on MenuController, not above the buttons: search the whole menu scene.
+        var buttons = FindObjectsByType<UnityEngine.UI.Button>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (UnityEngine.UI.Button button in buttons)
+        {
+            if (button.gameObject.scene != gameObject.scene)
+                continue;
+
+            for (int i = 0; i < button.onClick.GetPersistentEventCount(); i++)
+            {
+                string method = button.onClick.GetPersistentMethodName(i);
+                // Level select is hidden too: the demo is a single chapter, Continue covers it.
+                if (method == nameof(Exit) || method == nameof(OpenUnlockFullGameOffer) ||
+                    method == nameof(OpenLevelSelect))
+                    button.gameObject.SetActive(false);
+            }
+        }
     }
 
     public void PlayDemo()

@@ -351,6 +351,12 @@ public class PurchaseUI : MonoBehaviour
 
     private void OnGetFullVersionPressed()
     {
+#if YOUTUBE_PLAYABLES
+        // YouTube forbids links to external content; the build never offers a purchase anyway.
+        Debug.LogWarning("[PurchaseUI] Store link disabled in the YouTube build.");
+        GameMgr.Instance?.OnPurchaseDeclined();
+        return;
+#else
         if (string.IsNullOrWhiteSpace(playStoreUrl))
         {
             Debug.LogWarning("[PurchaseUI] playStoreUrl non renseigné dans l'Inspector.");
@@ -359,6 +365,7 @@ public class PurchaseUI : MonoBehaviour
 
         Debug.Log($"[PurchaseUI] (Web) Ouverture Google Play: {playStoreUrl}");
         Application.OpenURL(playStoreUrl);
+#endif
     }
 #endif
 

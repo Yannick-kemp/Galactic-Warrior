@@ -94,6 +94,13 @@ namespace Assets.Scripts.Objects.Game
             if (_instance != this)
                 return;
 
+            // While paused, the stick/buttons drive the pause menu (MenuNavigator), not the Warrior.
+            if (PauseButtonUI.IsPaused)
+            {
+                _warrior?.DirectStop();
+                return;
+            }
+
             bool direct = ControlScheme.IsDirect;
 
             if (!direct)
@@ -111,6 +118,12 @@ namespace Assets.Scripts.Objects.Game
 
             if (!_lastActive)
                 SetActiveState(true);
+
+            // A physical controller replaces the on-screen joystick: hide it while one is
+            // connected, bring it back when it is unplugged.
+            bool showTouch = !GamepadSupport.Connected;
+            if (_controlsRoot != null && _controlsRoot.activeSelf != showTouch)
+                _controlsRoot.SetActive(showTouch);
 
             // Re-apply the layout live if the handedness setting changed (e.g. toggled
             // in the pause settings) without needing a scene reload.
@@ -131,19 +144,35 @@ namespace Assets.Scripts.Objects.Game
             _iceAimDir = Vector2.zero;
             HideAimIndicator();
 
-            // Joystick + keyboard (PC) combined.
+            // Joystick + keyboard (PC) + gamepad combined: the strongest input wins.
             float x = _joystick != null ? _joystick.Value.x : 0f;
             float kb = Input.GetAxisRaw("Horizontal");
             if (Mathf.Abs(kb) > Mathf.Abs(x)) x = kb;
+
+            bool jumpPressed = Input.GetKeyDown(KeyCode.Space);
+            bool attackPressed = Input.GetKeyDown(KeyCode.J);
+
+#if ENABLE_INPUT_SYSTEM
+            // Same layout as the Xbox build: left stick moves, A jumps, X attacks.
+            var pad = GamepadSupport.Pad;
+            if (pad != null)
+            {
+                float gpx = pad.leftStick.x.ReadValue();
+                if (Mathf.Abs(gpx) > Mathf.Abs(x)) x = gpx;
+
+                if (pad.buttonSouth.wasPressedThisFrame) jumpPressed = true;   // A / Cross
+                if (pad.buttonWest.wasPressedThisFrame) attackPressed = true;  // X / Square
+            }
+#endif
 
             if (Mathf.Abs(x) > deadZone)
                 _warrior.DirectMove(Mathf.Sign(x));
             else
                 _warrior.DirectStop();
 
-            if (Input.GetKeyDown(KeyCode.Space))
+            if (jumpPressed)
                 _warrior.DirectJump(x);
-            if (Input.GetKeyDown(KeyCode.J))
+            if (attackPressed)
                 _warrior.DirectAttack();
         }
 
@@ -182,8 +211,26 @@ namespace Assets.Scripts.Objects.Game
 
             _iceAiming = pressed;
 
-            // PC fallback.
-            if (Input.GetKeyDown(KeyCode.K))
+            bool castPressed = Input.GetKeyDown(KeyCode.K);
+
+#if ENABLE_INPUT_SYSTEM
+            // Gamepad: the left stick aims (the on-screen joystick is hidden), Y fires.
+            var pad = GamepadSupport.Pad;
+            if (pad != null)
+            {
+                Vector2 stick = pad.leftStick.ReadValue();
+                if (stick.sqrMagnitude > deadZone * deadZone)
+                {
+                    _iceAimDir = stick;
+                    UpdateAimIndicator(_iceAimDir);
+                }
+
+                if (pad.buttonNorth.wasPressedThisFrame) castPressed = true;   // Y / Triangle
+            }
+#endif
+
+            // PC fallback (K) and gamepad Y.
+            if (castPressed)
             {
                 _warrior.DirectCastIceBall(_iceAimDir);
                 _iceAimDir = Vector2.zero;

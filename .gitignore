@@ -61,6 +61,7 @@ Thumbs.db
 # Exclude build artifacts
 Build/
 Builds/
+BuildWeb/
 Artefacs/       
 *.apk
 *.aab

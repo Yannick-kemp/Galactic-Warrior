@@ -40,17 +40,30 @@ public static class ControlScheme
         => false;
 #endif
 
-    /// <summary>False when the platform imposes the scheme; UI hides its toggle.</summary>
-    public static bool IsSelectable => !ForcesTap;
+    /// <summary>False when the platform or a connected controller imposes the scheme; UI hides its toggle.</summary>
+    public static bool IsSelectable => !ForcesTap && !GamepadSupport.Connected;
 
-    public static Mode Current => ForcesTap ? Mode.Tap : (Mode)PlayerPrefs.GetInt(KEY, (int)DefaultMode);
+    /// <summary>
+    /// A connected controller always means Direct: tap-to-navigate cannot be driven by a pad.
+    /// Evaluated live, so plugging or unplugging a controller mid-game switches the scheme;
+    /// the saved choice is left untouched and comes back once the pad is gone.
+    /// </summary>
+    public static Mode Current
+    {
+        get
+        {
+            if (GamepadSupport.Connected)
+                return Mode.Direct;
+            return ForcesTap ? Mode.Tap : (Mode)PlayerPrefs.GetInt(KEY, (int)DefaultMode);
+        }
+    }
 
     public static bool IsTap => Current == Mode.Tap;
     public static bool IsDirect => Current == Mode.Direct;
 
     public static void Set(Mode mode)
     {
-        if (ForcesTap)
+        if (!IsSelectable)
             return;
 
         PlayerPrefs.SetInt(KEY, (int)mode);
