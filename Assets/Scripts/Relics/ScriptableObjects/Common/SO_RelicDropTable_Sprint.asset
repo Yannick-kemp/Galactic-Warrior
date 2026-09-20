@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9ab5d912f6b213a47991655e72016d1c, type: 3}
+  m_Name: SO_RelicDropTable_Sprint
+  m_EditorClassIdentifier: 
+  dropChance: 1
+  entries:
+  - pickupPrefab: {fileID: 1455931786518333997, guid: 5d233b0e41601cf4f81a36df7d20e8fd, type: 3}
+    weight: 1

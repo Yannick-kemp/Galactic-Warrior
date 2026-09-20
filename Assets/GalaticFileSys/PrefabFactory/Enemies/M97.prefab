@@ -132,7 +132,7 @@ BoxCollider2D:
   m_Enabled: 1
   serializedVersion: 3
   m_Density: 1
-  m_Material: {fileID: 6200000, guid: 38a645ac726de2241843caa2e9e824f8, type: 2}
+  m_Material: {fileID: 6200000, guid: 58b3c63abf295984ca73a84592c950b3, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -178,7 +178,7 @@ Rigidbody2D:
   m_GameObject: {fileID: 462648239515211956}
   m_BodyType: 0
   m_Simulated: 1
-  m_UseFullKinematicContacts: 0
+  m_UseFullKinematicContacts: 1
   m_UseAutoMass: 0
   m_Mass: 1
   m_LinearDamping: 0
@@ -321,6 +321,11 @@ MonoBehaviour:
   DescendentPhase: 0
   _isJumping: 0
   _isMoving: 0
+  enableDestinationPlatformAntiTunnel: 1
+  antiTunnelLandingSkin: 0.015
+  antiTunnelCastExtraDistance: 0.08
+  antiTunnelHorizontalSkin: 0.03
+  antiTunnelTopStartTolerance: 0.04
   Range: 3
   attackCooldown: 1.5
   attackDamage: 10
@@ -342,7 +347,7 @@ MonoBehaviour:
   dissolveMaterial: {fileID: 2100000, guid: 44af3d19a88f6354ea8e26371d9569d1, type: 2}
   dissolveDuration: 0.8
   stepBackDistance: 0
-  rayLength: 0
+  rayLength: 0.8
   xEdge: 0
   deathSfxClip: {fileID: 8300000, guid: 479fae5d961d96940b3ff8fdce2a0454, type: 3}
   deathSfxVolume: 1
@@ -351,16 +356,34 @@ MonoBehaviour:
   deathSfxMaxDistance: 20
   canBeStunned: 1
   meleeHitDistance: 0.65
+  useWorldYDeathFallback: 1
+  worldDeathY: -30
+  groundBound: 0
+  groundBoundSeatTolerance: 0.06
   targetAnimationName: AttackAnimation
+  enemyType: 4
+  scoreValue: 5
+  isBoss: 0
+  bossDisplayName: 
   totalFramesInAnimation: 16
   frameIndex: 0
   disableAttackWhenHitSeconds: 0.2
   hitReaction: {fileID: 11400000, guid: b0489fa6803d09d4695c398286aa2bfa, type: 2}
-  dieWhenOutOfViewport: 1
-  requireSeenOnceBeforeAutoDeath: 1
-  viewportMargin: 0.08
-  autoDeathCheckInterval: 0.15
   patrolEdgeArriveThreshold: 0.12
+  preventWarriorBodyMomentumPush: 1
+  warriorBodyPushRestoreStrength: 1
+  maxAllowedBodyPushDistance: 0.03
+  warriorBodyPushContactMemory: 0.1
+  warriorBodyPushMaxCorrectionPerStep: 0.2
+  preventWarriorBodyHorizontalPush: 1
+  preventWarriorBodyVerticalLift: 1
+  warriorBodyLiftAllowance: 0.04
+  cancelWarriorBodyPushVelocity: 1
+  useGroundCheckPointForPatrolEdge: 1
+  patrolEdgeAheadProbeDistance: 0.55
+  patrolEdgeRayExtraLength: 0.2
+  patrolEdgeBoundsSkin: 0.02
+  participatesInWarriorTopPingPongEscape: 1
   laserPrefab: {fileID: 0}
   laserActivationDelay: 1.5
   gunAimPivot: {fileID: 3501617098948179811}
@@ -417,6 +440,20 @@ MonoBehaviour:
   platformSurfaceTopTolerance: 0.35
   platformSurfaceBottomTolerance: -0.08
   zeroNegativeVerticalVelocityOnStick: 1
+  laserRequiresWarriorGrounded: 1
+  laserMinWarriorGroundPoints: 1
+  stopLaserWhenWarriorJumps: 1
+  enableM97MovingLiftAntiTunnel: 1
+  forceM97ContinuousCollision: 1
+  m97LiftSeatOffset: 0.025
+  m97LiftHorizontalSkin: 0.025
+  m97LiftMaxRecoverGap: 0.65
+  m97LiftMaxRecoverSink: 0.35
+  m97LiftDynamicPadding: 0.08
+  m97LiftSupportGraceTime: 0.25
+  m97LiftHorizontalSearchPadding: 0.2
+  m97LiftZeroVerticalVelocityOnSeat: 1
+  m97LiftHardSnapInEmergency: 1
   preFlipBeforeMuzzleWhileDodging: 1
   preFlipMuzzleDistance: 0.45
   preFlipLookaheadTime: 0.1
@@ -479,7 +516,7 @@ Transform:
   m_GameObject: {fileID: 2064042250475824461}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -2.09, y: -2.03, z: 0}
+  m_LocalPosition: {x: -1.21, y: -2.03, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

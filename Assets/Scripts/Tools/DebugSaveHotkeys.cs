@@ -7,12 +7,18 @@ public class DebugSaveHotkeys : MonoBehaviour
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         if (Input.GetKeyDown(KeyCode.F9))
         {
-            PlayerPrefs.DeleteKey("GW_CampaignPurchased");
-            PlayerPrefs.DeleteKey("GW_HighestReachedSceneIndex");
-            PlayerPrefs.DeleteKey("GW_Level2Unlocked");
-            PlayerPrefs.Save();
+            // Single source of truth: wipes everything incl. tutorial, checkpoints and progression.
+            if (GameMgr.Instance != null)
+            {
+                GameMgr.Instance.ResetAllProgressForDev();
+            }
+            else
+            {
+                PlayerPrefs.DeleteAll();
+                PlayerPrefs.Save();
+            }
 
-            Debug.Log("[DebugSaveHotkeys] Progress reset.");
+            Debug.Log("[DebugSaveHotkeys] Full dev reset (incl. tutorial, checkpoints, boss relics).");
         }
 #endif
     }

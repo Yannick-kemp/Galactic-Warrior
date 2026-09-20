@@ -101,7 +101,7 @@ public class BackGroundLoop : MonoBehaviour
         if (!_isBuilding && !HasAnyValidContainer())
         {
             // Clean stale null entries/dictionaries before rebuilding
-            Debug.Log("[BackGroundLoop] No valid containers found -> rebuilding");
+          //  Debug.Log("[BackGroundLoop] No valid containers found -> rebuilding");
             ClearGeneratedParallax();
             StartCoroutine(InitNextFrame());
             return;

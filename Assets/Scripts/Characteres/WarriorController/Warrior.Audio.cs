@@ -9,7 +9,13 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         #region sound
 
+        [Header("Attack3 Cast SFX")]
+        [SerializeField] private AudioClip attack3CastClip; // assign laser-futur.mp3
+        [SerializeField, Range(0f, 1f)] private float attack3CastVolume = 0.95f;
+        [SerializeField] private Vector2 attack3CastPitchRange = new Vector2(0.98f, 1.02f);
+        [SerializeField] private bool attack3CastPlayOncePerFrame = true;
 
+        private int _lastAttack3CastSfxFrame = -1;
 
         [SerializeField] private bool attack2FadeOutInsteadOfHardStop = true;
         [SerializeField, Min(0f)] private float attack2FadeOutSeconds = 0.06f;
@@ -229,6 +235,24 @@ namespace Assets.Scripts.Characteres.WarriorController
         [Header("Attack 1 Special Voice")]
         [SerializeField] private AudioClip yeeahClip; // Assign yeeah.mp3 here in the Inspector
 
+
+        private void PlayAttack3CastSfx()
+        {
+            if (attack3CastClip == null) return;
+
+            EnsureSfxSource();
+
+            if (attack3CastPlayOncePerFrame && _lastAttack3CastSfxFrame == Time.frameCount)
+                return;
+
+            _lastAttack3CastSfxFrame = Time.frameCount;
+
+            _sfxSource.pitch = UnityEngine.Random.Range(
+                attack3CastPitchRange.x,
+                attack3CastPitchRange.y);
+
+            _sfxSource.PlayOneShot(attack3CastClip, attack3CastVolume);
+        }
         #endregion
     }
 }

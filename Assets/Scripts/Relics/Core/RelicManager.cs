@@ -81,7 +81,7 @@ namespace Assets.Scripts.Relics.Core
             return true;
         }
 
-        // Ancienne signature conservée (compat)
+        // Ancienne signature conserv?e (compat)
         public bool CollectFromPickup(RelicDefinition def, int pickupInstanceId)
         {
             return CollectFromPickup(def, pickupInstanceId, Vector3.zero);
@@ -91,6 +91,65 @@ namespace Assets.Scripts.Relics.Core
         /// Increments count every time; equips runtime only first time.
         /// Returns true if increment happened.
         /// </summary>
+        [Header("Diagnostic - inventaire des reliques")]
+        [Tooltip("ON = journalise chaque variation de stock d'une relique, avec l'appelant responsable. Sert a repondre a 'la cle a disparu en cours de route'.")]
+        [SerializeField] private bool logRelicInventoryChanges = false;
+
+        /// <summary>
+        /// Journalise une variation de stock avec la pile d'appel abregee: c'est le seul moyen de
+        /// nommer QUI a retire une relique (une serrure, un consommateur automatique, l'interface)
+        /// quand elle disparait sans que le joueur ait rien fait.
+        /// </summary>
+        private void LogInventoryChange(string action, string relicId, int oldCount, int newCount)
+        {
+            if (!logRelicInventoryChanges)
+                return;
+
+            UnityEngine.Debug.Log("[RELIQUE] " + action + " " + relicId +
+                                  " | stock " + oldCount + " -> " + newCount +
+                                  " | gestionnaire=" + GetInstanceID() +
+                                  " scene=" + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name +
+                                  " | appelant: " + DescribeRelicCaller(), this);
+        }
+
+        private static string DescribeRelicCaller()
+        {
+            string stack = System.Environment.StackTrace;
+
+            if (string.IsNullOrEmpty(stack))
+                return "inconnu";
+
+            string[] lines = stack.Split('\n');
+            var sb = new System.Text.StringBuilder();
+            int kept = 0;
+
+            for (int i = 0; i < lines.Length && kept < 4; i++)
+            {
+                string line = lines[i].Trim();
+
+                if (line.Length == 0 ||
+                    line.Contains("DescribeRelicCaller") ||
+                    line.Contains("LogInventoryChange") ||
+                    line.Contains("get_StackTrace"))
+                    continue;
+
+                if (kept > 0)
+                    sb.Append(" <- ");
+
+                sb.Append(line.Replace("at ", string.Empty));
+                kept++;
+            }
+
+            return sb.ToString();
+        }
+
+        private void Awake()
+        {
+            if (logRelicInventoryChanges)
+                UnityEngine.Debug.Log("[RELIQUE] gestionnaire CREE | id=" + GetInstanceID() +
+                                      " | scene=" + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name, this);
+        }
+
         public bool Collect(RelicDefinition def, bool bypassFrameCap = false)
         {
             if (def == null) return false;
@@ -105,6 +164,8 @@ namespace Assets.Scripts.Relics.Core
 
             int newCount = _counts.TryGetValue(id, out int old) ? old + 1 : 1;
             _counts[id] = newCount;
+
+            LogInventoryChange("RAMASSEE", id, old, newCount);
 
             // Equip runtime only once
             if (_ownedIds.Add(id))
@@ -182,6 +243,8 @@ namespace Assets.Scripts.Relics.Core
             else
                 _counts[id] = newCount;
 
+            LogInventoryChange("CONSOMMEE", id, current, Mathf.Max(newCount, 0));
+
             OnRelicCountChanged?.Invoke(def, Mathf.Max(newCount, 0));
             return true;
         }
@@ -198,8 +261,41 @@ namespace Assets.Scripts.Relics.Core
             return _counts.TryGetValue(relicId, out int c) ? c : 0;
         }
 
-        private void OnDisable() => Unsubscribe();
-        private void OnDestroy() => Unsubscribe();
+        private void OnDisable()
+        {
+            if (logRelicInventoryChanges)
+                UnityEngine.Debug.Log("[RELIQUE] gestionnaire DESACTIVE | id=" + GetInstanceID() +
+                                      " | stocks perdus: " + DescribeCounts(), this);
+
+            Unsubscribe();
+        }
+
+        private void OnDestroy()
+        {
+            if (logRelicInventoryChanges)
+                UnityEngine.Debug.Log("[RELIQUE] gestionnaire DETRUIT | id=" + GetInstanceID() +
+                                      " | stocks perdus: " + DescribeCounts(), this);
+
+            Unsubscribe();
+        }
+
+        private string DescribeCounts()
+        {
+            if (_counts.Count == 0)
+                return "aucun";
+
+            var sb = new System.Text.StringBuilder();
+
+            foreach (var pair in _counts)
+            {
+                if (sb.Length > 0)
+                    sb.Append(", ");
+
+                sb.Append(pair.Key).Append(" x").Append(pair.Value);
+            }
+
+            return sb.ToString();
+        }
 
         private void Unsubscribe()
         {
@@ -237,8 +333,11 @@ namespace Assets.Scripts.Relics.Core
 
             int newCount = current - amount;
 
-            if (newCount <= 0) _counts.Remove(relicId);
+            if (newCount <= 0)
+                _counts.Remove(relicId);
             else _counts[relicId] = newCount;
+
+            LogInventoryChange("CONSOMMEE (par id)", relicId, current, Mathf.Max(newCount, 0));
 
             if (_defsById.TryGetValue(relicId, out var def) && def != null)
                 OnRelicCountChanged?.Invoke(def, Mathf.Max(newCount, 0));
@@ -260,6 +359,16 @@ namespace Assets.Scripts.Relics.Core
         public bool IsOwnedById(string relicId)
         {
             return !string.IsNullOrEmpty(relicId) && _ownedIds.Contains(relicId);
+        }
+
+        public void RegisterDefinition(RelicDefinition def)
+        {
+            if (def == null) return;
+
+            string id = GetId(def);
+            if (string.IsNullOrEmpty(id)) return;
+
+            _defsById[id] = def;
         }
     }
 }

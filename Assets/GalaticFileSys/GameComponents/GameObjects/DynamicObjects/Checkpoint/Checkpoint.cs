@@ -1,4 +1,5 @@
 using UnityEngine;
+using Assets.Scripts.Characteres.WarriorController;
 
 public class Checkpoint : MonoBehaviour
 {
@@ -14,15 +15,35 @@ public class Checkpoint : MonoBehaviour
     {
         if (activated) return;
 
-        if (other.CompareTag("Player") || other.name == "Warrior")
+        if (!IsWarrior(other)) return;
+
+        activated = true;
+
+        if (GameMgr.Instance != null)
         {
-            activated = true;
-
-            GameMgr.Instance?.SetCheckpoint(transform);
-
-            if (activateEffect != null)
-                Instantiate(activateEffect, transform.position, Quaternion.identity);
+            GameMgr.Instance.SetCheckpoint(transform);
         }
+        else
+        {
+            Debug.LogWarning($"[Checkpoint] '{name}' reached but GameMgr.Instance is null — checkpoint NOT saved.");
+        }
+
+        Debug.Log($"[Checkpoint] Activated '{name}' at {transform.position} (collider '{other.name}').");
+
+        if (activateEffect != null)
+            Instantiate(activateEffect, transform.position, Quaternion.identity);
+    }
+
+    // Robust warrior detection: works regardless of which child collider triggers the volume
+    // or how the GameObject is tagged/named. Falls back to the legacy tag/name checks.
+    private static bool IsWarrior(Collider2D other)
+    {
+        if (other == null) return false;
+
+        if (other.GetComponentInParent<Warrior>() != null)
+            return true;
+
+        return other.CompareTag("Player") || other.name == "Warrior";
     }
 
     private void OnDrawGizmos()

@@ -39,6 +39,18 @@ public class InputMgr : MonoBehaviour, IGame
         return Input.GetButtonDown("Jump");
     }
 
+    //public bool IsScreenTouched()
+    //{
+    //    if (InputLocked)
+    //        return false;
+
+    //    var c = Input.mousePosition;
+
+    //    if (Camera.main != null)
+    //        TouchedVector = Camera.main.ScreenToWorldPoint(c);
+
+    //    return Input.GetMouseButtonDown(0);
+    //}
     public bool IsScreenTouched()
     {
         if (InputLocked)
@@ -47,7 +59,10 @@ public class InputMgr : MonoBehaviour, IGame
         var c = Input.mousePosition;
 
         if (Camera.main != null)
+        {
+            c.z = Mathf.Abs(Camera.main.transform.position.z);
             TouchedVector = Camera.main.ScreenToWorldPoint(c);
+        }
 
         return Input.GetMouseButtonDown(0);
     }

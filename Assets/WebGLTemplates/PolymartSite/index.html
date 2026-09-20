@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Galactic Warrior — Play the demo | Polymart</title>
+    <meta name="description" content="Play the free Galactic Warrior demo in your browser: touch, keyboard and gamepad.">
+    <!-- The game page itself stays out of search results: the Galactic Warrior page is the landing page. -->
+    <meta name="robots" content="noindex, follow">
+    <meta name="theme-color" content="#05030d">
+    <link rel="icon" type="image/png" sizes="32x32" href="../../../favicon-32.png">
+    <!-- Statistiques : charge avant le jeu pour que window.PolymartStats existe quand Unity l'appelle. -->
+    <script src="/stats.js?v=20260918"></script>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        color: #fff;
+        font: 14px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      #bar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 12px;
+        background: #0d0d0f;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        z-index: 2;
+      }
+      #bar a, #bar button {
+        color: #fff;
+        text-decoration: none;
+        font: inherit;
+        background: none;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 4px;
+        padding: 6px 10px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      #bar a:hover, #bar button:hover { border-color: #ff3d3d; }
+      #bar .title { letter-spacing: 0.12em; font-weight: 700; opacity: 0.85; overflow: hidden; text-overflow: ellipsis; }
+      #stage {
+        position: fixed;
+        top: 40px;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #000;
+        touch-action: none;
+      }
+      /* In fullscreen the game takes the whole screen: no site bar. */
+      :fullscreen #bar, .is-fullscreen #bar { display: none; }
+      :fullscreen #stage, .is-fullscreen #stage { top: 0; }
+      #unity-canvas {
+        display: block;
+        background: #000;
+        outline: none;
+      }
+      #loading {
+        position: fixed;
+        top: 40px;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        font-weight: 600;
+        font-size: 20px;
+        letter-spacing: 0.08em;
+        background: #05030d;
+        z-index: 1;
+      }
+      #loading-track {
+        width: min(60vw, 420px);
+        height: 8px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.18);
+        overflow: hidden;
+      }
+      #loading-fill {
+        width: 0%;
+        height: 100%;
+        background: #ff3d3d;
+        transition: width 0.15s linear;
+      }
+      #loading-hint, #error {
+        max-width: 80vw;
+        text-align: center;
+        font-weight: 400;
+        font-size: 14px;
+        letter-spacing: 0;
+        opacity: 0.8;
+      }
+      #error { display: none; opacity: 1; }
+      /* Portrait phone: suggest turning it (the game is a landscape platformer). */
+      #rotate {
+        display: none;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 16px;
+        text-align: center;
+        font-size: 13px;
+        opacity: 0.75;
+        z-index: 1;
+        pointer-events: none;
+      }
+      @media (orientation: portrait) and (pointer: coarse) {
+        #rotate { display: block; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="bar">
+      <a id="back" href="../../galactic-warrior.html">← Galactic Warrior</a>
+      <span class="title">DEMO</span>
+      <button id="fullscreen" type="button">Fullscreen</button>
+    </div>
+    <div id="stage">
+      <canvas id="unity-canvas" tabindex="-1"></canvas>
+    </div>
+    <div id="loading">
+      <div>GALACTIC WARRIOR</div>
+      <div id="loading-track"><div id="loading-fill"></div></div>
+      <div id="loading-hint">Touch, keyboard or gamepad</div>
+      <div id="error">Something went wrong while loading the game. Please try again later.</div>
+    </div>
+    <div id="rotate">Turn your phone sideways for a bigger view</div>
+
+    <script>
+      (function () {
+        // ── Language: the French page links here with ?lang=fr ─────────────────────
+        var fr = /[?&]lang=fr\b/.test(location.search) ||
+                 (document.referrer && /\/fr\//.test(document.referrer));
+        if (fr) {
+          document.documentElement.lang = 'fr';
+          document.title = 'Galactic Warrior — Jouer à la démo | Polymart';
+          document.getElementById('back').href = '../../../fr/games/galactic-warrior.html';
+          document.getElementById('back').textContent = '← Galactic Warrior';
+          document.getElementById('fullscreen').textContent = 'Plein écran';
+          document.getElementById('loading-hint').textContent = 'Tactile, clavier ou manette';
+          document.getElementById('error').textContent = 'Le chargement du jeu a échoué. Réessayez plus tard.';
+          document.getElementById('rotate').textContent = 'Tournez votre téléphone pour un affichage plus grand';
+        }
+
+        // ── Layout: landscape game, letterboxed outside 16:9–21:9 ──────────────────
+        var MIN_ASPECT = 16 / 9;
+        var MAX_ASPECT = 21 / 9;
+        var stage = document.getElementById('stage');
+        var canvas = document.getElementById('unity-canvas');
+        var loading = document.getElementById('loading');
+        var fill = document.getElementById('loading-fill');
+
+        function layoutCanvas() {
+          var vw = stage.clientWidth;
+          var vh = stage.clientHeight;
+          if (!vw || !vh) return;
+          var aspect = Math.min(MAX_ASPECT, Math.max(MIN_ASPECT, vw / vh));
+          var w = vw;
+          var h = vw / aspect;
+          if (h > vh) {
+            h = vh;
+            w = vh * aspect;
+          }
+          canvas.style.width = Math.floor(w) + 'px';
+          canvas.style.height = Math.floor(h) + 'px';
+        }
+
+        layoutCanvas();
+        window.addEventListener('resize', layoutCanvas);
+        if (typeof ResizeObserver !== 'undefined') new ResizeObserver(layoutCanvas).observe(stage);
+
+        // ── Fullscreen (+ landscape lock on phones, only allowed while fullscreen) ─
+        var fsButton = document.getElementById('fullscreen');
+        var root = document.documentElement;
+        var canFullscreen = !!(root.requestFullscreen || root.webkitRequestFullscreen);
+        if (!canFullscreen) fsButton.style.display = 'none'; // iPhone Safari has no fullscreen API
+
+        fsButton.addEventListener('click', function () {
+          var request = root.requestFullscreen || root.webkitRequestFullscreen;
+          var p = request.call(root);
+          var lock = function () {
+            if (screen.orientation && screen.orientation.lock) {
+              screen.orientation.lock('landscape').catch(function () { /* desktop: not supported */ });
+            }
+          };
+          if (p && p.then) p.then(lock).catch(function () {}); else lock();
+          canvas.focus();
+        });
+
+        function onFullscreenChange() {
+          var on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+          root.classList.toggle('is-fullscreen', on);
+          setTimeout(layoutCanvas, 50);
+        }
+        document.addEventListener('fullscreenchange', onFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+
+        // Esc also closes the game's dialogs: let the browser keep its own Esc behaviour
+        // (leave fullscreen) while Unity still reads the key.
+        window.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') e.preventDefault = function () {};
+        }, true);
+
+        // Arrow keys / Space are game controls: never scroll the page with them.
+        window.addEventListener('keydown', function (e) {
+          if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) >= 0 &&
+              document.activeElement !== fsButton) {
+            e.preventDefault();
+          }
+        });
+
+        // ── Oversized build files are zipped (same loader as the YouTube build) ────
+        var ZIPPED_FILES = [];
+
+        function unzipSingleEntry(buffer) {
+          var view = new DataView(buffer);
+          if (view.getUint32(0, true) !== 0x04034b50) throw new Error('Not a zip file');
+          var method = view.getUint16(8, true);
+          var compressedSize = view.getUint32(18, true);
+          var nameLength = view.getUint16(26, true);
+          var extraLength = view.getUint16(28, true);
+          var start = 30 + nameLength + extraLength;
+          var body = new Blob([buffer.slice(start, start + compressedSize)]);
+          if (method === 0) return Promise.resolve(body);
+          if (method !== 8) throw new Error('Unsupported zip method ' + method);
+          return new Response(body.stream().pipeThrough(new DecompressionStream('deflate-raw'))).blob();
+        }
+
+        function resolveBuildUrl(url) {
+          var name = url.substring(url.lastIndexOf('/') + 1);
+          if (ZIPPED_FILES.indexOf(name) < 0) return Promise.resolve(url);
+          return fetch(url + '.zip')
+            .then(function (r) { if (!r.ok) throw new Error(url + '.zip: HTTP ' + r.status); return r.arrayBuffer(); })
+            .then(unzipSingleEntry)
+            .then(function (blob) {
+              var type = /\.wasm$/.test(name) ? 'application/wasm' : 'application/octet-stream';
+              return URL.createObjectURL(new Blob([blob], { type: type }));
+            });
+        }
+
+        function showError(err) {
+          console.error(err);
+          document.getElementById('loading-track').style.display = 'none';
+          document.getElementById('loading-hint').style.display = 'none';
+          var errorBox = document.getElementById('error');
+          if (location.protocol === 'file:') {
+            errorBox.textContent = 'This page must be served over https, not opened as a file.';
+          }
+          errorBox.style.display = 'block';
+        }
+
+        var dataUrl = 'Build/{{{ DATA_FILENAME }}}';
+#if USE_WASM
+        var codeUrl = 'Build/{{{ CODE_FILENAME }}}';
+#else
+        var codeUrl = null;
+#endif
+
+        Promise.all([
+          resolveBuildUrl(dataUrl),
+          codeUrl ? resolveBuildUrl(codeUrl) : Promise.resolve(null)
+        ]).then(function (urls) {
+          var script = document.createElement('script');
+          script.src = 'Build/{{{ LOADER_FILENAME }}}';
+          script.onerror = showError;
+          script.onload = function () {
+            createUnityInstance(canvas, {
+              arguments: [],
+              dataUrl: urls[0],
+              frameworkUrl: 'Build/{{{ FRAMEWORK_FILENAME }}}',
+#if USE_THREADS
+              workerUrl: 'Build/{{{ WORKER_FILENAME }}}',
+#endif
+#if USE_WASM
+              codeUrl: urls[1],
+#endif
+#if SYMBOLS_FILENAME
+              symbolsUrl: 'Build/{{{ SYMBOLS_FILENAME }}}',
+#endif
+              streamingAssetsUrl: 'StreamingAssets',
+              companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
+              productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
+              productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
+              devicePixelRatio: window.devicePixelRatio || 1,
+              showBanner: function (msg, type) {
+                if (type === 'error') showError(msg); else console.warn(msg);
+              }
+            }, function (progress) {
+              fill.style.width = Math.round(progress * 100) + '%';
+            }).then(function (instance) {
+              window.gwUnityInstance = instance; // diagnostics: instance.GetMetricsInfo()
+              loading.style.display = 'none';
+              canvas.focus();
+              if (window.PolymartStats) window.PolymartStats.demoStarted();
+            }).catch(showError);
+          };
+          document.body.appendChild(script);
+        }).catch(showError);
+      })();
+    </script>
+  </body>
+</html>

@@ -357,9 +357,14 @@ MonoBehaviour:
   DescendentPhase: 0
   _isJumping: 0
   _isMoving: 0
+  enableDestinationPlatformAntiTunnel: 1
+  antiTunnelLandingSkin: 0.015
+  antiTunnelCastExtraDistance: 0.08
+  antiTunnelHorizontalSkin: 0.03
+  antiTunnelTopStartTolerance: 0.04
   Range: 3
   attackCooldown: 1.5
-  attackDamage: 10
+  attackDamage: 2
   target: {fileID: 0}
   groundCheckPoint: {fileID: 8372457248505060182}
   TriggerColliderLeft: {fileID: 2526977648032420447}
@@ -387,16 +392,42 @@ MonoBehaviour:
   deathSfxMaxDistance: 20
   canBeStunned: 1
   meleeHitDistance: 0.65
+  useWorldYDeathFallback: 1
+  worldDeathY: -30
+  groundBound: 0
+  groundBoundSeatTolerance: 0.06
   targetAnimationName: AttackAnimation
+  enemyType: 1
+  scoreValue: 20
+  isBoss: 0
+  bossDisplayName: 
   totalFramesInAnimation: 16
   frameIndex: 0
   disableAttackWhenHitSeconds: 0.4
   hitReaction: {fileID: 11400000, guid: c91b8181546a7d74ab4764a943e51abc, type: 2}
-  dieWhenOutOfViewport: 1
-  requireSeenOnceBeforeAutoDeath: 1
-  viewportMargin: 0.1
-  autoDeathCheckInterval: 0.15
+  patrolEdgeArriveThreshold: 0.12
+  preventWarriorBodyMomentumPush: 1
+  warriorBodyPushRestoreStrength: 1
+  maxAllowedBodyPushDistance: 0.03
+  warriorBodyPushContactMemory: 0.1
+  warriorBodyPushMaxCorrectionPerStep: 0.2
+  preventWarriorBodyHorizontalPush: 1
+  preventWarriorBodyVerticalLift: 1
+  warriorBodyLiftAllowance: 0.04
+  cancelWarriorBodyPushVelocity: 1
+  useGroundCheckPointForPatrolEdge: 1
+  patrolEdgeAheadProbeDistance: 0.55
+  patrolEdgeRayExtraLength: 0.2
+  patrolEdgeBoundsSkin: 0.02
+  participatesInWarriorTopPingPongEscape: 1
   repathInterval: 0.25
+  keepMotionDuringTemporaryPlatformLoss: 1
+  temporaryPlatformLossGraceTime: 0.45
+  temporaryPlatformLossRetryDelay: 0.04
+  recoverPlatformFromGroundPointsWhenMissing: 1
+  delayPathRecomputeAfterWarriorLeavesSamePlatform: 1
+  warriorSamePlatformLeaveGraceTime: 0.5
+  warriorSamePlatformLeaveRetryDelay: 0.04
   landingYOffset: 0.2
   takeoffEdgeMargin: 0.25
   dropSideOutEpsilon: 0.35
@@ -404,10 +435,19 @@ MonoBehaviour:
   zalaytyHorizontalGap: 18
   zalaytyBodyWidthCheck: 0.5
   stopAndAttackWhenInRange: 1
-  closeToWarriorDistance: 0.9
+  neverStopOnSamePlatformWithWarrior: 1
+  requireMainBoxContactToStopAndAttackOnSamePlatform: 1
+  requireSideContactForMainBoxAttack: 1
+  sideAttackMinVerticalOverlap: 0.12
+  sideAttackMinVerticalOverlapRatio: 0.18
+  samePlatformMainBoxContactSkin: 0.11
+  zalaytyImpactHitSkin: 0.1
+  samePlatformMainBoxContactReleaseSkin: 0.12
+  stopOnWarriorMainBoxContactEvenDuringPlatformMismatch: 1
+  useContactReleaseHysteresis: 1
+  repeatAttackWhileMainBoxesStillTouchingOnSamePlatform: 1
   warriorEdgeMargin: 1.8
-  touchingExtraRadius: 0.05
-  sparkPrefab: {fileID: 8169396821578944445, guid: f8b9a6b02e3ac79408304329fda320f7, type: 3}
+  sparkPrefab: {fileID: 6192724089161036641, guid: e17d9a3f04750764c8c0a7a0461e4c3b, type: 3}
   sparkScale: 1
   sparkDestroyAfter: 0.2
   sparkOffset: {x: 0, y: 0, z: 0}
@@ -415,18 +455,70 @@ MonoBehaviour:
   requireTouchingToHit: 1
   requireSamePlatformToHit: 1
   requireTargetInFront: 0
-  enableSqueezeExtraJump: 1
   squeezeCheckInterval: 0.12
   squeezeExtraJumpCooldown: 1.25
   requireSqueezeThreatMarker: 1
   sideEpsilon: 0.05
   allowSqueezeExtraJump: 1
+  onlyTakeOffToChangePlatformsOrRebound: 1
+  cancelUnauthorizedUpwardLift: 1
+  unauthorizedLiftSnapBand: 0.25
+  unauthorizedLiftPlatformXInset: 0.02
   inRangeOrAttacking: 0
-  maxFallSpeed: 25
-  platformMask:
-    serializedVersion: 2
-    m_Bits: 0
-  skin: 0.02
+  warriorTopPressGraceTime: 0.12
+  enableGeometricWarriorTopPressGuard: 1
+  geometricWarriorTopPressBand: 0.14
+  useIndependentMovement: 1
+  independentMoveArriveDistance: 0.08
+  independentLandingBand: 0.16
+  validateZalaytyLandingBeforeGrounded: 1
+  trackMovingLandingPlatformDuringJump: 1
+  movingLandingHorizontalSkin: 0.04
+  movingLandingSnapMaxVerticalDistance: 0.42
+  movingLandingSnapMaxHorizontalDistance: 0.28
+  missedLandingAirborneAnimationLockTime: 0.18
+  missedLandingGravityScale: 2.5
+  useGroundedStickGraceDuringChase: 1
+  groundedStickGraceTime: 0.08
+  groundedStickMaxVerticalSeparation: 0.12
+  preserveSamePlatformChaseDuringMicroSeparation: 1
+  samePlatformMicroSeparationGraceTime: 0.18
+  samePlatformMicroSeparationMaxVerticalGap: 0.18
+  samePlatformMicroSeparationHorizontalSkin: 0.04
+  enableIndependentJumpAntiTunneling: 1
+  predictedLandingTopSkin: 0.08
+  predictedLandingMaxDropPastTop: 0.45
+  predictedLandingHorizontalSkin: 0.03
+  stopHorizontalVelocityOnIndependentStop: 1
+  enableDifferentPlatformWarriorImpactAbsorption: 1
+  differentPlatformImpactMinSpeed: 3
+  differentPlatformImpactMinIntoWarriorDot: 0.15
+  differentPlatformImpactCooldown: 0.16
+  differentPlatformImpactZalaytyLockSeconds: 0.1
+  interruptZalaytyJumpOnDifferentPlatformImpact: 1
+  requireKnownDifferentPlatformsForImpactAbsorption: 1
+  platformChangeArrivalImpactGrace: 0.12
+  avoidWarriorTopLandingDuringPlatformJumps: 1
+  platformJumpWarriorSideGap: 0.18
+  platformJumpLandingPlatformInset: 0.3
+  onlyAvoidWarriorTopLandingOnWarriorPlatform: 1
+  keepOriginalLandingWhenAlreadyBesideWarrior: 1
+  enableWarriorTopRebound: 1
+  warriorTopReboundNormalY: 0.711
+  warriorTopReboundBoundsBand: 0.1
+  warriorTopReboundSideGap: 0.45
+  warriorTopReboundMinSideClearance: 0.4
+  warriorTopReboundExtraLift: 0.22
+  ignoreWarriorCollisionDuringTopRebound: 1
+  warriorTopReboundIgnoreRestoreTimeout: 0.8
+  warriorTopReboundPlatformInset: 0.3
+  warriorTopReboundDuration: 0.59
+  warriorTopReboundHeight: 0.9
+  warriorTopReboundCooldown: 0.33
+  ignoreWarriorCollisionWhileJumpingToWarriorPlatform: 1
+  platformJumpWarriorCollisionRestoreTimeout: 2.25
+  movementAnimationSyncThreshold: 0.01
+  waitSuppressionAfterMovement: 0.12
 --- !u!114 &337278386865177105
 MonoBehaviour:
   m_ObjectHideFlags: 0

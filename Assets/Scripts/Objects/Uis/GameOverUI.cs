@@ -25,6 +25,9 @@ public class GameOverUI : MonoBehaviour
     private Coroutine _showRoutine;
     private bool _isTransitioning;
 
+    /// <summary>True while the DEFEAT / GAME OVER panel is on screen and clickable.</summary>
+    public bool IsShown => group != null && group.interactable && group.alpha > 0.01f && gameObject.activeInHierarchy;
+
 
 
     private void Awake()
@@ -55,14 +58,21 @@ public class GameOverUI : MonoBehaviour
         SetButtonsInteractable(true);
         ResetFadeOverlay();
 
-        if (titleText != null) titleText.text = "DEFEAT";
+        // RetriesRemaining is already post-death (the life was consumed in HandleWarriorDead),
+        // so 0 here means a real game over: show it as such and block the now-useless Retry.
+        int retriesLeft = GameMgr.Instance != null ? GameMgr.Instance.RetriesRemaining : 0;
+        bool noRetriesLeft = retriesLeft <= 0;
+
+        if (titleText != null) titleText.text = noRetriesLeft ? "GAME OVER" : "DEFEAT";
         if (scoreText != null)
         {
             if (score >= 0)
-                scoreText.text = $"SCORE: {score}\nRetries Left: {GameMgr.Instance.RetriesRemaining}";
+                scoreText.text = $"SCORE: {score}\nRetries Left: {retriesLeft}";
             else
-                scoreText.text = $"Retries Left: {GameMgr.Instance.RetriesRemaining}";
+                scoreText.text = $"Retries Left: {retriesLeft}";
         }
+
+        if (retryButton != null) retryButton.interactable = !noRetriesLeft;
 
         group.alpha = 1f;
         group.blocksRaycasts = true;
@@ -114,7 +124,9 @@ public class GameOverUI : MonoBehaviour
 
         yield return StartCoroutine(FadeOverlayTo(1f, retryFadeDuration));
 
+        Debug.LogWarning($"[GameOverUI] Retry clicked — GameMgr.Instance is null? {GameMgr.Instance == null}");
         bool ok = GameMgr.Instance?.TryRetryFromDeath() ?? false;
+        Debug.LogWarning($"[GameOverUI] TryRetryFromDeath returned {ok}");
 
         if (!ok)
         {

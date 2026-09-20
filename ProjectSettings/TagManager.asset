@@ -1,0 +1,60 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!78 &1
+TagManager:
+  serializedVersion: 3
+  tags:
+  - Warrior
+  - P39
+  - M97Gun
+  layers:
+  - Default
+  - TransparentFX
+  - Ignore Raycast
+  - 
+  - Water
+  - UI
+  - PlatformLayer
+  - Enemy
+  - Warrior
+  - WarriorHitbox
+  - Shield Laser
+  - Hit Box
+  - Ground
+  - M97Gun
+  - Entities
+  - VFX_Ground
+  - VFX_Air
+  - UI_Screen
+  - RelicPickup
+  - Shield Meteor
+  - Hit Box Meteor
+  - Meteor Rain
+  - WarriorProjectile
+  - EnemyHurtBox
+  - FlyingEnemyBody
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  m_SortingLayers:
+  - name: Default
+    uniqueID: 0
+    locked: 0
+  - name: platform
+    uniqueID: 2688204793
+    locked: 0
+  - name: VFX
+    uniqueID: 627219545
+    locked: 0
+  - name: VFX_Air
+    uniqueID: 2806379515
+    locked: 0
+  - name: New Layer 4
+    uniqueID: 2931317397
+    locked: 0
+  m_RenderingLayers:
+  - Default

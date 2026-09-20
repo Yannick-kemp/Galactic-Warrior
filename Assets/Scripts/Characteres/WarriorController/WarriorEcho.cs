@@ -44,12 +44,19 @@ public class WarriorEcho : MonoBehaviour
         lifeTimer += Time.deltaTime;
 
         float fadeProgress = fadeTimer / fadeDuration;
-        spriteRenderer.color = Color.Lerp(startColor, endColor, fadeProgress);
+
+        if (spriteRenderer != null)
+            spriteRenderer.color = Color.Lerp(startColor, endColor, fadeProgress);
 
         // Return to pool when lifetime expires
         if (lifeTimer >= lifetime)
         {
-            EchoPool.Instance.ReturnEcho(gameObject);
+            // Le pool peut avoir disparu (changement de scene, fin de partie): sans ce garde,
+            // chaque echo encore vivant lance une exception a chaque frame (33 mesurees).
+            if (EchoPool.Instance != null)
+                EchoPool.Instance.ReturnEcho(gameObject);
+            else
+                gameObject.SetActive(false);
         }
     }
 }

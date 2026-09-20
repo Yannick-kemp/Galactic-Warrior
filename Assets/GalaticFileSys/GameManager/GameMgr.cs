@@ -15,6 +15,9 @@ public class GameMgr : MonoBehaviour, IGame
     [SerializeField] private int maxRetries = 3;
 
     private int retryCount = 0;
+    // True between a death and its resolution (revive or game over). Guards the retry-consume so a
+    // single death only costs one life, even though HandleWarriorDead fires twice (StartDeath + EndDeath).
+    private bool _deathConsumed;
     private Vector3 lastDeathPosition;
     public bool IsRestarting { get; private set; }
     public static GameMgr Instance { get; private set; }
@@ -31,6 +34,23 @@ public class GameMgr : MonoBehaviour, IGame
     [SerializeField] private Transform currentCheckpoint;
     [SerializeField] private bool useCheckpointRespawn = true;
 
+    // Persistent checkpoint save point.
+    // Unlike the currentCheckpoint Transform (which is destroyed whenever the scene reloads),
+    // these fields survive scene reloads AND app restarts (mirrored to PlayerPrefs). They let
+    // Revive and Continue resume the player at the most recently reached checkpoint instead of
+    // the level start. _checkpointSceneName records which level the checkpoint belongs to.
+    private Vector3 _checkpointPosition;
+    private string _checkpointSceneName;
+    private bool _hasCheckpointPosition;
+
+    // Set right before a scene load when the warrior should be re-seated at the saved
+    // checkpoint once it registers (Revive reload, or Continue from the main menu).
+    private bool _pendingCheckpointRespawn;
+
+    // One-shot guard that forces a level to start at its DEFAULT spawn even if a saved
+    // checkpoint exists for it (used by New Game and Level Select "play from start").
+    private bool _suppressCheckpointRespawnOnce;
+
     [Header("Forced Retry Respawn Override")]
     [SerializeField] private bool useForcedRetryZoneRespawn = true;
 
@@ -45,6 +65,12 @@ public class GameMgr : MonoBehaviour, IGame
     [Header("Background Music")]
     [SerializeField] private string warriorSceneName = "WarriorScene";
     [SerializeField] private AudioClip level1Music;
+    [SerializeField] private AudioClip level2Music; // assign IceOfAge.mp3 for AgeOfIce
+    [SerializeField] private string level2MusicResourcesPath = "Music/IceOfAge"; // optional fallback: Assets/Resources/Music/IceOfAge.mp3
+    [SerializeField] private AudioClip level3Music; // assign LandOfFire.mp3 for LandOfFire
+    [SerializeField] private string level3MusicResourcesPath = "Music/LandOfFire"; // optional fallback: Assets/Resources/Music/LandOfFire.mp3
+    [SerializeField] private AudioClip level4Music; // assign Redemption.mp3 for Redemption
+    [SerializeField] private string level4MusicResourcesPath = "Music/Redemption"; // optional fallback: Assets/Resources/Music/Redemption.mp3
     [SerializeField, Range(0f, 1f)] private float musicVolume = 0.35f;
     [SerializeField] private bool restartMusicOnLevelRestart = false;
 
@@ -58,7 +84,9 @@ public class GameMgr : MonoBehaviour, IGame
     [Header("Campaign / Scenes")]
     [SerializeField] private string mainMenuSceneName = "menu";
     [SerializeField] private string level2SceneName = "AgeOfIce";
-    [SerializeField] private List<string> campaignSceneOrder = new List<string> { "WarriorScene", "AgeOfIce" };
+    [SerializeField] private string level3SceneName = "LandOfFire";
+    [SerializeField] private string level4SceneName = "Redemption";
+    [SerializeField] private List<string> campaignSceneOrder = new List<string> { "WarriorScene", "AgeOfIce", "LandOfFire", "Redemption" };
 
     [Header("Scene Transition")]
     [SerializeField] private float levelCompleteSlowMoScale = 0.30f;
@@ -74,23 +102,65 @@ public class GameMgr : MonoBehaviour, IGame
     [Header("Progression / Purchase")]
     [SerializeField] private bool level2Unlocked = false; // legacy + "paid for the rest" flag
     [SerializeField] private bool autoUnlockForTesting = false;
-    [SerializeField] private string purchasePriceText = "€3.99";
+    [SerializeField] private string purchasePriceText = "€4.99";
 
     [Header("Level 1 Entry Rewards")]
     [SerializeField] private int level2EntryCoinsReward = 50;
     [SerializeField] private int level2EntryUpgradeTokens = 1;
 
+    [Header("Final Victory Reward")]
+    [SerializeField] private int finalRewardCoins = 250;
+    [SerializeField] private int finalRewardTokens = 2;
+
+    [Header("Boss Memory Relic")]
+    [Tooltip("Small world prefab (SpriteRenderer + BossRelicRiseAnimation) spawned at the boss " +
+             "death position: the relic rises then disappears. Optional — leave empty for no animation.")]
+    [SerializeField] private GameObject bossRelicRisePrefab;
+
+    [Tooltip("Extra pause (seconds) after the rise animation, before the end-of-level / victory UI " +
+             "appears, so the player can see the relic. Only applied the first time a boss is defeated.")]
+    [SerializeField, Min(0f)] private float bossRelicHoldBeforeUiSeconds = 1.5f;
+
+    private const string GameCompletedKey = "GW_GameCompleted";
+
+    // Boss memory relics — distinct from gameplay relics, persisted to disk like checkpoints.
+    private const string BossRelicsDefeatedKey = "GW_BossRelicsDefeated";
+    private readonly HashSet<EnemyType> _bossRelicsDefeated = new HashSet<EnemyType>();
+    public int BossRelicCount => _bossRelicsDefeated.Count;
+    public event System.Action<int> OnBossRelicCountChanged;
+
+    private EnemyType _pendingBossRelicType;
+    private Vector3 _pendingBossDeathPosition;
+
+    private const string CheckpointHasKey = "GW_HasCheckpoint";
+    private const string CheckpointSceneKey = "GW_CheckpointScene";
+    private const string CheckpointXKey = "GW_CheckpointX";
+    private const string CheckpointYKey = "GW_CheckpointY";
+    private const string CheckpointZKey = "GW_CheckpointZ";
+
     private const string CampaignPurchasedKey = "GW_CampaignPurchased";
     private const string HighestReachedSceneIndexKey = "GW_HighestReachedSceneIndex";
+    private const string ContinueSceneIndexKey = "GW_ContinueSceneIndex";
     private const string LegacyLevel2UnlockedKey = "GW_Level2Unlocked";
+
+    // WarriorScene onboarding tutorial — persisted like the other one-shot flags so the
+    // tutorial is only ever shown on the very first WarriorScene playthrough.
+    private const string TutorialCompletedKey = "GW_TutorialCompleted";
 
     [Header("Post-Level Complete")]
     [SerializeField] private bool returnToMenuAfterPurchasedLevelComplete = true;
 
+    // Monotonic: the furthest scene ever reached. Drives level-select unlocks. Only ever increases.
     private int _highestReachedSceneIndex;
+
+    // The scene "Continue" should resume at = the level right after the one most recently completed.
+    // Unlike _highestReachedSceneIndex this is NOT monotonic, so replaying an earlier level correctly
+    // sends Continue to that level's successor instead of jumping to the furthest level ever reached.
+    private int _continueSceneIndex;
 
     private bool _isSceneTransitionRunning;
     private bool _level2EntryFlowShownThisLoad;
+    private bool _shouldShowLevel2EntryFlowOnNextLoad;
 
     private bool _bossSlowMoPlaying;
     private bool _bossFinalDeathFlowRunning;
@@ -101,6 +171,18 @@ public class GameMgr : MonoBehaviour, IGame
     private MovingVerticalPlatform _deathMovingVerticalPlatform;
     private string _deathMovingVerticalPlatformId;
 
+    private bool _deathWasOnMovingHorizontalPlatform;
+    private MovingHorizontalPlatform _deathMovingHorizontalPlatform;
+    private string _deathMovingHorizontalPlatformId;
+
+    private bool _deathWasOnRotatingPlatform;
+    private RotatingPlatform _deathRotatingPlatform;
+    private string _deathRotatingPlatformId;
+
+    // Static (non-moving) platform captured at death time
+    private bool _deathWasOnStaticPlatform;
+    private PlatFormColliderTrigger _deathStaticPlatform;
+
     private bool _hasPendingReviveMovingPlatformRespawn;
     private string _pendingReviveMovingPlatformId;
 
@@ -110,14 +192,36 @@ public class GameMgr : MonoBehaviour, IGame
 
     public int RetriesRemaining => Mathf.Max(0, maxRetries - retryCount);
 
+    // ─── Retry-reward feature (additive, scoring untouched) ──────────────────────
+    // Exposed so a separate RetryRewardManager can observe retry losses and restore retries
+    // it has "bought" with score. The scoring system is never modified by any of this.
+
+    /// <summary>Max retries available per run (mirrors the configured ceiling).</summary>
+    public int MaxRetries => maxRetries;
+
+    /// <summary>
+    /// Raised right after a retry has been successfully consumed (a death's "Retry" was accepted
+    /// and retryCount incremented). RetryRewardManager listens to attempt an immediate redemption
+    /// (model A: a token earned pre-loss buys the retry back at once).
+    /// </summary>
+    public event System.Action OnRetryConsumed;
+
     // Treat this as "campaign purchased / rest unlocked"
-    public bool Level2Unlocked => autoUnlockForTesting || level2Unlocked;
+    // Web demo (YouTube or polymart.be): nothing is sold there, so every demo chapter is open (the
+    // campaign itself is cut to the demo chapters in NormalizeCampaignSceneOrder).
+    public bool Level2Unlocked => WebDemo.IsBuild || autoUnlockForTesting || level2Unlocked;
 
     // Menu-facing properties
     public bool HasCampaignPurchase => Level2Unlocked;
     public int HighestReachedSceneIndex => _highestReachedSceneIndex;
     public int CampaignSceneCount => campaignSceneOrder != null ? campaignSceneOrder.Count : 0;
     public string PurchasePriceText => purchasePriceText;
+
+    /// <summary>
+    /// Index de la scene de campagne active (0 = demo), ou -1 hors campagne (le menu).
+    /// Expose pour que l'octroi des reliques de progression sache dans quel chapitre il entre.
+    /// </summary>
+    public int CurrentCampaignSceneIndex => GetCurrentCampaignSceneIndex();
 
     private void Awake()
     {
@@ -134,6 +238,8 @@ public class GameMgr : MonoBehaviour, IGame
         EnsureMusicSource();
         NormalizeCampaignSceneOrder();
         LoadProgression();
+        LoadCheckpointFromDisk();
+        LoadBossRelicsFromDisk();
 
         SceneManager.sceneLoaded += HandleSceneLoaded;
         HandleSceneLoaded(SceneManager.GetActiveScene(), LoadSceneMode.Single);
@@ -144,6 +250,36 @@ public class GameMgr : MonoBehaviour, IGame
         if (Instance == this)
             SceneManager.sceneLoaded -= HandleSceneLoaded;
     }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+    private void Update()
+    {
+        // DEV: F9 anywhere wipes all saved state and reloads the current scene from scratch,
+        // so the WarriorScene tutorial (and any other one-shot flag) replays immediately.
+        // Lives on GameMgr because it is the persistent (DontDestroyOnLoad) singleton present
+        // in every gameplay scene — unlike DebugSaveHotkeys which only existed in the menu.
+        if (Input.GetKeyDown(KeyCode.F9))
+        {
+            ResetAllProgressForDev();
+            Time.timeScale = 1f;
+
+            // Destroy the persistent (DontDestroyOnLoad) warrior so the reloaded scene spawns a
+            // fresh one that re-registers cleanly via RegisterHero. A raw LoadScene leaves the old
+            // warrior alive AND a new scene instance, so GameMgr.WarriorInstance ends up stale/null
+            // (while Warrior.Instance still works) → the game plays but Retry/Revive fail, because
+            // both check WarriorInstance. This mirrors the official scene-transition cleanup.
+            if (Warrior.Instance != null)
+                Destroy(Warrior.Instance.gameObject);
+            WarriorInstance = null;
+
+            if (InputMgr.Instance != null)
+                InputMgr.Instance.InputLocked = false;
+
+            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+            Debug.Log("[GameMgr] DEV F9: full reset + active scene reloaded (persistent warrior destroyed).");
+        }
+    }
+#endif
 
     public void Initialize()
     {
@@ -164,6 +300,7 @@ public class GameMgr : MonoBehaviour, IGame
         }
 
         TryApplyPendingReviveMovingPlatformRespawn(warrior);
+        TryApplyPendingCheckpointRespawn(warrior);
 
         var cam = Camera.main;
         if (cam != null)
@@ -194,6 +331,8 @@ public class GameMgr : MonoBehaviour, IGame
 
         bool isLevel1 = scene.name == warriorSceneName;
         bool isLevel2 = scene.name == level2SceneName;
+        bool isLevel3 = scene.name == level3SceneName;
+        bool isLevel4 = scene.name == level4SceneName;
 
         _levelCompletionHandledThisScene = false;
         _bossSlowMoPlaying = false;
@@ -201,6 +340,11 @@ public class GameMgr : MonoBehaviour, IGame
         _skipNextLevelTransitionSlowMo = false;
         _isSceneTransitionRunning = false;
         Time.timeScale = 1f;
+
+        // A boss fight never survives a scene change; a stale flag here would keep the level track
+        // from ever coming back.
+        _bossMusicActive = false;
+        _musicBeforeBoss = null;
 
         if (UIManager.Instance != null)
         {
@@ -220,15 +364,36 @@ public class GameMgr : MonoBehaviour, IGame
             ScoreManager.Instance?.StartNewRun();
             StartLevel1Music();
         }
+        else if (isLevel2)
+        {
+            StartLevel2Music();
+        }
+        else if (isLevel3)
+        {
+            StartLevel3Music();
+        }
+        else if (isLevel4)
+        {
+            StartLevel4Music();
+        }
         else
         {
-            StopLevel1Music();
+            StopMusic();
         }
 
         if (isLevel2)
         {
             _level2EntryFlowShownThisLoad = false;
-            StartCoroutine(ShowLevel2PostEntryFlow());
+
+            if (_shouldShowLevel2EntryFlowOnNextLoad)
+            {
+                _shouldShowLevel2EntryFlowOnNextLoad = false;
+                StartCoroutine(ShowLevel2PostEntryFlow());
+            }
+        }
+        else
+        {
+            _shouldShowLevel2EntryFlowOnNextLoad = false;
         }
     }
 
@@ -249,18 +414,135 @@ public class GameMgr : MonoBehaviour, IGame
 
     private void StartLevel1Music()
     {
-        if (level1Music == null) return;
+        StartMusic(level1Music);
+    }
+
+    private void StartLevel2Music()
+    {
+        AudioClip clip = level2Music;
+
+        // Useful if GameMgr is created at runtime by GameInitializer and the Inspector field is empty.
+        // Put the file here: Assets/Resources/Music/IceOfAge.mp3
+        // Then Resources path must be: Music/IceOfAge  (no .mp3 extension)
+        if (clip == null && !string.IsNullOrEmpty(level2MusicResourcesPath))
+            clip = Resources.Load<AudioClip>(level2MusicResourcesPath);
+
+        StartMusic(clip);
+    }
+
+    private void StartLevel3Music()
+    {
+        AudioClip clip = level3Music;
+
+        // Useful if GameMgr is created at runtime by GameInitializer and the Inspector field is empty.
+        // Put the file here: Assets/Resources/Music/LandOfFire.mp3
+        // Then Resources path must be: Music/LandOfFire  (no .mp3 extension)
+        if (clip == null && !string.IsNullOrEmpty(level3MusicResourcesPath))
+            clip = Resources.Load<AudioClip>(level3MusicResourcesPath);
+
+        StartMusic(clip);
+    }
+
+    private void StartLevel4Music()
+    {
+        AudioClip clip = level4Music;
+
+        // If no clip is assigned in the inspector, fall back to Resources.
+        // Put the file here: Assets/Resources/Music/Redemption.mp3
+        // Then Resources path must be: Music/Redemption  (no .mp3 extension)
+        if (clip == null && !string.IsNullOrEmpty(level4MusicResourcesPath))
+            clip = Resources.Load<AudioClip>(level4MusicResourcesPath);
+
+        StartMusic(clip);
+    }
+
+    // --- Boss battle music ---------------------------------------------------
+
+    private AudioClip _musicBeforeBoss;
+    private float _musicTimeBeforeBoss;
+    private bool _bossMusicActive;
+
+    public bool IsBossMusicPlaying => _bossMusicActive;
+
+    /// <summary>
+    /// Swaps the level track for a boss track. The level track and its playhead are remembered so
+    /// the fight can hand it back where it left off instead of restarting it from the top, which
+    /// would be obvious right after a boss dies.
+    /// </summary>
+    public void PlayBossMusic(AudioClip clip)
+    {
+        if (clip == null) return;
+
+        EnsureMusicSource();
+
+        if (_bossMusicActive && _musicSource.clip == clip)
+            return;
+
+        if (!_bossMusicActive)
+        {
+            _musicBeforeBoss = _musicSource.clip;
+            _musicTimeBeforeBoss = _musicSource.clip != null ? _musicSource.time : 0f;
+        }
+
+        _bossMusicActive = true;
+
+        _musicSource.Stop();
+        _musicSource.clip = clip;
+        _musicSource.time = 0f;
+        _musicSource.volume = musicVolume;
+        _musicSource.loop = true;
+        _musicSource.Play();
+    }
+
+    /// <summary>Ends the boss track and resumes the level track where it was.</summary>
+    public void StopBossMusic()
+    {
+        if (!_bossMusicActive) return;
+
+        _bossMusicActive = false;
+        EnsureMusicSource();
+        _musicSource.Stop();
+
+        if (_musicBeforeBoss == null)
+        {
+            _musicSource.clip = null;
+            return;
+        }
+
+        _musicSource.clip = _musicBeforeBoss;
+        _musicSource.time = Mathf.Clamp(_musicTimeBeforeBoss, 0f, Mathf.Max(0f, _musicBeforeBoss.length - 0.05f));
+        _musicSource.volume = musicVolume;
+        _musicSource.loop = true;
+        _musicSource.Play();
+
+        _musicBeforeBoss = null;
+    }
+
+    private void StartMusic(AudioClip clip)
+    {
+        if (_musicSource == null)
+            EnsureMusicSource();
+
+        if (clip == null)
+        {
+            StopMusic();
+            return;
+        }
 
         _musicSource.volume = musicVolume;
 
-        if (_musicSource.clip != level1Music)
-            _musicSource.clip = level1Music;
+        if (_musicSource.clip != clip)
+        {
+            _musicSource.Stop();
+            _musicSource.clip = clip;
+            _musicSource.time = 0f;
+        }
 
         if (!_musicSource.isPlaying)
             _musicSource.Play();
     }
 
-    private void StopLevel1Music()
+    private void StopMusic()
     {
         if (_musicSource != null && _musicSource.isPlaying)
             _musicSource.Stop();
@@ -269,9 +551,15 @@ public class GameMgr : MonoBehaviour, IGame
     private void MaybeRestartMusicForLevelRestart()
     {
         if (!restartMusicOnLevelRestart) return;
-        if (SceneManager.GetActiveScene().name != warriorSceneName) return;
 
-        if (_musicSource != null)
+        string activeSceneName = SceneManager.GetActiveScene().name;
+        if (activeSceneName != warriorSceneName &&
+            activeSceneName != level2SceneName &&
+            activeSceneName != level3SceneName &&
+            activeSceneName != level4SceneName)
+            return;
+
+        if (_musicSource != null && _musicSource.clip != null)
         {
             _musicSource.Stop();
             _musicSource.time = 0f;
@@ -288,6 +576,7 @@ public class GameMgr : MonoBehaviour, IGame
         _bossSlowMoPlaying = false;
         _bossFinalDeathFlowRunning = false;
         _skipNextLevelTransitionSlowMo = false;
+        _shouldShowLevel2EntryFlowOnNextLoad = false;
         Time.timeScale = 1f;
 
         if (Warrior.Instance != null)
@@ -313,6 +602,15 @@ public class GameMgr : MonoBehaviour, IGame
             e.StopMoveTowardCoroutine();
         }
 
+        // A death costs one life immediately so the HUD and the Game-Over overlay both read the
+        // post-death count: RetriesRemaining hits 0 exactly when it's a real game over (no extra death).
+        // Guarded: HandleWarriorDead is called twice per death (StartDeath + EndDeath) → consume once.
+        if (!_deathConsumed)
+        {
+            _deathConsumed = true;
+            retryCount = Mathf.Min(retryCount + 1, maxRetries);
+        }
+
         UIManager.Instance?.ShowGameOver();
     }
 
@@ -330,7 +628,11 @@ public class GameMgr : MonoBehaviour, IGame
         SceneManager.LoadScene(menuSceneName);
     }
 
-    private void LoadMainMenu()
+    /// <summary>
+    /// Public so the in-game pause menu can offer a way back. Without it a player who starts a
+    /// chapter is stuck in it until they win or die, and the chapter picker becomes unreachable.
+    /// </summary>
+    public void LoadMainMenu()
     {
         LoadMenu(mainMenuSceneName);
     }
@@ -366,84 +668,169 @@ public class GameMgr : MonoBehaviour, IGame
 
     public bool TryRetryFromDeath()
     {
+        // The life was already consumed at death (HandleWarriorDead). If none remain → real game over.
         if (retryCount >= maxRetries)
+        {
+            Debug.LogWarning($"[GameMgr] Retry refused: no retries left (retryCount={retryCount}/{maxRetries}).");
             return false;
+        }
 
-        retryCount++;
-
-        var warrior = WarriorInstance;
+        Warrior warrior = WarriorInstance;
         if (warrior == null)
         {
-            retryCount--;
+            Debug.LogWarning("[GameMgr] Retry refused: WarriorInstance is null.");
             return false;
         }
 
         ResetMeteorHazards(true);
 
         Vector3 respawnPosition;
-        MovingVerticalPlatform respawnMovingPlatform = null;
-        bool usedMovingPlatformRespawn = false;
+        PlatFormColliderTrigger respawnPlatform = null;
+        MovingVerticalPlatform respawnMovingVerticalPlatform = null;
+        MovingHorizontalPlatform respawnMovingHorizontalPlatform = null;
+        RotatingPlatform respawnRotatingPlatform = null;
 
         bool useForcedMeteorRespawn = ShouldUseForcedRetryZoneRespawn();
 
         if (useForcedMeteorRespawn)
         {
+            // Forced zone respawn (meteor hazard trigger): use stored position as-is.
             respawnPosition = _forcedRetryRespawnPosition;
             ExitForcedRetryZone();
         }
-        else if (TryGetDeathMovingPlatformRespawn(warrior, out respawnPosition, out respawnMovingPlatform))
+        else if (TryGetDeathMovingPlatformRespawn(warrior, out respawnPosition, out respawnMovingVerticalPlatform))
         {
-            usedMovingPlatformRespawn = true;
+            // Died on a vertical moving platform — respawn back on it.
+            respawnPlatform = respawnMovingVerticalPlatform;
+
+        }
+        else if (TryGetDeathMovingHorizontalPlatformRespawn(warrior, out respawnPosition, out respawnMovingHorizontalPlatform))
+        {
+            // Died on a horizontal moving platform — respawn back on it.
+            respawnPlatform = respawnMovingHorizontalPlatform;
+
+        }
+        else if (TryGetDeathRotatingPlatformRespawn(warrior, out respawnPosition, out respawnRotatingPlatform))
+        {
+            // Died on a rotating platform — respawn back on it.
+            respawnPlatform = respawnRotatingPlatform;
+
+        }
+        else if (_deathWasOnStaticPlatform &&
+                 _deathStaticPlatform != null &&
+                 _deathStaticPlatform.platformCollider != null)
+        {
+            // Died on a static platform — compute surface position and restore collision.
+            Physics2D.SyncTransforms();
+            respawnPosition = BuildSurfaceRespawnOnStaticPlatform(_deathStaticPlatform, warrior);
+            respawnPlatform = _deathStaticPlatform;
+            Debug.Log($"[GameMgr] Retry: static platform respawn on {_deathStaticPlatform.name}");
         }
         else if (currentCheckpoint != null && useCheckpointRespawn)
         {
             respawnPosition = currentCheckpoint.position;
         }
+        else if (warrior.LastSafePlatform is MovingVerticalPlatform lastSafeMovingPlatform &&
+                 lastSafeMovingPlatform.platformCollider != null)
+        {
+            respawnPlatform = lastSafeMovingPlatform;
+            respawnPosition = BuildSurfaceRespawnOnMovingPlatform(lastSafeMovingPlatform, warrior);
+
+        }
+        else if (warrior.LastSafePlatform is MovingHorizontalPlatform lastSafeHorizontalPlatform &&
+                 lastSafeHorizontalPlatform.platformCollider != null)
+        {
+            respawnPlatform = lastSafeHorizontalPlatform;
+            respawnPosition = BuildSurfaceRespawnOnMovingHorizontalPlatform(lastSafeHorizontalPlatform, warrior);
+
+        }
+        else if (warrior.LastSafePlatform is RotatingPlatform lastSafeRotatingPlatform &&
+                 lastSafeRotatingPlatform.platformCollider != null)
+        {
+            respawnPlatform = lastSafeRotatingPlatform;
+            respawnPosition = BuildSurfaceRespawnOnRotatingPlatform(lastSafeRotatingPlatform, warrior);
+
+        }
         else if (warrior.LastSafePosition != Vector3.zero)
         {
+            // LastSafePosition is set by every platform type on landing.
             respawnPosition = warrior.LastSafePosition;
-        }
-        else if (warrior.LastSafePlatform != null)
-        {
-            var pb = warrior.LastSafePlatform.platformCollider.bounds;
 
-            respawnPosition = new Vector3(
-                pb.center.x,
-                pb.max.y + warrior.collider2.bounds.extents.y + 0.05f,
-                warrior.transform.position.z
-            );
+            // Pass the platform along so collision can be properly restored.
+            if (warrior.LastSafePlatform != null &&
+                warrior.LastSafePlatform.platformCollider != null)
+                respawnPlatform = warrior.LastSafePlatform;
+        }
+        else if (warrior.LastSafePlatform != null && warrior.LastSafePlatform.platformCollider != null)
+        {
+            // Fallback: compute a fresh surface position from the last known platform.
+            Physics2D.SyncTransforms();
+            respawnPosition = BuildSurfaceRespawnOnStaticPlatform(warrior.LastSafePlatform, warrior);
+            respawnPlatform = warrior.LastSafePlatform;
+        }
+        else if (_initialSpawnPosition != Vector3.zero)
+        {
+            // No safe platform or position was ever recorded (e.g. the Warrior fell off
+            // the starting ground before any platform contact registered, as on the
+            // AgeOfIce opening platform). Respawn at the scene's spawn point — which is
+            // safe ground by construction — instead of lastDeathPosition, which is where
+            // the Warrior died (below / under the platform).
+            respawnPosition = _initialSpawnPosition;
         }
         else
         {
+            // Absolute last resort.
             respawnPosition = lastDeathPosition;
         }
 
-        ApplyRespawnToWarrior(
-            warrior,
-            respawnPosition,
-            usedMovingPlatformRespawn ? respawnMovingPlatform : null
-        );
-
+        // IMPORTANT:
+        // TryRevive() calls PrepareForSafeRespawn(), which re-enables the Warrior Rigidbody2D
+        // and colliders. Respawning onto any platform must happen AFTER this so the platform
+        // sees an active collider when seating the rider.
         warrior.ResetMeteorHitState(0.2f);
 
         bool revived = warrior.TryRevive(0.6f);
         if (!revived)
         {
             Debug.LogWarning("[GameMgr] Retry failed: warrior was not in death state.");
-            retryCount--;
             return false;
         }
 
+        ApplyRespawnToWarrior(warrior, respawnPosition, respawnPlatform);
+
         if (useSpawnBubbleOnRetry)
-            ApplySpawnBubble(warrior, respawnPosition);
+            ApplySpawnBubble(warrior, warrior.transform.position);
 
         ResetAllEnemies();
 
         Debug.Log($"[GameMgr] Retry {retryCount}/{maxRetries}");
+
+        // This death is resolved → the next death will consume a fresh life.
+        _deathConsumed = false;
+
+        // A retry was effectively consumed → let the reward system buy it back immediately
+        // if a token is in reserve (model A). Fired only on the success path.
+        OnRetryConsumed?.Invoke();
+
         return true;
     }
 
-    // Wrapper kept for compatibility with your current EnemyMgr calls
+    /// <summary>
+    /// Additive hook for the retry-reward feature. Restores one previously-consumed retry
+    /// (retryCount--). retryCount is clamped at 0, so RetriesRemaining can never exceed maxRetries
+    /// — the ceiling is enforced here. Returns true only if a retry was actually restored.
+    /// Does NOT touch the scoring system.
+    /// </summary>
+    public bool GrantRetryReward()
+    {
+        if (retryCount <= 0)
+            return false; // already at max retries — nothing to restore
+
+        retryCount--;
+        Debug.Log($"[GameMgr] Retry reward granted → consumed {retryCount}/{maxRetries} ({RetriesRemaining} remaining)");
+        return true;
+    }
+
     public void HandleLevel1Completed()
     {
         if (_levelCompletionHandledThisScene)
@@ -456,21 +843,31 @@ public class GameMgr : MonoBehaviour, IGame
     private void CompleteCurrentCampaignSceneInternal()
     {
         int currentIndex = GetCurrentCampaignSceneIndex();
+
         if (currentIndex < 0)
         {
             LoadMainMenu();
             return;
         }
 
-        // No next scene = end of campaign (or end of current content)
-        if (!HasNextCampaignScene(currentIndex))
+        // The level is finished: any checkpoint inside it is no longer a valid resume point.
+        ClearSavedCheckpoint();
+
+        if (!HasNextCampaignScene(currentIndex) && WebDemo.IsBuild)
         {
-            Debug.Log("[GameMgr] No next campaign scene. Returning to menu.");
-            LoadMainMenu();
+            ShowDemoEndScreen();
             return;
         }
 
-        // Demo gate: first level cleared but campaign not purchased yet
+        if (!HasNextCampaignScene(currentIndex))
+        {
+            // Dernier niveau du jeu terminé (boss final vaincu) → écran de victoire
+            // au lieu du retour-menu silencieux.
+            Debug.Log("[GameMgr] Final campaign scene cleared. Showing victory screen.");
+            ShowFinalVictoryScreen();
+            return;
+        }
+
         if (!Level2Unlocked)
         {
             if (currentIndex == 0)
@@ -486,20 +883,101 @@ public class GameMgr : MonoBehaviour, IGame
         int nextIndex = currentIndex + 1;
         string nextSceneName = campaignSceneOrder[nextIndex];
 
-        // Save the newly unlocked / continue target first
         MarkSceneAsReached(nextIndex);
+        // Continue must resume at the level that follows the one just completed (not the furthest
+        // level ever reached), so replaying an earlier level advances to its successor correctly.
+        SetContinueScene(nextIndex);
 
-        // Whole-game flow:
-        // show next level title, then return to menu so FullButtonsGroup appears first
         if (returnToMenuAfterPurchasedLevelComplete)
         {
             StartCoroutine(ReturnToMenuAfterLevelCompleteRoutine(nextSceneName));
             return;
         }
 
-        // Old behavior (directly go into next level)
         GoToCampaignSceneByIndex(nextIndex);
     }
+
+    // ─── Final victory (last campaign scene boss defeated) ───────────────────────
+
+    public bool IsGameCompleted => PlayerPrefs.GetInt(GameCompletedKey, 0) == 1;
+
+    // ─── WarriorScene tutorial completion (persistent, one-shot) ─────────────────
+    public bool IsTutorialCompleted => PlayerPrefs.GetInt(TutorialCompletedKey, 0) == 1;
+
+    public void MarkTutorialCompleted()
+    {
+        if (IsTutorialCompleted) return;
+
+        PlayerPrefs.SetInt(TutorialCompletedKey, 1);
+        PlayerPrefs.Save();
+    }
+
+    private void ShowFinalVictoryScreen()
+    {
+        Time.timeScale = 1f;
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = true;
+
+        PlayerPrefs.SetInt(GameCompletedKey, 1);
+        PlayerPrefs.Save();
+        SaveProgression();
+
+        int score = ScoreManager.Instance != null ? ScoreManager.Instance.TotalPoints : 0;
+        float dur = ScoreManager.Instance != null ? ScoreManager.Instance.RunDuration : 0f;
+        int retries = ScoreManager.Instance != null ? ScoreManager.Instance.RetryCount : 0;
+
+        UIManager.Instance?.ShowVictoryScreen(score, dur, retries, finalRewardCoins, finalRewardTokens);
+    }
+
+    /// <summary>
+    /// Web demo: the last demo chapter is cleared. YouTube requires telling the player there is no
+    /// more content (and, there, no store link; the polymart.be build adds a Google Play button),
+    /// so this replaces both the purchase gate and the final victory screen of the full game.
+    /// </summary>
+    private void ShowDemoEndScreen()
+    {
+        // Nothing may happen behind this screen (a late hit would open DEFEAT under it).
+        // LoadMenu restores the time scale when the player leaves.
+        Time.timeScale = 0f;
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = true;
+
+        SaveProgression();
+
+        Debug.Log("[GameMgr] Last demo chapter cleared. Showing the end-of-demo screen.");
+        DemoEndScreen.Show(ReturnToMenuFromVictory);
+    }
+
+    // Called by the victory screen buttons.
+    public void ReturnToMenuFromVictory()
+    {
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = false;
+
+        // LoadMenu already restores timeScale, resets the run, AND destroys the persistent
+        // Warrior (which owns WarriorUI / the VictoryScreen) so nothing leaks into the menu.
+        LoadMenu(mainMenuSceneName);
+    }
+
+    public void StartNewGamePlus()
+    {
+        Time.timeScale = 1f;
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = false;
+
+        // The persistent Warrior owns WarriorUI/VictoryScreen; destroy it before loading the
+        // first scene, otherwise it carries over as a duplicate.
+        if (Warrior.Instance != null)
+            Destroy(Warrior.Instance.gameObject);
+
+        // Reuses the existing New Game flow (restarts from the first scene).
+        // The GW_GameCompleted flag stays in PlayerPrefs for menu unlocks.
+        StartNewGame();
+    }
+
     private IEnumerator ReturnToMenuAfterLevelCompleteRoutine(string nextSceneName)
     {
         if (_isSceneTransitionRunning)
@@ -528,13 +1006,20 @@ public class GameMgr : MonoBehaviour, IGame
             e.StopMoveTowardCoroutine();
         }
 
-        // Show the title of the next scene first
         UIManager.Instance?.PlayLevelTransition(
             NicifySceneName(nextSceneName),
             GetSceneSubtitle(nextSceneName)
         );
 
         yield return new WaitForSecondsRealtime(transitionBeforeLoadDelay);
+
+        _shouldShowLevel2EntryFlowOnNextLoad = false;
+
+        // Destroy the persistent (DontDestroyOnLoad) warrior so it does NOT leak its accumulated
+        // state into the next level. With it gone, the next scene's own Warrior prefab instance
+        // registers as a brand-new Instance with prefab defaults = a full "new game" reset.
+        if (Warrior.Instance != null)
+            Destroy(Warrior.Instance.gameObject);
 
         WarriorInstance = null;
         SceneManager.LoadScene(mainMenuSceneName);
@@ -582,13 +1067,19 @@ public class GameMgr : MonoBehaviour, IGame
         _bossSlowMoPlaying = false;
     }
 
-    public void HandleBossFinalDeathLevelComplete()
+    public void HandleBossFinalDeathLevelComplete(EnemyType bossType, Vector3 bossDeathPosition)
     {
         if (_bossFinalDeathFlowRunning) return;
         if (_levelCompletionHandledThisScene) return;
 
+        _pendingBossRelicType = bossType;
+        _pendingBossDeathPosition = bossDeathPosition;
+
         StartCoroutine(HandleBossFinalDeathLevelCompleteRoutine());
     }
+
+    /// <summary>Safety net on the wait for the boss death cinematic, in real seconds.</summary>
+    private const float MaxWaitForDeathCinematic = 4f;
 
     private IEnumerator HandleBossFinalDeathLevelCompleteRoutine()
     {
@@ -602,23 +1093,146 @@ public class GameMgr : MonoBehaviour, IGame
         while (_bossSlowMoPlaying)
             yield return null;
 
+        // Then let the death cinematic finish. It owns the camera and fires the explosion chain,
+        // and the relic rising in the middle of that reads as one muddled event instead of two
+        // beats. Bounded on purpose: a cinematic that somehow never ends must not strand the level
+        // in an uncompletable state.
+        float finisherDeadline = Time.realtimeSinceStartup + MaxWaitForDeathCinematic;
+        while (Assets.Scripts.Objects.BossFinisherFx.BossFinisher.IsRunning
+               && Time.realtimeSinceStartup < finisherDeadline)
+            yield return null;
+
         yield return new WaitForSecondsRealtime(bossDeathCompletionDelay);
+
+        // After the death cinematic: play the boss MemoryRelic sequence (reused VFX + SFX + new
+        // "rise" animation), then increment the persistent boss-relic counter, before the
+        // end-of-level UI.
+        yield return GrantBossRelicSequence(_pendingBossRelicType, _pendingBossDeathPosition);
 
         CompleteCurrentCampaignSceneInternal();
 
         _bossFinalDeathFlowRunning = false;
     }
 
+    // ─── Boss MemoryRelic (distinct, persistent counter) ─────────────────────────
+
+    private IEnumerator GrantBossRelicSequence(EnemyType bossType, Vector3 worldPos)
+    {
+        // Anti-double: a boss already in the set (scene replay / re-kill) plays no sequence.
+        if (_bossRelicsDefeated.Contains(bossType))
+            yield break;
+
+        // Simple "rise" animation at the boss death spot: the relic rises then disappears.
+        if (bossRelicRisePrefab != null)
+        {
+            GameObject go = Instantiate(bossRelicRisePrefab, worldPos, Quaternion.identity);
+            BossRelicRiseAnimation rise = go.GetComponent<BossRelicRiseAnimation>();
+            float wait = rise != null ? rise.Duration : 0.8f;
+            Debug.Log($"[GameMgr] Boss relic rise spawned '{go.name}' at {worldPos}, wait={wait}s.");
+            yield return new WaitForSeconds(wait);
+        }
+        else
+        {
+            Debug.LogWarning("[GameMgr] bossRelicRisePrefab is NOT assigned → no rise animation will appear.");
+        }
+
+        // Increment persistent counter → RelicMemory CountText shows it (this scene + next scenes).
+        TryGrantBossRelic(bossType);
+
+        // Hold so the relic is visible before the end-of-level / victory UI appears.
+        if (bossRelicHoldBeforeUiSeconds > 0f)
+            yield return new WaitForSecondsRealtime(bossRelicHoldBeforeUiSeconds);
+    }
+
+    /// <summary>Adds the boss to the persistent defeated set. Returns false if already granted.</summary>
+    public bool TryGrantBossRelic(EnemyType bossType)
+    {
+        if (!_bossRelicsDefeated.Add(bossType))
+            return false;
+
+        SaveBossRelicsToDisk();
+        OnBossRelicCountChanged?.Invoke(_bossRelicsDefeated.Count);
+        Debug.Log($"[GameMgr] Boss relic granted: {bossType}. Total={_bossRelicsDefeated.Count}");
+        return true;
+    }
+
+    private void LoadBossRelicsFromDisk()
+    {
+        _bossRelicsDefeated.Clear();
+
+        string csv = PlayerPrefs.GetString(BossRelicsDefeatedKey, string.Empty);
+        if (string.IsNullOrEmpty(csv))
+            return;
+
+        string[] parts = csv.Split(',');
+        for (int i = 0; i < parts.Length; i++)
+        {
+            string token = parts[i].Trim();
+            if (string.IsNullOrEmpty(token))
+                continue;
+
+            if (System.Enum.TryParse(token, out EnemyType type))
+                _bossRelicsDefeated.Add(type);
+        }
+    }
+
+    private void SaveBossRelicsToDisk()
+    {
+        PlayerPrefs.SetString(BossRelicsDefeatedKey, string.Join(",", _bossRelicsDefeated));
+        PlayerPrefs.Save();
+    }
+
+    public void ClearBossRelics()
+    {
+        _bossRelicsDefeated.Clear();
+        PlayerPrefs.DeleteKey(BossRelicsDefeatedKey);
+        PlayerPrefs.Save();
+        OnBossRelicCountChanged?.Invoke(0);
+    }
+
+    /// <summary>
+    /// DEV ONLY. Wipes every persisted state in one shot (progression, checkpoints, boss
+    /// relics, campaign unlock AND the WarriorScene tutorial flag) and re-syncs the in-memory
+    /// caches from the now-empty store. Single source of truth for dev resets so new keys are
+    /// always covered. Effective only in the Editor / development builds.
+    /// </summary>
+    public void ResetAllProgressForDev()
+    {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        PlayerPrefs.DeleteAll();
+        PlayerPrefs.Save();
+
+        // Force a fully clean baseline before reloading from the wiped store.
+        level2Unlocked = false;
+
+        // Reset the in-run lives too: F9 reloads the scene with a raw LoadScene that bypasses the
+        // menu/revive paths which normally zero these — without this, retryCount leaks across F9
+        // reloads and eventually hits maxRetries, making the in-game Retry button fail.
+        retryCount = 0;
+        _deathConsumed = false;
+
+        LoadBossRelicsFromDisk();
+        LoadCheckpointFromDisk();
+        LoadProgression();
+
+        OnBossRelicCountChanged?.Invoke(BossRelicCount);
+
+        Debug.Log("[GameMgr] DEV reset: all persisted state wiped (incl. tutorial, checkpoints, progression, lives).");
+#endif
+    }
+
     public void UnlockLevel2()
     {
         level2Unlocked = true;
 
-        int level2Index = GetCampaignSceneIndex(level2SceneName);
-        if (level2Index >= 0)
-            MarkSceneAsReached(level2Index);
+        // L'achat ouvre le chapitre 1 tout de suite, sans attendre que la demo soit finie.
+        // La reserve d'origine ("il n'aurait jamais la relique memoire") est levee: la relique
+        // manquante est accordee a l'entree du chapitre par ProgressionRelicGrant.
+        _highestReachedSceneIndex = Mathf.Max(_highestReachedSceneIndex, 1);
+        _highestReachedSceneIndex = Mathf.Clamp(_highestReachedSceneIndex, 0, Mathf.Max(0, campaignSceneOrder.Count - 1));
 
         SaveProgression();
-        Debug.Log("[GameMgr] Campaign purchased / Level 2 unlocked.");
+        Debug.Log("[GameMgr] Campagne achetee: chapitre 1 ouvert immediatement (relique accordee a l'entree).");
     }
 
     public void OnPurchaseConfirmed()
@@ -631,8 +1245,6 @@ public class GameMgr : MonoBehaviour, IGame
 
         int currentIndex = GetCurrentCampaignSceneIndex();
 
-        // Purchase confirmed while already in menu:
-        // refresh immediately to show FullButtonsGroup
         if (currentIndex < 0 || IsMainMenuScene())
         {
             var menu = FindFirstObjectByType<MainMenuUI>(FindObjectsInactive.Include);
@@ -644,15 +1256,33 @@ public class GameMgr : MonoBehaviour, IGame
             return;
         }
 
-        // Purchase confirmed from gameplay / boss purchase flow:
-        // save the next scene as continue target, then go to menu first
         if (HasNextCampaignScene(currentIndex))
         {
             int nextIndex = currentIndex + 1;
             MarkSceneAsReached(nextIndex);
+            // Just unlocked the campaign right after finishing this level: point "Continue"
+            // at the next scene (e.g. AgeOfIce after WarriorScene), not the level we just cleared.
+            SetContinueScene(nextIndex);
         }
 
         LoadMainMenu();
+    }
+
+    // Silent unlock used when an existing purchase is RESTORED at startup (FetchPurchases), as
+    // opposed to a fresh purchase. It must never navigate/LoadMainMenu — otherwise an owner who is
+    // mid-gameplay (e.g. sent into WarriorScene by the tutorial gate) gets bounced back to the menu
+    // the moment the store reports ownership. Only refreshes the menu if we are actually on it.
+    public void OnPurchaseRestored()
+    {
+        UnlockLevel2();
+        HideAnyPurchaseScreen();
+
+        if (IsMainMenuScene())
+        {
+            var menu = FindFirstObjectByType<MainMenuUI>(FindObjectsInactive.Include);
+            if (menu != null)
+                menu.Refresh();
+        }
     }
 
     public void OnPurchaseDeclined()
@@ -664,7 +1294,6 @@ public class GameMgr : MonoBehaviour, IGame
 
         int currentIndex = GetCurrentCampaignSceneIndex();
 
-        // Refus depuis le menu : rester sur le menu
         if (currentIndex < 0 || IsMainMenuScene())
         {
             var menu = FindFirstObjectByType<MainMenuUI>(FindObjectsInactive.Include);
@@ -674,12 +1303,10 @@ public class GameMgr : MonoBehaviour, IGame
             return;
         }
 
-        // Refus depuis WarriorScene : retour menu
         Debug.Log("[GameMgr] Purchase declined. Returning to main menu.");
         LoadMainMenu();
     }
 
-    // Kept for compatibility with your existing calls
     public void GoToAgeOfGlace()
     {
         int currentIndex = GetCurrentCampaignSceneIndex();
@@ -737,6 +1364,17 @@ public class GameMgr : MonoBehaviour, IGame
         );
 
         yield return new WaitForSecondsRealtime(transitionBeforeLoadDelay);
+
+        _shouldShowLevel2EntryFlowOnNextLoad = (targetSceneName == level2SceneName);
+
+        // Moving on to a different level: drop the previous level's transient checkpoint refs.
+        // (The saved checkpoint was already cleared in CompleteCurrentCampaignSceneInternal.)
+        ResetTransientCheckpoint();
+
+        // Destroy the persistent warrior so the next level spawns a fresh one (new-game defaults)
+        // instead of inheriting this level's accumulated state.
+        if (Warrior.Instance != null)
+            Destroy(Warrior.Instance.gameObject);
 
         WarriorInstance = null;
         SceneManager.LoadScene(targetSceneName);
@@ -798,15 +1436,21 @@ public class GameMgr : MonoBehaviour, IGame
         if (checkpoint == null) return;
 
         currentCheckpoint = checkpoint;
+        _checkpointPosition = checkpoint.position;
+        _checkpointSceneName = SceneManager.GetActiveScene().name;
+        _hasCheckpointPosition = true;
         _checkpointVersion++;
 
-        Debug.Log("[GameMgr] Checkpoint activated: " + checkpoint.name);
+        SaveCheckpointToDisk();
+
+        Debug.Log($"[GameMgr] Checkpoint activated: {checkpoint.name} in '{_checkpointSceneName}' at {_checkpointPosition}");
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
         IsRestarting = false;
+        _deathConsumed = false; // fresh warrior spawns alive → no unresolved death
 
         ExitForcedRetryZone();
 
@@ -838,7 +1482,20 @@ public class GameMgr : MonoBehaviour, IGame
         if (WarriorInstance == null)
             return;
 
-        Debug.Log("[GameMgr] ReviveLevel() - Resetting to Default Spawn");
+        // If a checkpoint was reached in THIS level, Revive must restart from that checkpoint
+        // instead of the level start. The currentCheckpoint Transform does not survive the scene
+        // reload, so we rely on the persisted _checkpointPosition and re-seat the warrior once it
+        // re-registers (see TryApplyPendingCheckpointRespawn / RegisterHero).
+        _pendingCheckpointRespawn = HasCheckpointForActiveScene();
+
+        // Force RegisterHero to re-capture the fresh spawn position/parent of the reloaded scene
+        // (otherwise it would keep a stale parent reference from the previous scene instance).
+        _initialSpawnPosition = Vector3.zero;
+        _initialSpawnParent = null;
+
+        Debug.Log(_pendingCheckpointRespawn
+            ? "[GameMgr] ReviveLevel() - Restarting from last checkpoint"
+            : "[GameMgr] ReviveLevel() - Resetting to Default Spawn");
 
         Time.timeScale = 1f;
         IsRestarting = true;
@@ -847,12 +1504,22 @@ public class GameMgr : MonoBehaviour, IGame
         _bossSlowMoPlaying = false;
         _bossFinalDeathFlowRunning = false;
         _skipNextLevelTransitionSlowMo = false;
+        _shouldShowLevel2EntryFlowOnNextLoad = false;
 
         ResetMeteorHazards(true);
 
         _deathWasOnMovingVerticalPlatform = false;
+        _deathMovingVerticalPlatform = null;
         _deathMovingVerticalPlatformId = null;
+        _deathWasOnMovingHorizontalPlatform = false;
+        _deathMovingHorizontalPlatform = null;
+        _deathMovingHorizontalPlatformId = null;
+        _deathWasOnRotatingPlatform = false;
+        _deathRotatingPlatform = null;
+        _deathRotatingPlatformId = null;
         _hasPendingReviveMovingPlatformRespawn = false;
+        _deathWasOnStaticPlatform = false;
+        _deathStaticPlatform = null;
 
         ScoreManager.Instance?.StartNewRun();
 
@@ -868,6 +1535,7 @@ public class GameMgr : MonoBehaviour, IGame
         SceneManager.sceneLoaded -= OnSceneLoadedAfterRevive;
 
         retryCount = 0;
+        _deathConsumed = false;
         IsRestarting = false;
 
         ExitForcedRetryZone();
@@ -883,15 +1551,49 @@ public class GameMgr : MonoBehaviour, IGame
     public void StartNewGame()
     {
         ResetMenuLaunchState();
+        ClearSavedCheckpoint();   // New Game always restarts the campaign from the very beginning.
+        ClearBossRelics();        // New Game also wipes boss-relic progress.
+        ResetCampaignProgress();  // ...and how far the player got, which used to survive.
+        _suppressCheckpointRespawnOnce = true;
         ScoreManager.Instance?.StartNewRun();
         SceneManager.LoadScene(warriorSceneName);
+    }
+
+    /// <summary>
+    /// Wipes how far the player reached. New Game used to clear only the checkpoint and the boss
+    /// relics, so every level unlocked in the previous run stayed selectable in the chapter picker
+    /// and Continue still pointed deep into the campaign.
+    ///
+    /// The purchase is deliberately NOT cleared: it is an entitlement, not progress. A fresh start
+    /// therefore means the demo alone for everybody, owner included — the demo is where the memory
+    /// relic is awarded, so it stays a mandatory step.
+    /// </summary>
+    private void ResetCampaignProgress()
+    {
+        NormalizeCampaignSceneOrder();
+
+        _highestReachedSceneIndex = 0;
+        _continueSceneIndex = 0;
+
+        SaveProgression();
+
+        Debug.Log("[GameMgr] New Game: campaign progress reset to the demo (purchase kept).");
     }
 
     public void ContinueGame()
     {
         ResetMenuLaunchState();
         ScoreManager.Instance?.StartNewRun();
-        SceneManager.LoadScene(GetContinueSceneName());
+
+        string target = EnforceTutorialGate(GetContinueSceneName());
+
+        // Resume at the saved checkpoint when it belongs to the scene we are loading.
+        _pendingCheckpointRespawn =
+            _hasCheckpointPosition &&
+            !string.IsNullOrWhiteSpace(_checkpointSceneName) &&
+            target == _checkpointSceneName;
+
+        SceneManager.LoadScene(target);
     }
 
     public void LoadCampaignSceneFromMenu(int sceneIndex)
@@ -903,15 +1605,52 @@ public class GameMgr : MonoBehaviour, IGame
         }
 
         ResetMenuLaunchState();
+        _suppressCheckpointRespawnOnce = true; // Level Select always plays the chosen level from its start.
         ScoreManager.Instance?.StartNewRun();
-        SceneManager.LoadScene(campaignSceneOrder[sceneIndex]);
+
+        // Un acheteur qui DESIGNE un chapitre dans le selecteur y va, sans detour par le tutoriel.
+        // Le rediriger ici viderait de son sens la ligne qu'il vient de toucher, et contredirait la
+        // promesse de l'achat. Le garde-fou reste entier partout ailleurs: Continuer et les
+        // enchainements automatiques passent toujours par EnforceTutorialGate, donc un acheteur qui
+        // n'a encore rien joue et appuie simplement sur Continuer recoit bien le tutoriel.
+        bool explicitPaidChapter = sceneIndex >= 1 && Level2Unlocked;
+
+        string target = explicitPaidChapter
+            ? campaignSceneOrder[sceneIndex]
+            : EnforceTutorialGate(campaignSceneOrder[sceneIndex]);
+
+        SceneManager.LoadScene(target);
+    }
+
+    // Onboarding gate: until the WarriorScene tutorial has been completed once, every campaign
+    // entry (Continue, Level Select, post-purchase routing through the menu) is redirected to
+    // WarriorScene so the tutorial can never be skipped — e.g. a player who buys the game without
+    // playing the demo and taps Continue would otherwise land straight in AgeOfIce. Once completed
+    // (GW_TutorialCompleted == 1) this is a no-op and normal routing resumes. Progress is preserved:
+    // HighestReachedSceneIndex is never lowered, so all unlocked levels stay available afterwards.
+    private string EnforceTutorialGate(string requestedSceneName)
+    {
+        // Direct (joystick) mode deliberately skips the tap-based tutorial (see
+        // WarriorTutorialController) and never sets GW_TutorialCompleted. Since joystick is now the
+        // default scheme, without this exemption Direct players are redirected AgeOfIce → WarriorScene
+        // forever after finishing the tutorial scene. Treat Direct mode as gate-exempt; the flag stays
+        // 0 so Tap players still get the tutorial if they switch schemes.
+        if (IsTutorialCompleted || ControlScheme.IsDirect)
+            return requestedSceneName;
+        if (string.IsNullOrEmpty(warriorSceneName))
+            return requestedSceneName;
+        if (requestedSceneName == warriorSceneName)
+            return requestedSceneName;
+
+        Debug.Log($"[GameMgr] Tutorial gate: redirecting '{requestedSceneName}' → '{warriorSceneName}' (tutorial not completed yet).");
+        return warriorSceneName;
     }
 
     private void ResetMenuLaunchState()
     {
         retryCount = 0;
-        currentCheckpoint = null;
-        _checkpointVersion = 0;
+        _deathConsumed = false;
+        ResetTransientCheckpoint();
         _initialSpawnPosition = Vector3.zero;
         _initialSpawnParent = null;
 
@@ -920,9 +1659,18 @@ public class GameMgr : MonoBehaviour, IGame
         _deathWasOnMovingVerticalPlatform = false;
         _deathMovingVerticalPlatform = null;
         _deathMovingVerticalPlatformId = null;
+        _deathWasOnMovingHorizontalPlatform = false;
+        _deathMovingHorizontalPlatform = null;
+        _deathMovingHorizontalPlatformId = null;
+        _deathWasOnRotatingPlatform = false;
+        _deathRotatingPlatform = null;
+        _deathRotatingPlatformId = null;
         _hasPendingReviveMovingPlatformRespawn = false;
         _pendingReviveMovingPlatformId = null;
+        _deathWasOnStaticPlatform = false;
+        _deathStaticPlatform = null;
         _level2EntryFlowShownThisLoad = false;
+        _shouldShowLevel2EntryFlowOnNextLoad = false;
 
         _levelCompletionHandledThisScene = false;
         _bossSlowMoPlaying = false;
@@ -979,24 +1727,64 @@ public class GameMgr : MonoBehaviour, IGame
         _deathMovingVerticalPlatform = null;
         _deathMovingVerticalPlatformId = null;
 
+        _deathWasOnMovingHorizontalPlatform = false;
+        _deathMovingHorizontalPlatform = null;
+        _deathMovingHorizontalPlatformId = null;
+
+        _deathWasOnRotatingPlatform = false;
+        _deathRotatingPlatform = null;
+        _deathRotatingPlatformId = null;
+
+        _deathWasOnStaticPlatform = false;
+        _deathStaticPlatform = null;
+
         Warrior warrior = WarriorInstance;
         if (warrior == null) return;
 
-        MovingVerticalPlatform movingPlatform = null;
+        PlatFormColliderTrigger candidate = warrior.CurrentplatForm != null
+            ? warrior.CurrentplatForm
+            : warrior.LastSafePlatform;
 
-        if (warrior.CurrentplatForm is MovingVerticalPlatform currentMoving)
-            movingPlatform = currentMoving;
-        else if (warrior.LastSafePlatform is MovingVerticalPlatform lastSafeMoving)
-            movingPlatform = lastSafeMoving;
+        if (candidate is MovingVerticalPlatform verticalPlatform &&
+            verticalPlatform.platformCollider != null)
+        {
+            _deathWasOnMovingVerticalPlatform = true;
+            _deathMovingVerticalPlatform = verticalPlatform;
+            _deathMovingVerticalPlatformId = verticalPlatform.RespawnId;
 
-        if (movingPlatform == null || movingPlatform.platformCollider == null)
+            Debug.Log($"[GameMgr] Death vertical moving platform locked: {verticalPlatform.RespawnId}");
             return;
+        }
 
-        _deathWasOnMovingVerticalPlatform = true;
-        _deathMovingVerticalPlatform = movingPlatform;
-        _deathMovingVerticalPlatformId = movingPlatform.RespawnId;
+        if (candidate is MovingHorizontalPlatform horizontalPlatform &&
+            horizontalPlatform.platformCollider != null)
+        {
+            _deathWasOnMovingHorizontalPlatform = true;
+            _deathMovingHorizontalPlatform = horizontalPlatform;
+            _deathMovingHorizontalPlatformId = horizontalPlatform.RespawnId;
 
-        Debug.Log($"[GameMgr] Death platform locked: {movingPlatform.RespawnId}");
+            Debug.Log($"[GameMgr] Death horizontal moving platform locked: {horizontalPlatform.RespawnId}");
+            return;
+        }
+
+        if (candidate is RotatingPlatform rotatingPlatform &&
+            rotatingPlatform.platformCollider != null)
+        {
+            _deathWasOnRotatingPlatform = true;
+            _deathRotatingPlatform = rotatingPlatform;
+            _deathRotatingPlatformId = rotatingPlatform.RespawnId;
+
+            Debug.Log($"[GameMgr] Death rotating platform locked: {rotatingPlatform.RespawnId}");
+            return;
+        }
+
+        // Static platform (plain PlatFormColliderTrigger / PlatFormPlfColliderTrigger)
+        if (candidate != null && candidate.platformCollider != null)
+        {
+            _deathWasOnStaticPlatform = true;
+            _deathStaticPlatform = candidate;
+            Debug.Log($"[GameMgr] Death static platform locked: {candidate.name}");
+        }
     }
 
     private MovingVerticalPlatform FindMovingVerticalPlatformByRespawnId(string respawnId)
@@ -1018,14 +1806,194 @@ public class GameMgr : MonoBehaviour, IGame
         return null;
     }
 
+    private MovingHorizontalPlatform FindMovingHorizontalPlatformByRespawnId(string respawnId)
+    {
+        if (string.IsNullOrWhiteSpace(respawnId))
+            return null;
+
+        var platforms = FindObjectsByType<MovingHorizontalPlatform>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        foreach (var p in platforms)
+        {
+            if (p == null) continue;
+            if (p.RespawnId == respawnId)
+                return p;
+        }
+
+        return null;
+    }
+
+    private RotatingPlatform FindRotatingPlatformByRespawnId(string respawnId)
+    {
+        if (string.IsNullOrWhiteSpace(respawnId))
+            return null;
+
+        var platforms = FindObjectsByType<RotatingPlatform>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        foreach (var p in platforms)
+        {
+            if (p == null) continue;
+            if (p.RespawnId == respawnId)
+                return p;
+        }
+
+        return null;
+    }
+
     private Vector3 BuildSurfaceRespawnOnMovingPlatform(MovingVerticalPlatform platform, Warrior warrior)
     {
-        Vector3 surfacePos = platform.GetSurfacePosition();
+        if (platform == null || warrior == null)
+            return lastDeathPosition;
 
-        float warriorHalfHeight = warrior.collider2.bounds.extents.y;
-        float finalY = surfacePos.y + warriorHalfHeight + movingPlatformRespawnSeatOffset;
+        if (platform.platformCollider == null)
+            return platform.transform.position;
 
-        return new Vector3(surfacePos.x, finalY, surfacePos.z);
+        // Same cull guard as the static path: a culled zone collapses platformCollider.bounds
+        // onto the pivot, which GetSafeRespawnPositionFor would read as the surface.
+        EnsurePlatformZoneActive(platform);
+        Physics2D.SyncTransforms();
+
+        float preferredX = warrior.LastSafePosition != Vector3.zero
+            ? warrior.LastSafePosition.x
+            : warrior.transform.position.x;
+
+        return platform.GetSafeRespawnPositionFor(warrior, preferredX);
+    }
+
+    private Vector3 BuildSurfaceRespawnOnMovingHorizontalPlatform(MovingHorizontalPlatform platform, Warrior warrior)
+    {
+        if (platform == null || warrior == null)
+            return lastDeathPosition;
+
+        if (platform.platformCollider == null)
+            return platform.transform.position;
+
+        // Same cull guard as the static path: a culled zone collapses platformCollider.bounds
+        // onto the pivot, which GetSafeRespawnPositionFor would read as the surface.
+        EnsurePlatformZoneActive(platform);
+        Physics2D.SyncTransforms();
+
+        float preferredX = warrior.LastSafePosition != Vector3.zero
+            ? warrior.LastSafePosition.x
+            : warrior.transform.position.x;
+
+        return platform.GetSafeRespawnPositionFor(warrior, preferredX);
+    }
+
+    private Vector3 BuildSurfaceRespawnOnRotatingPlatform(RotatingPlatform platform, Warrior warrior)
+    {
+        if (platform == null || warrior == null)
+            return lastDeathPosition;
+
+        if (platform.platformCollider == null)
+            return platform.transform.position;
+
+        // Same cull guard as the static path: a culled zone collapses platformCollider.bounds
+        // onto the pivot, which GetSafeRespawnPositionFor would read as the surface.
+        EnsurePlatformZoneActive(platform);
+        Physics2D.SyncTransforms();
+
+        float preferredX = warrior.LastSafePosition != Vector3.zero
+            ? warrior.LastSafePosition.x
+            : warrior.transform.position.x;
+
+        return platform.GetSafeRespawnPositionFor(warrior, preferredX);
+    }
+
+    /// <summary>
+    /// Reactivates the ZoneCullable that owns <paramref name="platform"/> if it is currently
+    /// culled, so the platform's collider reports valid (non-degenerate) bounds. Found via
+    /// GetComponentInParent with includeInactive: true — reliable even when the zone GameObject
+    /// is inactive, and independent of any point-in-zone geometry test (the platform pivot can
+    /// sit below the zone's own bounds collider).
+    /// </summary>
+    private static void EnsurePlatformZoneActive(PlatFormColliderTrigger platform)
+    {
+        if (platform == null)
+            return;
+
+        ZoneCullable zone = platform.GetComponentInParent<ZoneCullable>(true);
+        if (zone != null && !zone.IsZoneActive)
+            zone.SetZoneActive(true);
+    }
+
+    /// <summary>
+    /// Computes a safe spawn position on any static (non-moving) PlatFormColliderTrigger.
+    /// Uses the warrior's actual collider half-height so the position is accurate for every
+    /// platform type that does not expose its own GetSafeRespawnPositionFor() method.
+    /// </summary>
+    private Vector3 BuildSurfaceRespawnOnStaticPlatform(PlatFormColliderTrigger platform, Warrior warrior)
+    {
+        if (platform == null || warrior == null)
+            return lastDeathPosition;
+
+        if (platform.platformCollider == null)
+            return platform.transform.position;
+
+        // The platform's zone may be culled (its GameObject SetActive(false)) at this moment —
+        // the camera followed the Warrior down as he fell off the edge. A Collider2D on a
+        // DISABLED GameObject reports a DEGENERATE bounds collapsed onto the platform pivot,
+        // which for these platforms sits well BELOW the real surface (pivot y≈113.98 vs surface
+        // y≈116.65 for plf-blk_1 (3)). Reading that produced a respawn ~2.7 units too low and
+        // horizontally centered — the AgeOfIce/Zone2 "plf-blk_1 (3)" below-surface bug. Bring
+        // the zone back to life and resync physics FIRST so platformCollider.bounds reports the
+        // true surface. ApplyRespawnToWarrior re-ensures the zone shortly after; this is just
+        // earlier and idempotent.
+        EnsurePlatformZoneActive(platform);
+        Physics2D.SyncTransforms();
+
+        Bounds pb = platform.platformCollider.bounds;
+
+        // IMPORTANT: on the retry path this runs BEFORE TryRevive() re-enables the Warrior
+        // collider (death disabled it via disableCollidersOnDeath), so warrior.collider2 is
+        // disabled here and its live .bounds is unreliable. Derive the half-extents from the
+        // serialized BoxCollider2D size/offset (valid while disabled), scaled by the transform.
+        //
+        // The Warrior collider has a vertical offset (offset.y ≈ -0.5), so we must seat his
+        // FEET on the surface using the real pivot->feet distance. The old code used
+        // extents.y — and, because the collider was disabled, actually fell back to 0.8f —
+        // which placed the pivot ~0.5–1.0 too low, dropping his feet BELOW the (thin) platform
+        // top and leaving him trapped UNDERNEATH it (the AgeOfIce/Zone2 "plf-blk_1 (3)"
+        // bad-respawn bug). Seat by feetToPivot instead, mirroring Warrior.LateUpdate and
+        // PerformWarriorEdgeFall which both seat by feetToPivot for exactly this reason.
+        BoxCollider2D box = warrior.collider2;
+        Vector3 lossy = warrior.transform.lossyScale;
+
+        float feetToPivot;
+        float halfWidth;
+        if (box != null)
+        {
+            feetToPivot = (box.size.y * 0.5f - box.offset.y) * Mathf.Abs(lossy.y);
+            halfWidth = (box.size.x * 0.5f) * Mathf.Abs(lossy.x);
+        }
+        else
+        {
+            feetToPivot = 1.3f;
+            halfWidth = 0.4f;
+        }
+
+        // Clamp X inside the platform surface with a small horizontal skin.
+        const float horizontalSkin = 0.08f;
+        float minX = pb.min.x + halfWidth + horizontalSkin;
+        float maxX = pb.max.x - halfWidth - horizontalSkin;
+
+        float preferredX = warrior.LastSafePosition != Vector3.zero
+            ? warrior.LastSafePosition.x
+            : warrior.transform.position.x;
+
+        float safeX = (minX <= maxX)
+            ? Mathf.Clamp(preferredX, minX, maxX)
+            : pb.center.x;
+
+        // safeY is the Warrior PIVOT position; pivot - feetToPivot puts the feet at
+        // pb.max.y + seatOffset, i.e. just above the platform surface.
+        float safeY = pb.max.y + feetToPivot + movingPlatformRespawnSeatOffset;
+
+        return new Vector3(safeX, safeY, warrior.transform.position.z);
     }
 
     private bool TryGetDeathMovingPlatformRespawn(
@@ -1057,37 +2025,157 @@ public class GameMgr : MonoBehaviour, IGame
         return true;
     }
 
+    private bool TryGetDeathMovingHorizontalPlatformRespawn(
+        Warrior warrior,
+        out Vector3 respawnPosition,
+        out MovingHorizontalPlatform respawnPlatform)
+    {
+        respawnPosition = default;
+        respawnPlatform = null;
+
+        if (!_deathWasOnMovingHorizontalPlatform)
+            return false;
+
+        if (warrior == null)
+            return false;
+
+        MovingHorizontalPlatform platform = _deathMovingHorizontalPlatform;
+
+        if (platform == null)
+            platform = FindMovingHorizontalPlatformByRespawnId(_deathMovingHorizontalPlatformId);
+
+        if (platform == null || platform.platformCollider == null)
+            return false;
+
+        Physics2D.SyncTransforms();
+
+        respawnPosition = BuildSurfaceRespawnOnMovingHorizontalPlatform(platform, warrior);
+        respawnPlatform = platform;
+        return true;
+    }
+
+    private bool TryGetDeathRotatingPlatformRespawn(
+        Warrior warrior,
+        out Vector3 respawnPosition,
+        out RotatingPlatform respawnPlatform)
+    {
+        respawnPosition = default;
+        respawnPlatform = null;
+
+        if (!_deathWasOnRotatingPlatform)
+            return false;
+
+        if (warrior == null || warrior.collider2 == null)
+            return false;
+
+        RotatingPlatform platform = _deathRotatingPlatform;
+
+        if (platform == null)
+            platform = FindRotatingPlatformByRespawnId(_deathRotatingPlatformId);
+
+        if (platform == null || platform.platformCollider == null)
+            return false;
+
+        Physics2D.SyncTransforms();
+
+        respawnPosition = BuildSurfaceRespawnOnRotatingPlatform(platform, warrior);
+        respawnPlatform = platform;
+        return true;
+    }
+
     private void ApplyRespawnToWarrior(
         Warrior warrior,
         Vector3 respawnPosition,
         PlatFormColliderTrigger platform = null)
     {
-        if (warrior == null) return;
+        if (warrior == null)
+            return;
+
+        // A respawn / checkpoint / forced-retry teleport can target a position inside a zone that is
+        // currently culled (off-camera), whose platform colliders are disabled. Bring that zone back
+        // to life BEFORE seating the Warrior, otherwise he lands on a disabled collider and drops
+        // through it. The regular cull pass keeps the zone active afterwards while he stands in it.
+        ZoneCullingManager.Instance?.EnsureZoneActiveAt(respawnPosition);
+
+        // Never parent the Warrior to a moving platform here.
+        // MovingVerticalPlatform carries riders with its own delta/rider system.
+        if (warrior.transform.parent != _initialSpawnParent)
+            warrior.transform.SetParent(_initialSpawnParent, worldPositionStays: true);
+
+        if (platform is MovingVerticalPlatform movingVerticalPlatform)
+        {
+            float preferredX = respawnPosition.x;
+            movingVerticalPlatform.RespawnRiderOnLift(warrior, preferredX);
+            return;
+        }
+
+        if (platform is MovingHorizontalPlatform movingHorizontalPlatform)
+        {
+            float preferredX = respawnPosition.x;
+            movingHorizontalPlatform.RespawnRiderOnLift(warrior, preferredX);
+            return;
+        }
+
+        if (platform is RotatingPlatform rotatingPlatform)
+        {
+            float preferredX = respawnPosition.x;
+            rotatingPlatform.RespawnRiderOnLift(warrior, preferredX);
+            return;
+        }
+
+        RestoreCollisionBetweenWarriorAndPlatform(warrior, platform);
 
         if (warrior.rigidbody2 != null)
         {
             warrior.rigidbody2.simulated = true;
             warrior.rigidbody2.linearVelocity = Vector2.zero;
             warrior.rigidbody2.angularVelocity = 0f;
-            warrior.rigidbody2.position = respawnPosition;
+            warrior.rigidbody2.constraints = RigidbodyConstraints2D.FreezeRotation;
+            warrior.rigidbody2.position = new Vector2(respawnPosition.x, respawnPosition.y);
+            warrior.rigidbody2.WakeUp();
         }
 
         warrior.transform.position = respawnPosition;
 
         warrior.CurrentplatForm = platform;
+
         if (platform != null)
-        {
             warrior.LastSafePlatform = platform;
-            warrior.transform.SetParent(platform.transform);
-        }
 
         warrior.LastSafePosition = respawnPosition;
         warrior.IsFallingPlfExit = false;
         warrior.IsFallingGrazesEdge = false;
         warrior.IsFallingEdge = false;
         warrior.IsFallingHitEnemy = false;
+        warrior.CanMove = true;
+        warrior.CanAttackWarrior = true;
+        warrior._blockAction = false;
+
+        warrior.StopJumpTowardCoroutine();
+        warrior.StopMoveTowardCoroutine();
+        warrior.WaitAnimationDisplay();
 
         Physics2D.SyncTransforms();
+    }
+
+    private void RestoreCollisionBetweenWarriorAndPlatform(
+        Warrior warrior,
+        PlatFormColliderTrigger platform)
+    {
+        if (warrior == null || platform == null || platform.platformCollider == null)
+            return;
+
+        Collider2D[] warriorColliders = warrior.GetComponentsInChildren<Collider2D>(true);
+
+        for (int i = 0; i < warriorColliders.Length; i++)
+        {
+            Collider2D col = warriorColliders[i];
+
+            if (col == null || col.isTrigger)
+                continue;
+
+            Physics2D.IgnoreCollision(platform.platformCollider, col, false);
+        }
     }
 
     private void TryApplyPendingReviveMovingPlatformRespawn(Warrior warrior)
@@ -1103,6 +2191,8 @@ public class GameMgr : MonoBehaviour, IGame
 
         if (platform != null && platform.platformCollider != null)
         {
+            // RegisterHero can run when the Warrior is already alive after a scene load.
+            // We do not call TryRevive() here; we only seat/register him on the moving lift.
             Vector3 respawnPosition = BuildSurfaceRespawnOnMovingPlatform(platform, warrior);
             ApplyRespawnToWarrior(warrior, respawnPosition, platform);
         }
@@ -1111,33 +2201,238 @@ public class GameMgr : MonoBehaviour, IGame
         _pendingReviveMovingPlatformId = null;
     }
 
-    // -------------------------
-    // Campaign progression
-    // -------------------------
+    // Clears only the per-scene-instance checkpoint references (the Transform + version + the
+    // armed pending flag). Does NOT touch the persisted save point, so a later Continue can still
+    // resume there. Used whenever a level scene is (re)launched from the menu.
+    private void ResetTransientCheckpoint()
+    {
+        currentCheckpoint = null;
+        _checkpointVersion = 0;
+        _pendingCheckpointRespawn = false;
+        _suppressCheckpointRespawnOnce = false;
+    }
+
+    // Fully wipes the checkpoint save point, in memory and on disk. Used when starting a brand
+    // new game and when a level is completed (its checkpoint must no longer be the resume point).
+    private void ClearSavedCheckpoint()
+    {
+        ResetTransientCheckpoint();
+
+        _checkpointPosition = Vector3.zero;
+        _checkpointSceneName = null;
+        _hasCheckpointPosition = false;
+
+        PlayerPrefs.DeleteKey(CheckpointHasKey);
+        PlayerPrefs.DeleteKey(CheckpointSceneKey);
+        PlayerPrefs.DeleteKey(CheckpointXKey);
+        PlayerPrefs.DeleteKey(CheckpointYKey);
+        PlayerPrefs.DeleteKey(CheckpointZKey);
+        PlayerPrefs.Save();
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Development helpers: wipe the persisted checkpoint save so a level starts fresh.
+    // ----------------------------------------------------------------------------------
+
+    // Right-click the GameManager component in the Inspector (works during a Play session).
+    [ContextMenu("Dev/Reset Saved Checkpoint")]
+    private void DevResetSavedCheckpointContext()
+    {
+        ClearSavedCheckpoint();
+        Debug.Log("[GameMgr] DEV: Saved checkpoint reset (in-memory + PlayerPrefs).");
+    }
+
+    // Static entry point usable from an Editor menu item even when no GameMgr exists yet
+    // (e.g. outside Play mode). Deletes the on-disk keys and, if a live instance is running,
+    // also clears its in-memory checkpoint state.
+    public static void DevResetSavedCheckpoint()
+    {
+        if (Instance != null)
+        {
+            Instance.ClearSavedCheckpoint();
+        }
+        else
+        {
+            PlayerPrefs.DeleteKey(CheckpointHasKey);
+            PlayerPrefs.DeleteKey(CheckpointSceneKey);
+            PlayerPrefs.DeleteKey(CheckpointXKey);
+            PlayerPrefs.DeleteKey(CheckpointYKey);
+            PlayerPrefs.DeleteKey(CheckpointZKey);
+            PlayerPrefs.Save();
+        }
+
+        Debug.Log("[GameMgr] DEV: Saved checkpoint reset.");
+    }
+
+    private void SaveCheckpointToDisk()
+    {
+        PlayerPrefs.SetInt(CheckpointHasKey, _hasCheckpointPosition ? 1 : 0);
+
+        if (_hasCheckpointPosition)
+        {
+            PlayerPrefs.SetString(CheckpointSceneKey, _checkpointSceneName ?? string.Empty);
+            PlayerPrefs.SetFloat(CheckpointXKey, _checkpointPosition.x);
+            PlayerPrefs.SetFloat(CheckpointYKey, _checkpointPosition.y);
+            PlayerPrefs.SetFloat(CheckpointZKey, _checkpointPosition.z);
+        }
+
+        PlayerPrefs.Save();
+    }
+
+    private void LoadCheckpointFromDisk()
+    {
+        _hasCheckpointPosition = PlayerPrefs.GetInt(CheckpointHasKey, 0) == 1;
+
+        if (!_hasCheckpointPosition)
+        {
+            _checkpointSceneName = null;
+            _checkpointPosition = Vector3.zero;
+            return;
+        }
+
+        _checkpointSceneName = PlayerPrefs.GetString(CheckpointSceneKey, string.Empty);
+
+        float x = PlayerPrefs.GetFloat(CheckpointXKey, 0f);
+        float y = PlayerPrefs.GetFloat(CheckpointYKey, 0f);
+        float z = PlayerPrefs.GetFloat(CheckpointZKey, 0f);
+        _checkpointPosition = new Vector3(x, y, z);
+
+        // A saved checkpoint is only usable if it names a known campaign scene.
+        if (string.IsNullOrWhiteSpace(_checkpointSceneName) ||
+            GetCampaignSceneIndex(_checkpointSceneName) < 0)
+        {
+            _hasCheckpointPosition = false;
+            _checkpointSceneName = null;
+            _checkpointPosition = Vector3.zero;
+            return;
+        }
+
+        Debug.Log($"[GameMgr] Loaded checkpoint save: '{_checkpointSceneName}' at {_checkpointPosition}");
+    }
+
+    // True when we hold a saved checkpoint that belongs to the currently active scene.
+    private bool HasCheckpointForActiveScene()
+    {
+        return _hasCheckpointPosition &&
+               !string.IsNullOrWhiteSpace(_checkpointSceneName) &&
+               _checkpointSceneName == SceneManager.GetActiveScene().name;
+    }
+
+    private void TryApplyPendingCheckpointRespawn(Warrior warrior)
+    {
+        // A fresh start (New Game / Level Select) was requested: ignore the saved checkpoint
+        // exactly once so the level begins at its default spawn.
+        if (_suppressCheckpointRespawnOnce)
+        {
+            _suppressCheckpointRespawnOnce = false;
+            _pendingCheckpointRespawn = false;
+            Debug.Log("[GameMgr] Checkpoint respawn suppressed for this launch (fresh start).");
+            return;
+        }
+
+        // Apply whenever we hold a saved checkpoint for the scene we just entered. This covers
+        // every entry path: Revive reload, Continue from the menu, AND launching directly into
+        // the level. The explicit _pendingCheckpointRespawn flag is kept as a fast-path signal.
+        bool shouldApply = _pendingCheckpointRespawn || HasCheckpointForActiveScene();
+
+        Debug.Log($"[GameMgr] Checkpoint respawn check: pending={_pendingCheckpointRespawn}, " +
+                  $"hasCheckpoint={_hasCheckpointPosition}, savedScene='{_checkpointSceneName}', " +
+                  $"activeScene='{SceneManager.GetActiveScene().name}', shouldApply={shouldApply}");
+
+        _pendingCheckpointRespawn = false;
+
+        if (!shouldApply)
+            return;
+
+        if (warrior == null || !_hasCheckpointPosition)
+        {
+            Debug.Log($"[GameMgr] Checkpoint respawn skipped (warrior null={warrior == null}, hasCheckpoint={_hasCheckpointPosition}).");
+            return;
+        }
+
+        // Only seat at the checkpoint if it belongs to the scene we actually loaded.
+        if (SceneManager.GetActiveScene().name != _checkpointSceneName)
+        {
+            Debug.Log($"[GameMgr] Checkpoint respawn skipped: saved scene '{_checkpointSceneName}' != active scene '{SceneManager.GetActiveScene().name}'.");
+            return;
+        }
+
+        // Re-seat the freshly spawned warrior at the last reached checkpoint.
+        // ApplyRespawnToWarrior resets falling/movement flags and syncs physics so the
+        // warrior is in a clean, playable state at the checkpoint position.
+        ApplyRespawnToWarrior(warrior, _checkpointPosition, null);
+
+        // Keep the in-scene checkpoint reference consistent with where we spawned.
+        currentCheckpoint = null;
+
+        Debug.Log($"[GameMgr] Respawned at saved checkpoint {_checkpointPosition} in '{_checkpointSceneName}'");
+    }
 
     private void NormalizeCampaignSceneOrder()
     {
         if (campaignSceneOrder == null)
             campaignSceneOrder = new List<string>();
 
+        var seen = new HashSet<string>();
+
         for (int i = campaignSceneOrder.Count - 1; i >= 0; i--)
         {
-            if (string.IsNullOrWhiteSpace(campaignSceneOrder[i]))
+            string sceneName = campaignSceneOrder[i];
+
+            if (string.IsNullOrWhiteSpace(sceneName))
+            {
+                campaignSceneOrder.RemoveAt(i);
+                continue;
+            }
+
+            sceneName = sceneName.Trim();
+            campaignSceneOrder[i] = sceneName;
+
+            if (!seen.Add(sceneName))
                 campaignSceneOrder.RemoveAt(i);
         }
 
-        if (!campaignSceneOrder.Contains(warriorSceneName))
-            campaignSceneOrder.Insert(0, warriorSceneName);
+        EnsureCampaignSceneFirst(warriorSceneName);
+        EnsureCampaignSceneAfter(level2SceneName, warriorSceneName);
+        EnsureCampaignSceneAfter(level3SceneName, level2SceneName);
+        EnsureCampaignSceneAfter(level4SceneName, level3SceneName);
 
-        if (!string.IsNullOrWhiteSpace(level2SceneName) && !campaignSceneOrder.Contains(level2SceneName))
-            campaignSceneOrder.Add(level2SceneName);
+        // The web demo ships the demo chapters only (the other scenes are not even in the build).
+        if (WebDemo.IsBuild && campaignSceneOrder.Count > WebDemo.DemoChapterCount)
+            campaignSceneOrder.RemoveRange(WebDemo.DemoChapterCount,
+                campaignSceneOrder.Count - WebDemo.DemoChapterCount);
+    }
 
-        int warriorIndex = campaignSceneOrder.IndexOf(warriorSceneName);
-        if (warriorIndex > 0)
+    private void EnsureCampaignSceneFirst(string sceneName)
+    {
+        if (string.IsNullOrWhiteSpace(sceneName))
+            return;
+
+        sceneName = sceneName.Trim();
+        campaignSceneOrder.RemoveAll(s => s == sceneName);
+        campaignSceneOrder.Insert(0, sceneName);
+    }
+
+    private void EnsureCampaignSceneAfter(string sceneName, string previousSceneName)
+    {
+        if (string.IsNullOrWhiteSpace(sceneName))
+            return;
+
+        sceneName = sceneName.Trim();
+        campaignSceneOrder.RemoveAll(s => s == sceneName);
+
+        int insertIndex = campaignSceneOrder.Count;
+
+        if (!string.IsNullOrWhiteSpace(previousSceneName))
         {
-            campaignSceneOrder.RemoveAt(warriorIndex);
-            campaignSceneOrder.Insert(0, warriorSceneName);
+            previousSceneName = previousSceneName.Trim();
+            int previousIndex = campaignSceneOrder.IndexOf(previousSceneName);
+            if (previousIndex >= 0)
+                insertIndex = previousIndex + 1;
         }
+
+        insertIndex = Mathf.Clamp(insertIndex, 0, campaignSceneOrder.Count);
+        campaignSceneOrder.Insert(insertIndex, sceneName);
     }
 
     private void LoadProgression()
@@ -1147,14 +2442,30 @@ public class GameMgr : MonoBehaviour, IGame
 
         level2Unlocked = purchased == 1 || legacyUnlocked == 1;
 
-        int defaultReachedIndex = level2Unlocked ? 1 : 0;
+        // L'achat ouvre le chapitre 1 immediatement.
+        //
+        // Ce plancher avait ete retire parce que la demo etait le seul endroit ou la relique memoire
+        // etait accordee: un acheteur qui la sautait restait coince plus loin. Cette raison n'existe
+        // plus, ProgressionRelicGrant donne la relique manquante a l'entree de tout chapitre. Rendre
+        // le plancher est donc ce qui fait tenir la promesse "l'achat debloque tout le jeu".
+        int defaultReachedIndex = purchased == 1 ? 1 : 0;
         int maxIndex = Mathf.Max(0, campaignSceneOrder.Count - 1);
 
         _highestReachedSceneIndex = PlayerPrefs.GetInt(HighestReachedSceneIndexKey, defaultReachedIndex);
+
+        // Le defaut ci-dessus ne couvre que les saves neuves. Une save existante porte deja un 0
+        // ecrit du temps de l'ancienne regle, il faut donc relever aussi les valeurs deja stockees.
+        if (purchased == 1)
+            _highestReachedSceneIndex = Mathf.Max(_highestReachedSceneIndex, 1);
+
         _highestReachedSceneIndex = Mathf.Clamp(_highestReachedSceneIndex, 0, maxIndex);
 
-        if (level2Unlocked)
-            _highestReachedSceneIndex = Mathf.Max(_highestReachedSceneIndex, Mathf.Min(1, maxIndex));
+        // Continue reste sur la demo tant que rien n'a ete joue, acheteur compris: le plancher
+        // ci-dessus ouvre le CHOIX du chapitre 1, il ne doit pas faire sauter l'entree en matiere a
+        // quelqu'un qui appuie simplement sur Continuer. La valeur est posee explicitement a chaque
+        // fin de niveau.
+        _continueSceneIndex = PlayerPrefs.GetInt(ContinueSceneIndexKey, 0);
+        _continueSceneIndex = Mathf.Clamp(_continueSceneIndex, 0, maxIndex);
     }
 
     private void SaveProgression()
@@ -1162,6 +2473,7 @@ public class GameMgr : MonoBehaviour, IGame
         PlayerPrefs.SetInt(CampaignPurchasedKey, level2Unlocked ? 1 : 0);
         PlayerPrefs.SetInt(LegacyLevel2UnlockedKey, level2Unlocked ? 1 : 0);
         PlayerPrefs.SetInt(HighestReachedSceneIndexKey, _highestReachedSceneIndex);
+        PlayerPrefs.SetInt(ContinueSceneIndexKey, _continueSceneIndex);
         PlayerPrefs.Save();
     }
 
@@ -1178,6 +2490,19 @@ public class GameMgr : MonoBehaviour, IGame
         SaveProgression();
 
         Debug.Log($"[GameMgr] Highest reached scene index saved: {_highestReachedSceneIndex} ({campaignSceneOrder[_highestReachedSceneIndex]})");
+    }
+
+    // Records where "Continue" should resume next. Set to the successor of a level on completion.
+    private void SetContinueScene(int sceneIndex)
+    {
+        int clamped = Mathf.Clamp(sceneIndex, 0, Mathf.Max(0, campaignSceneOrder.Count - 1));
+        if (clamped == _continueSceneIndex)
+            return;
+
+        _continueSceneIndex = clamped;
+        SaveProgression();
+
+        Debug.Log($"[GameMgr] Continue target set: {_continueSceneIndex} ({campaignSceneOrder[_continueSceneIndex]})");
     }
 
     private int GetCampaignSceneIndex(string sceneName)
@@ -1219,13 +2544,35 @@ public class GameMgr : MonoBehaviour, IGame
         if (campaignSceneOrder == null || campaignSceneOrder.Count == 0)
             return warriorSceneName;
 
-        int sceneIndex = Mathf.Clamp(_highestReachedSceneIndex, 0, campaignSceneOrder.Count - 1);
+        // A saved checkpoint is the most precise resume point: continue in its level.
+        if (_hasCheckpointPosition &&
+            !string.IsNullOrWhiteSpace(_checkpointSceneName) &&
+            GetCampaignSceneIndex(_checkpointSceneName) >= 0)
+            return _checkpointSceneName;
+
+        // Resume at the level following the most recently completed one (NOT the furthest level ever
+        // reached) so that replaying an earlier level still advances to its correct successor.
+        int sceneIndex = Mathf.Clamp(_continueSceneIndex, 0, campaignSceneOrder.Count - 1);
         return campaignSceneOrder[sceneIndex];
     }
 
     public string GetContinueSceneDisplayName()
     {
         return NicifySceneName(GetContinueSceneName());
+    }
+
+    /// <summary>
+    /// Display name of a campaign scene, for the chapter picker. Returns empty for an index outside
+    /// the campaign so the caller can simply skip it rather than special-case the count.
+    /// </summary>
+    public string GetCampaignSceneDisplayName(int sceneIndex)
+    {
+        NormalizeCampaignSceneOrder();
+
+        if (sceneIndex < 0 || sceneIndex >= campaignSceneOrder.Count)
+            return string.Empty;
+
+        return NicifySceneName(campaignSceneOrder[sceneIndex]);
     }
 
     public bool IsSceneUnlockedForMenu(int sceneIndex)

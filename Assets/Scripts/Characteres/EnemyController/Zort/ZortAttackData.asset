@@ -1,0 +1,78 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 20a01b194c0c81948ae19bac8e700b75, type: 3}
+  m_Name: ZortAttackData
+  m_EditorClassIdentifier: 
+  warriorHitStun: 0.12
+  warriorHitKnockback: 4
+  projectileObstacleMask:
+    serializedVersion: 2
+    m_Bits: 0
+  projectileLifetime: 4
+  crescentPrefab: {fileID: 4416080445347060711, guid: 0a6aa35eeb2241a43befc4ccae423907, type: 3}
+  crescentCharge: {fileID: 8300000, guid: 415bb4a8aeae8064fb18d3f02a50069e, type: 3}
+  crescentFire: {fileID: 0}
+  crescentTelegraphDuration: 1.2
+  crescentSpeed: 10
+  twinCrescentDelay: 0.35
+  crescentDamage: 12
+  teleportVfxPrefab: {fileID: 6441873369525384307, guid: 0f3d407feb92ebb49b98d0157de5008a, type: 3}
+  teleportOut: {fileID: 8300000, guid: 9a73ee9cad0b9f4418ef7435e0d296df, type: 3}
+  teleportIn: {fileID: 0}
+  meleeHit: {fileID: 0}
+  shadowStepDamage: 14
+  wraithPrefab: {fileID: 0}
+  wraithHealthPickupPrefab: {fileID: 0}
+  summonCharge: {fileID: 0}
+  riftProjectilePrefab: {fileID: 2060418090655630911, guid: 4fb7673fa1cb7e34ea16f350b1e1fba9, type: 3}
+  barrageCharge: {fileID: 8300000, guid: fc31cad219a7a6d40a5338a90ea2a6d5, type: 3}
+  barrageTelegraphDuration: 0.8
+  barrageProjectileSpeed: 9
+  riftDamage: 10
+  slashEarthVfxPrefab: {fileID: 2060418090655630911, guid: 4fb7673fa1cb7e34ea16f350b1e1fba9, type: 3}
+  earthSlashDashSpeed: 8
+  earthSlashMaxDashDistance: 4
+  earthSlashContactRange: 2.2
+  earthSlashSwing1: {fileID: 8300000, guid: 3fde39441b2e37e41aad036a6d3bd1e8, type: 3}
+  earthSlashSwing2: {fileID: 8300000, guid: de53f9de3c17d5c40ac157cd88f4a78a, type: 3}
+  earthSlashSwing3: {fileID: 8300000, guid: d9ab8bf6d74bb7b46857f967dcfa26aa, type: 3}
+  earthSlashImpact: {fileID: 8300000, guid: 978e6a0e79abe9f4facfcae8bb1a012f, type: 3}
+  gravityWellFxPrefab: {fileID: 6441873369525384307, guid: 0f3d407feb92ebb49b98d0157de5008a, type: 3}
+  gravityWellStart: {fileID: 0}
+  gravityWellEnd: {fileID: 0}
+  gravityWellDuration: 5
+  gravityPullForce: 18
+  gravityWellCancelPercent: 0.08
+  diveShockwavePrefab: {fileID: 9080140021571130472, guid: 82066d902ed0dd6488ddfd32eb994801, type: 3}
+  diveAscend: {fileID: 0}
+  diveLand: {fileID: 0}
+  diveDamage: 18
+  diveShockwaveRadius: 2.6
+  voidBeamPrefab: {fileID: 6629768150807275029, guid: 484f87968a460f1408912e7cf1e19e7e, type: 3}
+  stareCharge: {fileID: 0}
+  beamDamage: 12
+  beamTickInterval: 0.4
+  beamDuration: 5
+  beamMaxLength: 12
+  beamTurnSpeed: 110
+  beamWidthFar: 0.45
+  beamWidthNear: 0.9
+  novaPrefab: {fileID: 9080140021571130472, guid: 82066d902ed0dd6488ddfd32eb994801, type: 3}
+  novaCharge: {fileID: 0}
+  novaFire: {fileID: 0}
+  novaChargeDuration: 1.5
+  novaRadius: 8
+  novaDamage: 20
+  transitionNovaPrefab: {fileID: 8464950693656172981, guid: 83ad694f134ab954580473212156b35a, type: 3}
+  genericImpactFxPrefab: {fileID: 3077343761403282166, guid: f78aaaec3b393e24ca74cd6de8194347, type: 3}
+  phaseTransition: {fileID: 0}
+  deathSound: {fileID: 0}

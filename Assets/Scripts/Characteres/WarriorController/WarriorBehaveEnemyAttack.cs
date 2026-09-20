@@ -107,12 +107,25 @@ public class WarriorBehaveEnemyAttack : MonoBehaviour, ICollisionHandler
             if (Time.time - w.LastJumpStartTime <= 0.20f)
                 _jumpStartedDuringSqueeze = true;
 
-            // confirm airborne happened (prevents “edge fall” counting as jump escape)
+            // confirm airborne happened (prevents ï¿½edge fallï¿½ counting as jump escape)
             if (w.CountGroundPoints() == 0)
                 _airborneDuringSqueeze = true;
 
-            // give player time to escape
-            if (Time.time - _squeezeStartTime < squeezeKillDelay)
+            // Sursis: le joueur a ce temps-la pour placer un saut. Le sursis seul ne suffisait
+            // pas â€” coince entre deux corps le Warrior perd ses points de sol, donc les deux
+            // chemins de saut refusaient l'action et le joueur appuyait dans le vide. La fenetre
+            // deverrouille l'action et fait traverser les corps au saut qui part.
+            float secondsLeft = squeezeKillDelay - (Time.time - _squeezeStartTime);
+
+            if (secondsLeft > 0f)
+            {
+                w.BeginOrRefreshSqueezeEscapeWindow(secondsLeft, enemies);
+                return;
+            }
+
+            // Un saut d'echappement est engage: on ne tue pas pendant qu'il s'extrait, sinon le
+            // sursis n'aurait servi a rien.
+            if (w.IsEscapingSqueezeByJump)
                 return;
 
             // after delay, still squeezed => kill (your existing kill logic)
@@ -150,10 +163,6 @@ public class WarriorBehaveEnemyAttack : MonoBehaviour, ICollisionHandler
                 return; // IMPORTANT: never kill while shield up
             }
 
-            // Give time to escape (jump or sprint through)
-            if (Time.time - _squeezeStartTime < squeezeKillDelay)
-                return;
-
             // If still squeezed after delay => kill
             warriorKilled = true;
 
@@ -171,6 +180,8 @@ public class WarriorBehaveEnemyAttack : MonoBehaviour, ICollisionHandler
         if (_squeezeActive && !squeezed)
         {
             _squeezeActive = false;
+
+            w.EndSqueezeEscapeWindow();
 
             float squeezedSeconds = Time.time - _squeezeStartTime;
             Vector2 nowPos = (Vector2)w.collider2.bounds.center;
@@ -235,7 +246,9 @@ public class WarriorBehaveEnemyAttack : MonoBehaviour, ICollisionHandler
 
 
     [Header("Squeeze Escape Scoring")]
-    [SerializeField] private float squeezeKillDelay = 0.35f;   // gives a chance to escape
+    // Sursis avant la mort par ecrasement. 1 s = le temps de voir la prise et de placer un saut;
+    // 0,35 s ne laissait pas le temps d'appuyer, et le saut etait de toute facon refuse.
+    [SerializeField] private float squeezeKillDelay = 1f;      // gives a chance to escape
     [SerializeField] private float minEscapeDistance = 1.0f;   // must actually move out
 
     private bool _squeezeActive;

@@ -1,4 +1,5 @@
 ﻿using Assets.Scripts.Scoring;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -17,6 +18,7 @@ namespace Assets.Scripts.UI
         [SerializeField] private float screenPadding = 24f;
 
         private RectTransform _canvasRt;
+        private bool _bound;
 
         private void Awake()
         {
@@ -30,22 +32,44 @@ namespace Assets.Scripts.UI
             // Rebind again in case object persisted across scenes
             RebindReferences();
 
-            if (ScoreManager.Instance != null)
+            // ScoreManager.Instance may not exist yet when this scene is played in isolation
+            // (init order between _APP and _GameTools is not guaranteed). The old one-shot
+            // "if (Instance != null) subscribe" silently failed in that case → no popups at all
+            // while the score still rose. Wait for the singleton like TotalScoreText does.
+            StartCoroutine(BindWhenReady());
+        }
+
+        private IEnumerator BindWhenReady()
+        {
+            while (ScoreManager.Instance == null)
+                yield return null;
+
+            if (!_bound)
+            {
                 ScoreManager.Instance.OnPointsAdded += HandlePointsAdded;
+                _bound = true;
+            }
         }
 
         private void OnDisable()
         {
             SceneManager.sceneLoaded -= OnSceneLoaded;
 
-            if (ScoreManager.Instance != null)
+            if (_bound && ScoreManager.Instance != null)
                 ScoreManager.Instance.OnPointsAdded -= HandlePointsAdded;
+
+            _bound = false;
         }
 
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
             // Camera.main / canvas may be different after reload
             RebindReferences();
+
+            // Defensive: if we never managed to bind (spawner enabled before ScoreManager
+            // existed), retry now that another scene — and its managers — are up.
+            if (!_bound)
+                StartCoroutine(BindWhenReady());
         }
 
         private void RebindReferences()
@@ -70,6 +94,19 @@ namespace Assets.Scripts.UI
         private void HandlePointsAdded(int added, int total, string label, Vector2 worldPos)
         {
             if (added <= 0) return;
+            SpawnPopup(popup => popup.Init(added, label), worldPos);
+        }
+
+        /// <summary>Reuse the score-popup motion for arbitrary text at a world position
+        /// (e.g. the obligatory "RETRY +1" feedback). Public so RetryRewardManager can call it
+        /// without duplicating the world→canvas placement logic.</summary>
+        public void SpawnTextAt(string text, Vector2 worldPos)
+        {
+            SpawnPopup(popup => popup.InitText(text), worldPos);
+        }
+
+        private void SpawnPopup(System.Action<SpectaclePopup> initialize, Vector2 worldPos)
+        {
             if (popupPrefab == null) return;
 
             // Rebind lazily too (important after respawn/reload order changes)
@@ -128,7 +165,7 @@ namespace Assets.Scripts.UI
                 rt.localScale = Vector3.one; // defensive reset
             }
 
-            popup.Init(added, label); // show delta, not total
+            initialize(popup); // score delta or custom text, set by the caller
         }
     }
 }

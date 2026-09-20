@@ -1,0 +1,36 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "youtube-webgl",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "C:/Users/yannk/AppData/Local/Temp/claude/C--Users-yannk-Documents-Galactic-Warrior/7dbe69ac-991b-40f7-81a1-37402d7c3b0a/scratchpad/serve.py",
+        "C:/Users/yannk/Documents/Galactic-Warrior/BuildWeb/GalacticWarrior-YouTube",
+        "8766"
+      ],
+      "port": 8766
+    },
+    {
+      "name": "youtube-webgl-4g",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "C:/Users/yannk/AppData/Local/Temp/claude/C--Users-yannk-Documents-Galactic-Warrior/7dbe69ac-991b-40f7-81a1-37402d7c3b0a/scratchpad/serve.py",
+        "C:/Users/yannk/Documents/Galactic-Warrior/BuildWeb/GalacticWarrior-YouTube",
+        "8767",
+        "9000"
+      ],
+      "port": 8767
+    },
+    {
+      "name": "polymart-www",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "C:/Users/yannk/AppData/Local/Temp/claude/C--Users-yannk-Documents-Galactic-Warrior/7dbe69ac-991b-40f7-81a1-37402d7c3b0a/scratchpad/serve_www.py",
+        "C:/Users/yannk/Documents/www",
+        "8768"
+      ],
+      "port": 8768
+    }
+  ]
+}

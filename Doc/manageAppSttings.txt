@@ -1,0 +1,30 @@
+Pour tester
+
+Tue n'importe quel boss maintenant, la liste est vide. Si tu enchaînes deux fois le même boss, la seconde fois ne montrera rien, c'est le comportement voulu. Pour rejouer, Tools > Galactic Warrior > Reset Boss Relics.
+
+Un détail d'implémentation
+
+
+
+J'ai élargi quatre membres d'AndroidDeployToUser0 de private à internal, plutôt que de dupliquer la logique adb. Le nom du paquet, la recherche d'adb, la détection d'appareil et le lanceur de commandes sont maintenant partagés entre les deux outils.
+
+Si tu veux le chemin propre sur téléphone, déploie une fois avec Build APK + Deploy to User 0, en cochant Development Build. Le menu retirera alors la seule clé des reliques sans rien effacer d'autre.
+
+
+Réglages
+
+Tout est dans SO_BossBattleMusic.asset: les deux pistes, l'intervalle de test, et une marge de visibilité pour Zort. Elle vaut -0,5 unité, donc il doit entrer un peu dans l'écran avant que son hymne parte. Mets une valeur positive pour déclencher plus tôt.
+
+
+
+Le réglage
+
+Tout est dans SO_BossFinisher.asset, même principe que la table de coups. Tu peux aussi y déposer un prefab de VFX et un son, un pour l'entrée en phase finale et un pour le coup fatal. Les deux champs sont vides pour l'instant, le système fonctionne sans.
+
+Un point à surveiller. Le seuil de 25 % ne représente pas le même nombre de coups selon le boss, puisque les dégâts diffèrent.
+
+Boss	Coups couverts par le plan
+Hashagar	13
+Raka	7
+Hivernox	3
+Zort	3

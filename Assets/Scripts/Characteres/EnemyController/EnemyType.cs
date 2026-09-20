@@ -8,4 +8,9 @@
     P39,
     Raka,
     BeeEretic,
+    Morvex,
+    Hivernox,
+    Arachnee,
+    Zort,
+    Wraith
 }

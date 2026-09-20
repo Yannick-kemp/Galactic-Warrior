@@ -8,7 +8,7 @@ namespace Assets.Scripts.Scoring
     public class SpectacularActionScorer : MonoBehaviour
     {
         [Header("Points")]
-        [SerializeField] private int cleanTransferPoints = 25;
+        [SerializeField] private int cleanTransferPoints = 5;
         [SerializeField] private int crowdHitPoints = 20;
         [SerializeField] private int crowdHitExtraPerEnemy = 8;
 

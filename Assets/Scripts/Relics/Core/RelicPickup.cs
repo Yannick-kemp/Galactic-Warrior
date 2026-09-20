@@ -37,25 +37,41 @@ public class RelicPickup : MonoBehaviour
     }
     private void OnEnable()
     {
-        _armed = false;
         _consumed = false;
         CancelInvoke(nameof(Arm));
-        //  Invoke(nameof(Arm), armDelay);
+
+        // Arm on EVERY activation. Start() runs at most once, so relying on it left the pickup
+        // permanently disarmed after a zone SetActive cycle (zone culling) re-ran OnEnable without
+        // re-running Start. Arming here makes the pickup robust to any activation/deactivation.
+        _armed = true;
     }
 
     private void Arm() => _armed = true;
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        //if (_pickupFrame == Time.frameCount)
-        //    return;
-
-        //_pickupFrame = Time.frameCount;
-        if (!_armed || _consumed) return;
+        if (!_armed || _consumed) 
+            return;
         if (other.gameObject.layer != _hitBoxLayer) return;
 
         var warrior = other.GetComponentInParent<Warrior>();
-        if (!warrior) return;
+        if (!warrior) 
+            return;
+
+        Collect(warrior);
+    }
+
+    /// <summary>
+    /// Collects this scene relic into <paramref name="by"/>'s RelicManager (counter increment +
+    /// HUD + SFX via RelicCollectedEvent) and plays the pickup VFX, exactly like the Warrior
+    /// walk-over pickup. Reusable entry point: also called when a WarriorProjectile (ice bullet)
+    /// hits the relic. Does NOT arm or activate the relic -- that stays driven by the player's
+    /// click. Idempotent: returns false if already consumed (anti double-collect, on top of the
+    /// manager's pickup-instance dedupe).
+    /// </summary>
+    public bool Collect(Warrior by)
+    {
+        if (_consumed || by == null) return false;
 
         // HARD LOCK FIRST
         _consumed = true;
@@ -66,21 +82,17 @@ public class RelicPickup : MonoBehaviour
         // Stop further trigger callbacks immediately
         if (_cols != null)
             for (int i = 0; i < _cols.Length; i++)
-                _cols[i].enabled = false;
+                if (_cols[i] != null) _cols[i].enabled = false;
 
         if (_rb != null) _rb.simulated = false;
 
-        var rm = warrior.GetComponent<RelicManager>();
+        var rm = by.GetComponent<RelicManager>();
         if (rm != null)
-        {
-            // Best: manager-level dedupe
-            // rm.CollectFromPickup(definition, gameObject.GetInstanceID());
-            //   rm.Collect(definition);
             rm.CollectFromPickup(definition, gameObject.GetInstanceID(), transform.position);
-        }
 
-        SpawnPickupVfx(warrior.transform);
+        SpawnPickupVfx(by.transform);
         Destroy(gameObject);
+        return true;
     }
 
     private void SpawnPickupVfx(Transform warriorTf)

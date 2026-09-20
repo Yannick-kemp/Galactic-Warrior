@@ -14,14 +14,14 @@ public class Character : MonoBehaviour
         rigidbody2 = GetComponent<Rigidbody2D>();
         spriteRenderer = GetComponent<SpriteRenderer>();
     }
-
+    
     public virtual void OnDrawGizmos()
     {
 
         if (collider2 == null) return;
 
         // Set Gizmo color
-        Gizmos.color = Color.green;
+        Gizmos.color = Color.black;
 
         // Get the center and size of the collider in world space
         Vector3 colliderCenter = transform.position + (Vector3)collider2.offset;

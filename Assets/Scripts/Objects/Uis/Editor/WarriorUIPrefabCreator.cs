@@ -43,8 +43,8 @@ public class WarriorUIPrefabCreator
         hudRT.anchorMin = new Vector2(0f, 1f);
         hudRT.anchorMax = new Vector2(0f, 1f);
         hudRT.pivot = new Vector2(0f, 1f);
-        hudRT.anchoredPosition = new Vector2(150f, -20f); // d�cal� pour ne pas chevaucher ta colonne reliques
-        hudRT.sizeDelta = new Vector2(420f, 140f);
+        hudRT.anchoredPosition = new Vector2(150f, -20f); // d�cal� pour ne pas chevaucher ta colonne reliques
+        hudRT.sizeDelta = new Vector2(450f, 140f);         // se termine juste apr�s le bloc Retries (c�ur + x/x)
 
         // Panel
         GameObject panel = NewImage("WarriorPanel", hud.transform, new Color(0f, 0f, 0f, 0.35f));
@@ -108,7 +108,32 @@ public class WarriorUIPrefabCreator
         hpTMP.fontSize = 22;
         hpTMP.color = Color.white;
 
-        // Cooldowns radials (� droite)
+        // Retries (cœur + "x/x") — au bout droit de la barre de vie, sur la même ligne.
+        // Bars : x 120→380 ; HP bar dans le haut du bloc → on s'aligne sur cette ligne (y≈24).
+        GameObject retriesGroup = new GameObject("RetriesGroup", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+        retriesGroup.transform.SetParent(panel.transform, false);
+        var rgRT = retriesGroup.GetComponent<RectTransform>();
+        rgRT.anchorMin = new Vector2(0f, 0.5f);
+        rgRT.anchorMax = new Vector2(0f, 0.5f);
+        rgRT.pivot = new Vector2(0f, 0.5f);
+        rgRT.anchoredPosition = new Vector2(384f, 24f);    // juste après la barre HP, à son niveau
+        rgRT.sizeDelta = new Vector2(62f, 22f);
+
+        var rgHlg = retriesGroup.GetComponent<HorizontalLayoutGroup>();
+        rgHlg.spacing = 4;
+        rgHlg.childAlignment = TextAnchor.MiddleCenter;
+        rgHlg.childForceExpandHeight = false;
+        rgHlg.childForceExpandWidth = false;
+
+        var heartIcon = NewImage("HeartIcon", retriesGroup.transform, new Color(1f, 1f, 1f, 1f));
+        heartIcon.GetComponent<RectTransform>().sizeDelta = new Vector2(24f, 24f);
+        heartIcon.GetComponent<Image>().preserveAspect = true; // sprite cœur à assigner dans l'Inspector
+
+        var retriesTMP = NewTMP("RetriesText", retriesGroup.transform, "3/3", 22);
+        retriesTMP.alignment = TextAlignmentOptions.MidlineLeft;
+        retriesTMP.GetComponent<RectTransform>().sizeDelta = new Vector2(48f, 24f);
+
+        // Cooldowns radials (� droite)
         GameObject cds = new GameObject("Cooldowns", typeof(RectTransform), typeof(HorizontalLayoutGroup));
         cds.transform.SetParent(panel.transform, false);
         var cdsRT = cds.GetComponent<RectTransform>();
@@ -137,6 +162,8 @@ public class WarriorUIPrefabCreator
         AssignPrivateField(hudScript, "hpText", hpTMP);
         AssignPrivateField(hudScript, "sprintCdFill", sprintCd);
         AssignPrivateField(hudScript, "attack2CdFill", atk2Cd);
+        AssignPrivateField(hudScript, "retriesText", retriesTMP);
+        AssignPrivateField(hudScript, "heartIcon", heartIcon.GetComponent<Image>());
 
         // GameOver Overlay
         GameObject overlay = new GameObject("GameOverOverlay", typeof(RectTransform), typeof(CanvasGroup), typeof(GameOverUI));

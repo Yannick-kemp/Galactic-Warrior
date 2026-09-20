@@ -12,6 +12,13 @@ namespace Assets.Scripts.Scoring
 
         public int TotalPoints => session.Score;
 
+        // Exposed for the final victory screen run summary.
+        public int RetryCount => session.RetryCount;
+        public float RunDuration => Mathf.Max(0f, Time.time - session.RunStartTime);
+
+        /// <summary>Call on each death/restart so the victory screen's "Tentatives" is accurate.</summary>
+        public void RegisterRetry() => session.RetryCount++;
+
         public event Action<int, int, string, Vector2> OnPointsAdded;
 
         private void Awake()

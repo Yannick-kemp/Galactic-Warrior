@@ -1,0 +1,35 @@
+# =============================================================================
+# Règles R8/ProGuard custom — Galactic Warrior
+# Activé via Player Settings > Publishing Settings > Custom Proguard File.
+#
+# Raison d'être : la minification R8 (Minify Release) strippe le code Java/Kotlin
+# non référencé statiquement. Unity IAP appelle la Google Play Billing Library
+# uniquement via des proxys JNI (AndroidJavaProxy) côté C#, invisibles pour R8,
+# qui supprime alors des classes pourtant nécessaires au runtime.
+#
+# Symptôme sans ces règles :
+#   ClassNotFoundException: com.android.billingclient.api.PurchasesUpdatedListener
+#   -> StoreException "create the store: GooglePlay" -> storeController null
+#   -> bouton d'achat inerte + prix bloqué sur le fallback.
+# =============================================================================
+
+# --- Google Play Billing Library (référencée par Unity IAP via JNI) ---
+-keep class com.android.billingclient.** { *; }
+-keep interface com.android.billingclient.** { *; }
+-dontwarn com.android.billingclient.**
+
+# --- Ancien service de facturation AIDL (compat) ---
+-keep class com.android.vending.billing.** { *; }
+
+# --- Unity Purchasing / IAP ---
+-keep class com.unity.purchasing.** { *; }
+-keep class com.unity3d.player.** { *; }
+-keep class com.unity3d.services.** { *; }
+-dontwarn com.unity3d.**
+
+# --- Sécurité générale : ne pas renommer/supprimer les classes instanciées
+#     depuis le C# via réflexion/JNI (AndroidJavaObject / AndroidJavaProxy) ---
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+-keepclassmembers class * {
+    @com.android.billingclient.api.* <methods>;
+}

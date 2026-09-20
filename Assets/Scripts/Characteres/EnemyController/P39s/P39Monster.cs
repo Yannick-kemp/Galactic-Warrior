@@ -11,9 +11,13 @@ using UnityEngine;
 /// </summary>
 public class P39Monster_WithHealthBar : Enemy
 {
+    // Ground-bound terrestrial walker: pinned to its platform, no longer the source of the violent
+    // body-push launch, so the anti-penetration guard is not needed here.
+    protected override bool AllowWarriorBodyPenetrationGuard => false;
+
     [Header("Edge patrol (moving platform safe)")]
     [SerializeField] private float edgeSafeMargin = 0.45f; // keep consistent with platform clamp
-    [SerializeField] private float edgeTolerance = 0.05f;  // 0.03–0.08 usually
+    [SerializeField] private float edgeTolerance = 0.05f;  // 
 
     // Direction instead of caching xEdge as an absolute X
     private bool _goRight;
@@ -25,6 +29,9 @@ public class P39Monster_WithHealthBar : Enemy
         autoCreateHealthBar = true;
 
         base.Start();
+
+        // Terrestrial crawler: never allowed to leave its platform surface vertically.
+        groundBound = true;
 
         // P39 defaults
         Range = 4f;
@@ -58,8 +65,17 @@ public class P39Monster_WithHealthBar : Enemy
         // Base updates (target acquisition, frame index, edge clamp, etc.)
         base.Update();
 
+        if (IsDeadOrDying)
+            return;
+
+        if (IsAttacked || IsStunned || IsAttackTemporarilyDisabled)
+        {
+            StopP39BecauseAttacked();
+            return;
+        }
+
         // Attack logic
-        if (EnemyRangeService != null && target != null && !IsAttacked)
+        if (EnemyRangeService != null && target != null)
         {
             EnemyRangeService.TryAction(target, Range, OnAttackPerformed);
         }
@@ -77,6 +93,12 @@ public class P39Monster_WithHealthBar : Enemy
         // Keep facing correct
         SetDirectionVariables(xEdge);
 
+        if (IsAttacked)
+        {
+            StopP39BecauseAttacked();
+            return;
+        }
+
         // Start movement if none, or restart only when direction flips
         if (activesMoveCoroutine == null || _goRight != _lastGoRight)
         {
@@ -90,9 +112,32 @@ public class P39Monster_WithHealthBar : Enemy
 
         _lastGoRight = _goRight;
     }
+    private void StopP39BecauseAttacked()
+    {
+        // Stop patrol / chase movement immediately.
+        if (activesMoveCoroutine != null)
+        {
+            StopMoveTowardCoroutine();
+            activesMoveCoroutine = null;
+        }
 
+        // Stop horizontal drift if Rigidbody2D exists.
+        if (rigidbody2 != null)
+        {
+            Vector2 v = rigidbody2.linearVelocity;
+            v.x = 0f;
+            rigidbody2.linearVelocity = v;
+        }
+
+        // Do not keep run animation while blocked.
+        WaitAnimationDisplay();
+    }
     public override void OnAttackPerformed(IAttacker attacker, Transform attackedTarget)
     {
+
+        if (IsAttacked || IsDeadOrDying)
+            return;
+
         var warrior = GameMgr.Instance?.WarriorInstance;
         if (warrior == null || warrior.collider2 == null)
             return;
@@ -111,6 +156,8 @@ public class P39Monster_WithHealthBar : Enemy
         // Play animation (base also checks front)
         base.OnAttackPerformed(attacker, attackedTarget);
 
+        if (IsAttacked || IsDeadOrDying)
+            return;
         if (warrior.TryBlockEnemyHit(this))
             return;
 

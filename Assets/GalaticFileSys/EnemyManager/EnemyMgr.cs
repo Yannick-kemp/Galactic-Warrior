@@ -1,6 +1,7 @@
+using System;
+using System.Collections.Generic;
 using Assets.Scripts.Characteres.EnemyContoller;
 using Assets.Scripts.Platforms;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -25,8 +26,17 @@ public class EnemyMgr : MonoBehaviour
     private Enemy currentBoss;
     private bool _levelClearTriggeredThisScene;
 
+    public event Action<int, int> OnEnemyCounterChanged;
+
+    private int _totalCountableEnemyCount;
+    private int _lastPublishedRemaining = -1;
+    private int _lastPublishedTotal = -1;
+
     public Enemy CurrentBoss => currentBoss;
     public bool HasAliveBoss => currentBoss != null && !currentBoss.IsDeadOrDying;
+
+    public int TotalCountableEnemyCount => _totalCountableEnemyCount;
+    public int RemainingCountableEnemyCount => AliveCountableEnemyCount;
 
     public int AliveEnemyCount
     {
@@ -89,7 +99,6 @@ public class EnemyMgr : MonoBehaviour
         DontDestroyOnLoad(gameObject);
 
         BuildPrefabLookup();
-
         SceneManager.sceneLoaded += HandleSceneLoaded;
     }
 
@@ -176,9 +185,57 @@ public class EnemyMgr : MonoBehaviour
             RegisterExistingEnemy(enemy);
         }
 
+        _totalCountableEnemyCount = ComputeTotalCountableEnemiesForScene();
+        PublishEnemyCounter(true);
+
         Debug.Log($"[EnemyMgr] Scene enemies registered: total={AliveEnemyCount}, required={AliveCountableEnemyCount}, boss={(currentBoss != null ? currentBoss.BossDisplayName : "none")}");
     }
 
+    private int ComputeTotalCountableEnemiesForScene()
+    {
+        CleanupSpawnPoints();
+
+        int total = 0;
+
+        foreach (var sp in spawnPoints)
+        {
+            if (sp == null) continue;
+            if (sp.CountsForLevelClear)
+                total++;
+        }
+
+        foreach (var state in sceneEnemyStates)
+        {
+            if (state == null) continue;
+            if (state.countsForLevelClear)
+                total++;
+        }
+
+        return total;
+    }
+
+    private void PublishEnemyCounter(bool force = false)
+    {
+        int remaining = AliveCountableEnemyCount;
+
+        if (remaining > _totalCountableEnemyCount)
+            _totalCountableEnemyCount = remaining;
+
+        int total = _totalCountableEnemyCount;
+
+        if (!force &&
+            remaining == _lastPublishedRemaining &&
+            total == _lastPublishedTotal)
+        {
+            return;
+        }
+
+        _lastPublishedRemaining = remaining;
+        _lastPublishedTotal = total;
+
+        Debug.Log($"[EnemyMgr] PublishEnemyCounter -> {remaining}/{total}");
+        OnEnemyCounterChanged?.Invoke(remaining, total);
+    }
     private void RegisterExistingEnemy(Enemy enemy)
     {
         if (enemy == null)
@@ -264,6 +321,27 @@ public class EnemyMgr : MonoBehaviour
         return SpawnEnemyByPrefab(prefab, position, type, overrides, true, bossName, null);
     }
 
+    /// <summary>
+    /// Parents a freshly spawned enemy under its owner spawn point so it lives inside the SAME
+    /// ZoneCullable as the platform it stands on, and therefore culls atomically with that platform.
+    /// Without this the enemy is Instantiated at the scene root and is never culled, while its
+    /// platform (inside a zone) IS deactivated when off-screen -> the enemy loses its now-disabled
+    /// support collider and falls/tunnels into the void (Enemy.ClampGroundBoundToSurface releases
+    /// the ground-bound Y-lock as soon as the platform GameObject becomes inactive).
+    /// Bosses intentionally stay at the root (never culled): their fight must never pause.
+    /// </summary>
+    private void ParentSpawnedEnemyToOwnerZone(Enemy enemy, EnemySpawnPoint ownerSpawnPoint)
+    {
+        if (enemy == null || ownerSpawnPoint == null)
+            return;
+
+        if (enemy.IsBoss)
+            return;
+
+        // worldPositionStays:true keeps the world position/rotation set by the Instantiate above.
+        enemy.transform.SetParent(ownerSpawnPoint.transform, worldPositionStays: true);
+    }
+
     private Enemy SpawnEnemyByPrefab(
         GameObject prefab,
         Vector3 position,
@@ -295,6 +373,8 @@ public class EnemyMgr : MonoBehaviour
 
         enemy.SetBoss(finalIsBoss, finalBossName);
         enemy.SetOwnerSpawnPoint(ownerSpawnPoint);
+
+        ParentSpawnedEnemyToOwnerZone(enemy, ownerSpawnPoint);
 
         InitializeSpawnedEnemy(enemy, overrides);
         return enemy;
@@ -417,6 +497,8 @@ public class EnemyMgr : MonoBehaviour
         enemy.SetBoss(finalIsBoss, finalBossName);
         enemy.SetOwnerSpawnPoint(ownerSpawnPoint);
 
+        ParentSpawnedEnemyToOwnerZone(enemy, ownerSpawnPoint);
+
         InitializeSpawnedEnemy(enemy, overrides);
 
         enemy.CurrentplatForm = platform;
@@ -444,12 +526,16 @@ public class EnemyMgr : MonoBehaviour
             Debug.Log($"[EnemyMgr] Boss registered: {enemy.BossDisplayName}");
         }
 
+        PublishEnemyCounter();
+
         Debug.Log($"[EnemyMgr] Spawned {enemy.EnemyType} | Boss={enemy.IsBoss} | Counts={enemy.CountsForLevelClear}");
     }
 
     public void OnEnemyDeathStarted(Enemy enemy)
     {
         if (enemy == null) return;
+
+        PublishEnemyCounter();
 
         if (enemy.IsBoss)
         {
@@ -462,7 +548,7 @@ public class EnemyMgr : MonoBehaviour
             _levelClearTriggeredThisScene = true;
 
             Debug.Log($"[EnemyMgr] Boss death triggered final flow: {enemy.BossDisplayName}");
-            GameMgr.Instance?.HandleBossFinalDeathLevelComplete();
+            GameMgr.Instance?.HandleBossFinalDeathLevelComplete(enemy.EnemyType, enemy.transform.position);
             return;
         }
 
@@ -493,6 +579,8 @@ public class EnemyMgr : MonoBehaviour
             Debug.Log($"[EnemyMgr] Boss defeated: {enemy.BossDisplayName}");
             currentBoss = null;
         }
+
+        PublishEnemyCounter();
 
         Debug.Log($"[EnemyMgr] Remaining enemies: {AliveEnemyCount}, required: {AliveCountableEnemyCount}, boss alive: {HasAliveBoss}");
 
@@ -550,6 +638,8 @@ public class EnemyMgr : MonoBehaviour
             enemy.SetSpawnOverrides(overrides);
             enemy.SetOwnerSpawnPoint(ownerSpawnPoint);
 
+            ParentSpawnedEnemyToOwnerZone(enemy, ownerSpawnPoint);
+
             if (enemy.IsBoss)
             {
                 enemy.SetBoss(true, enemy.BossDisplayName);
@@ -563,6 +653,8 @@ public class EnemyMgr : MonoBehaviour
                 currentBoss = enemy;
                 Debug.Log($"[EnemyMgr] Boss registered: {enemy.BossDisplayName}");
             }
+
+            PublishEnemyCounter();
         }
 
         return enemy;

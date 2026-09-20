@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+    <title>{{{ PRODUCT_NAME }}}</title>
+    <!-- YouTube Playables SDK: MUST load before any game code. -->
+    <script src="https://www.youtube.com/game_api/v1"></script>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      #stage {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #000;
+      }
+      #unity-canvas {
+        display: block;
+        background: #000;
+        outline: none;
+      }
+      #loading {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        color: #fff;
+        font: 600 20px/1.2 system-ui, sans-serif;
+        letter-spacing: 0.08em;
+        background: #05030d;
+      }
+      #loading-track {
+        width: min(60vw, 420px);
+        height: 8px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.18);
+        overflow: hidden;
+      }
+      #loading-fill {
+        width: 0%;
+        height: 100%;
+        background: #3fb6ff;
+        transition: width 0.15s linear;
+      }
+      #error {
+        display: none;
+        max-width: 80vw;
+        text-align: center;
+        font-weight: 400;
+        letter-spacing: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <canvas id="unity-canvas" tabindex="-1"></canvas>
+    </div>
+    <div id="loading">
+      <div>GALACTIC WARRIOR</div>
+      <div id="loading-track"><div id="loading-fill"></div></div>
+      <div id="error">Something went wrong while loading the game. Please try again later.</div>
+    </div>
+
+    <script>
+      (function () {
+        // The game is designed for landscape phones. Inside this range the canvas fills the
+        // viewport; outside it the canvas keeps the nearest ratio and is centered with black
+        // bars (letterbox/pillarbox), which YouTube allows for any viewport shape.
+        var MIN_ASPECT = 16 / 9;
+        var MAX_ASPECT = 21 / 9;
+
+        var inPlayables = typeof ytgame !== 'undefined' && ytgame.IN_PLAYABLES_ENV === true;
+        var canvas = document.getElementById('unity-canvas');
+        var loading = document.getElementById('loading');
+        var fill = document.getElementById('loading-fill');
+
+        function layoutCanvas() {
+          var vw = window.innerWidth;
+          var vh = window.innerHeight;
+          var aspect = Math.min(MAX_ASPECT, Math.max(MIN_ASPECT, vw / vh));
+          var w = vw;
+          var h = vw / aspect;
+          if (h > vh) {
+            h = vh;
+            w = vh * aspect;
+          }
+          canvas.style.width = Math.floor(w) + 'px';
+          canvas.style.height = Math.floor(h) + 'px';
+        }
+
+        layoutCanvas();
+        window.addEventListener('resize', layoutCanvas);
+        if (typeof ResizeObserver !== 'undefined') {
+          new ResizeObserver(layoutCanvas).observe(document.body);
+        }
+
+        // Unity calls preventDefault on keys it captures. YouTube needs Esc to reach the page
+        // untouched, so Esc events get a no-op preventDefault before Unity sees them. Unity
+        // still receives the key (the game uses it to close dialogs).
+        window.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') e.preventDefault = function () {};
+        }, true);
+        window.addEventListener('keyup', function (e) {
+          if (e.key === 'Escape') e.preventDefault = function () {};
+        }, true);
+
+        // The loading screen is in the page: this is the game's first frame for YouTube.
+        // Called right away, not from requestAnimationFrame: a hidden or throttled page may not
+        // run animation frames for a long time, and firstFrameReady MUST come before gameReady.
+        if (inPlayables) {
+          try { ytgame.game.firstFrameReady(); } catch (e) { console.warn(e); }
+        }
+
+        // YouTube requires awaiting loadData before any saveData. It is done here, before the
+        // game starts, so the C# side can read the save synchronously at boot.
+        function loadInitialSave() {
+          if (inPlayables) {
+            return ytgame.game.loadData().then(function (data) {
+              return typeof data === 'string' ? data : '';
+            }).catch(function (e) {
+              console.warn('[GalacticWarrior] loadData failed', e);
+              return '';
+            });
+          }
+          var local = '';
+          try { local = window.localStorage.getItem('gw_yt_save') || ''; } catch (e) { local = ''; }
+          return Promise.resolve(local);
+        }
+
+        function showError(err) {
+          console.error(err);
+          document.getElementById('loading-track').style.display = 'none';
+          var errorBox = document.getElementById('error');
+          if (location.protocol === 'file:') {
+            // Browsers block a page opened from disk from fetching its own build files.
+            errorBox.textContent = 'This page must be served over http(s), not opened as a file. ' +
+              'Run a local web server in this folder (e.g. python -m http.server 8765) and open http://localhost:8765';
+          }
+          errorBox.style.display = 'block';
+          if (inPlayables) {
+            try { ytgame.health.logError(); } catch (e) { /* best effort */ }
+          }
+        }
+
+        // YouTube caps every file at 30 MiB. YouTubePlayablesBuilder zips the Unity files that
+        // exceed it (the Unity wrapper documents *.wasm.zip / *.data.zip) and lists them below;
+        // the page inflates them in the browser and hands Unity an in-memory URL instead.
+        var ZIPPED_FILES = [];
+
+        function unzipSingleEntry(buffer) {
+          var view = new DataView(buffer);
+          if (view.getUint32(0, true) !== 0x04034b50) throw new Error('Not a zip file');
+          var method = view.getUint16(8, true);
+          var compressedSize = view.getUint32(18, true);
+          var nameLength = view.getUint16(26, true);
+          var extraLength = view.getUint16(28, true);
+          var start = 30 + nameLength + extraLength;
+          var body = new Blob([buffer.slice(start, start + compressedSize)]);
+          if (method === 0) return Promise.resolve(body);
+          if (method !== 8) throw new Error('Unsupported zip method ' + method);
+          return new Response(body.stream().pipeThrough(new DecompressionStream('deflate-raw'))).blob();
+        }
+
+        function resolveBuildUrl(url) {
+          var name = url.substring(url.lastIndexOf('/') + 1);
+          if (ZIPPED_FILES.indexOf(name) < 0) return Promise.resolve(url);
+          return fetch(url + '.zip')
+            .then(function (r) { if (!r.ok) throw new Error(url + '.zip: HTTP ' + r.status); return r.arrayBuffer(); })
+            .then(unzipSingleEntry)
+            .then(function (blob) {
+              // The wasm MIME type lets the browser compile the code while it streams.
+              var type = /\.wasm$/.test(name) ? 'application/wasm' : 'application/octet-stream';
+              return URL.createObjectURL(new Blob([blob], { type: type }));
+            });
+        }
+
+        var dataUrl = 'Build/{{{ DATA_FILENAME }}}';
+#if USE_WASM
+        var codeUrl = 'Build/{{{ CODE_FILENAME }}}';
+#else
+        var codeUrl = null;
+#endif
+
+        Promise.all([
+          loadInitialSave(),
+          resolveBuildUrl(dataUrl),
+          codeUrl ? resolveBuildUrl(codeUrl) : Promise.resolve(null)
+        ]).then(function (results) {
+          window.gwYtInitialSave = results[0];
+
+          var script = document.createElement('script');
+          script.src = 'Build/{{{ LOADER_FILENAME }}}';
+          script.onerror = showError;
+          script.onload = function () {
+            createUnityInstance(canvas, {
+              arguments: [],
+              dataUrl: results[1],
+              frameworkUrl: 'Build/{{{ FRAMEWORK_FILENAME }}}',
+#if USE_THREADS
+              workerUrl: 'Build/{{{ WORKER_FILENAME }}}',
+#endif
+#if USE_WASM
+              codeUrl: results[2],
+#endif
+#if SYMBOLS_FILENAME
+              symbolsUrl: 'Build/{{{ SYMBOLS_FILENAME }}}',
+#endif
+              streamingAssetsUrl: 'StreamingAssets',
+              companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
+              productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
+              productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
+              devicePixelRatio: window.devicePixelRatio || 1,
+              showBanner: function (msg, type) {
+                if (type === 'error') showError(msg); else console.warn(msg);
+              }
+            }, function (progress) {
+              fill.style.width = Math.round(progress * 100) + '%';
+            }).then(function (instance) {
+              // Kept for diagnostics (instance.GetMetricsInfo() reports heap usage).
+              window.gwUnityInstance = instance;
+              loading.style.display = 'none';
+              canvas.focus();
+            }).catch(showError);
+          };
+          document.body.appendChild(script);
+        }).catch(showError);
+      })();
+    </script>
+  </body>
+</html>

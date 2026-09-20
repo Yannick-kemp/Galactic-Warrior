@@ -31,8 +31,15 @@ namespace Assets.Scripts.UI
 
         public void Init(int points, string label)
         {
+            InitText($"+{points}  {label}");
+        }
+
+        /// <summary>Same rise/scale/fade motion as score popups, but with arbitrary text
+        /// (e.g. the "RETRY +1" feedback for a redeemed retry).</summary>
+        public void InitText(string fullText)
+        {
             if (text != null)
-                text.text = $"+{points}  {label}";
+                text.text = fullText;
 
             _t = 0f;
 

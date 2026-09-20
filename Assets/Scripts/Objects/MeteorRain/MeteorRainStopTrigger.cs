@@ -8,6 +8,10 @@ public sealed class MeteorRainStopTrigger : MonoBehaviour
     [SerializeField] private MeteorRainFollowWarrior meteorRain;
     [SerializeField] private bool oneShot = true;
 
+    [Header("Restart Blocking")]
+    [Tooltip("Unchecked = default behaviour. Checked = once the Warrior reaches this stop point, future MeteorStartTrigger crossings will not restart this MeteorRain.")]
+    [SerializeField] private bool preventFutureStartsAfterReached = false;
+
     [Header("Gizmo")]
     [SerializeField] private bool showGizmo = true;
     [SerializeField] private Color gizmoColor = new Color(1f, 0f, 0f, 0.25f);
@@ -31,6 +35,12 @@ public sealed class MeteorRainStopTrigger : MonoBehaviour
         // Always clear forced retry override when the warrior reaches the stop point.
         GameMgr.Instance?.ExitForcedRetryZone();
 
+        // Assign the state exactly:
+        // checked   -> block future starts after this stop point;
+        // unchecked -> clear any previous runtime block and keep default behaviour.
+        if (meteorRain != null)
+            meteorRain.NotifyStopPointReached(preventFutureStartsAfterReached);
+
         if (_used && oneShot) return;
         if (meteorRain == null) return;
 
@@ -43,6 +53,10 @@ public sealed class MeteorRainStopTrigger : MonoBehaviour
     public void ResetTriggerState()
     {
         _used = false;
+
+        // On retry/scene hazard reset, recover default start behaviour.
+        if (meteorRain != null)
+            meteorRain.ClearStopPointRestartLock();
     }
 
     private void OnDrawGizmos()
