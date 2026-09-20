@@ -1,4 +1,4 @@
-using Assets.Scripts.Characteres.WarriorController;
+﻿using Assets.Scripts.Characteres.WarriorController;
 using Assets.Scripts.Platforms;
 using System.Collections;
 using System.Collections.Generic;
@@ -190,7 +190,7 @@ public class RotatingPlatform : PlatFormPlfColliderTrigger
             collision.collider.GetComponentInParent<CharacterController>();
 
         if (character != null)
-            StartCoroutine(RemovePassengerIfReallyLeft(character));
+            TryStartPlatformCoroutine(RemovePassengerIfReallyLeft(character));
     }
 
     /// <summary>

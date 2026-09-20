@@ -190,6 +190,10 @@ namespace Assets.Scripts.Relics.Projectiles
                 if (enemy is ZortBoss zort)
                     zort.NotifyIceBulletHit();
 
+                // Hivernox counts them: two inside his window and he charges the Warrior.
+                if (enemy is HivernoxBoss hivernox)
+                    hivernox.NotifyIceBulletHit();
+
                 // Bosses are excluded from the two-step ice execution and take normal damage.
                 killed = enemy.TakeDamageAndReturnKilled(_damage);
             }

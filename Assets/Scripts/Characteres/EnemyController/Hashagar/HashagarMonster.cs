@@ -556,7 +556,7 @@ public class HashagarMonster : Enemy
         // stops re-enabling the default sprite every Update (which made the Warrior never
         // disappear during the Attack2 grab). Cleared in RestoreWarriorVisualsAfterHashagarHold.
         if (_warrior != null)
-            _warrior.IsExternallyHiddenByHashagar = true;
+            _warrior.SetHashagarVisualHold(this, true);
     }
 
     private void RestoreWarriorVisualsAfterHashagarHold()
@@ -582,7 +582,7 @@ public class HashagarMonster : Enemy
         // Hand the hide back: the Warrior's Attack3 sprite watchdog may resume managing the
         // default sprite now that Hashagar no longer holds it.
         if (_warrior != null)
-            _warrior.IsExternallyHiddenByHashagar = false;
+            _warrior.SetHashagarVisualHold(this, false);
 
         // Final correction: let Warrior restore its own default visual setup.
         // This prevents the Hivernox frozen overlay from staying visible,
@@ -723,7 +723,10 @@ public class HashagarMonster : Enemy
         bool hashagarActuallyDisabledWarrior =
             _warriorDisabledByHold || _warriorVisualSnapshotValid;
 
-        if (!hashagarActuallyDisabledWarrior)
+        // force is used by OnDisable / OnDeath, where this is the last chance to hand the Warrior
+        // back. It used to be accepted and then ignored, so a teardown that happened before the
+        // visual snapshot was taken returned here and left the Warrior hidden for good.
+        if (!hashagarActuallyDisabledWarrior && !force)
             return;
 
         _warrior.CanMove = true;

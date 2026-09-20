@@ -338,7 +338,7 @@ BoxCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 15.36, y: 10.24}
+    oldSize: {x: 15.359999, y: 10.244999}
     newSize: {x: 15.92, y: 10.61}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
@@ -384,7 +384,7 @@ BoxCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 15.36, y: 10.24}
+    oldSize: {x: 15.359999, y: 10.244999}
     newSize: {x: 15.92, y: 10.61}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
@@ -415,12 +415,21 @@ MonoBehaviour:
   hideDefaultRendererWhenThemeApplied: 1
   autoBindDefaultRenderer: 1
   autoBindThemeRenderers: 1
+  edgeFallRequiresRealOverhang: 1
+  edgeFallOverhangMargin: 0.1
+  edgeFallMaxFeetAboveTop: 0.2
+  warriorEdgeFallPassThroughSeconds: 1
+  warriorEdgeFallPassThroughMaxSeconds: 2.5
+  logWarriorPassThroughDecisions: 0
   maxWarriorSpeed: 20
   passThroughBuffer: 0.08
   landingBand: 0.14
   horizontalLandingSkin: 0.03
   restoreAfterTriggerExitTimeout: 0.75
   zalaytyJumpDownRestoreContactSkin: 0.01
+  zalaytyEdgeDropRequiresLandingBelow: 1
+  zalaytyEdgeDropLandingSearchDistance: 10
+  zalaytyJumpDownRestoreMaxSeconds: 3
   edgeZoneWidth: 0.35
   enableWarriorAntiLedgeSnag: 1
   warriorAntiSnagMinUpVelocity: 0.05

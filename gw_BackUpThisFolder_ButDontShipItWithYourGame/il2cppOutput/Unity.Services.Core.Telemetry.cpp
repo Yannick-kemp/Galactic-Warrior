@@ -174,10 +174,18 @@ IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR RuntimeObject* DiagnosticsFactory_Create_mE15
 		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&Diagnostics_t24C9DED6F621BBF7D712D62FD3776D29B3CE5012_il2cpp_TypeInfo_var);
 		s_Il2CppMethodInitialized = true;
 	}
+	RuntimeObject* V_0 = NULL;
 	{
 		Diagnostics_t24C9DED6F621BBF7D712D62FD3776D29B3CE5012* L_0 = (Diagnostics_t24C9DED6F621BBF7D712D62FD3776D29B3CE5012*)il2cpp_codegen_object_new(Diagnostics_t24C9DED6F621BBF7D712D62FD3776D29B3CE5012_il2cpp_TypeInfo_var);
 		Diagnostics__ctor_m2CF108329965DFBA2D13399A65E9D5D47BF63BD8(L_0, NULL);
-		return L_0;
+		V_0 = L_0;
+		goto IL_0009;
+	}
+
+IL_0009:
+	{
+		RuntimeObject* L_1 = V_0;
+		return L_1;
 	}
 }
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void DiagnosticsFactory__ctor_m6AFD4725FFA4F4054B13917A376B8BE059AF4D27 (DiagnosticsFactory_tD2C64CDF0CC356965DB1993359515DC82D715CF2* __this, const RuntimeMethod* method) 
@@ -265,10 +273,18 @@ IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR RuntimeObject* MetricsFactory_Create_m6DCE478
 		il2cpp_codegen_initialize_runtime_metadata((uintptr_t*)&Metrics_t64BEB1BA35E4B6D2D709508D665841289875F1D1_il2cpp_TypeInfo_var);
 		s_Il2CppMethodInitialized = true;
 	}
+	RuntimeObject* V_0 = NULL;
 	{
 		Metrics_t64BEB1BA35E4B6D2D709508D665841289875F1D1* L_0 = (Metrics_t64BEB1BA35E4B6D2D709508D665841289875F1D1*)il2cpp_codegen_object_new(Metrics_t64BEB1BA35E4B6D2D709508D665841289875F1D1_il2cpp_TypeInfo_var);
 		Metrics__ctor_m6318435D0C0C0AD81ABC2B7D542FE92D7B5C7D79(L_0, NULL);
-		return L_0;
+		V_0 = L_0;
+		goto IL_0009;
+	}
+
+IL_0009:
+	{
+		RuntimeObject* L_1 = V_0;
+		return L_1;
 	}
 }
 IL2CPP_EXTERN_C IL2CPP_METHOD_ATTR void MetricsFactory__ctor_mD15F90B2C781DE2B48F41556FECEFAB2347AFC0C (MetricsFactory_tFED08C34B8CB569B801796787E82F2818606FA05* __this, const RuntimeMethod* method) 

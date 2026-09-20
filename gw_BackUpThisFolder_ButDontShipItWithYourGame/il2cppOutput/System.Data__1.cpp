@@ -9806,7 +9806,7 @@ IL_00b1:
 		PropertyCollection_t531D3CA9714C3D7818C1B1C139A9C4F04B73EE7C* L_40 = __this->____extendedProperties;
 		NullCheck(L_40);
 		RuntimeObject* L_41;
-		L_41 = VirtualFuncInvoker0< RuntimeObject* >::Invoke(37, L_40);
+		L_41 = VirtualFuncInvoker0< RuntimeObject* >::Invoke(38, L_40);
 		NullCheck(L_41);
 		RuntimeObject* L_42;
 		L_42 = InterfaceFuncInvoker0< RuntimeObject* >::Invoke(0, IEnumerable_t6331596D5DD37C462B1B8D49CF6B319B00AB7131_il2cpp_TypeInfo_var, L_41);
@@ -9861,9 +9861,9 @@ IL_010d_1:
 				RuntimeObject* L_52 = V_2;
 				NullCheck(L_51);
 				RuntimeObject* L_53;
-				L_53 = VirtualFuncInvoker1< RuntimeObject*, RuntimeObject* >::Invoke(29, L_51, L_52);
+				L_53 = VirtualFuncInvoker1< RuntimeObject*, RuntimeObject* >::Invoke(30, L_51, L_52);
 				NullCheck(L_49);
-				VirtualActionInvoker2< RuntimeObject*, RuntimeObject* >::Invoke(30, L_49, L_50, L_53);
+				VirtualActionInvoker2< RuntimeObject*, RuntimeObject* >::Invoke(31, L_49, L_50, L_53);
 			}
 
 IL_012c_1:
@@ -20286,7 +20286,7 @@ IL_01c5_1:
 				PropertyCollection_t531D3CA9714C3D7818C1B1C139A9C4F04B73EE7C* L_94 = __this->____extendedProperties;
 				NullCheck(L_94);
 				RuntimeObject* L_95;
-				L_95 = VirtualFuncInvoker0< RuntimeObject* >::Invoke(37, L_94);
+				L_95 = VirtualFuncInvoker0< RuntimeObject* >::Invoke(38, L_94);
 				NullCheck(L_95);
 				RuntimeObject* L_96;
 				L_96 = InterfaceFuncInvoker0< RuntimeObject* >::Invoke(0, IEnumerable_t6331596D5DD37C462B1B8D49CF6B319B00AB7131_il2cpp_TypeInfo_var, L_95);
@@ -20341,9 +20341,9 @@ IL_01eb_2:
 						RuntimeObject* L_106 = V_13;
 						NullCheck(L_105);
 						RuntimeObject* L_107;
-						L_107 = VirtualFuncInvoker1< RuntimeObject*, RuntimeObject* >::Invoke(29, L_105, L_106);
+						L_107 = VirtualFuncInvoker1< RuntimeObject*, RuntimeObject* >::Invoke(30, L_105, L_106);
 						NullCheck(L_103);
-						VirtualActionInvoker2< RuntimeObject*, RuntimeObject* >::Invoke(30, L_103, L_104, L_107);
+						VirtualActionInvoker2< RuntimeObject*, RuntimeObject* >::Invoke(31, L_103, L_104, L_107);
 					}
 
 IL_020e_2:

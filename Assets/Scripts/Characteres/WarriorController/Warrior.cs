@@ -401,7 +401,12 @@ namespace Assets.Scripts.Characteres.WarriorController
         {
             RefreshRelicAttack2State();
 
-            CheckIfStopRunDisplay();
+            // In direct-control mode DirectMove/DirectStop own the run/idle animation,
+            // so the tap-mode idle sweep must not fight them (it would force Wait between
+            // mover restarts while the joystick is held).
+            if (!ControlScheme.IsDirect)
+                CheckIfStopRunDisplay();
+
             HandleInput();
             HandleFallingAndDeath();
 
@@ -412,7 +417,10 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             _activeSlashEffects.RemoveAll(slash => slash == null);
 
-            if (!IsHardActionLocked &&
+            // Tap-to-re-aim during the Ice-Ball cast is a tap-mode feature. In direct mode
+            // the aim is fixed at cast time from the joystick direction (DirectCastIceBall).
+            if (!ControlScheme.IsDirect &&
+                !IsHardActionLocked &&
                 _attack3Casting &&
                 _iceBallShotPending &&
                 InputMgr.Instance != null &&
@@ -423,10 +431,21 @@ namespace Assets.Scripts.Characteres.WarriorController
             }
 
             EnsureDefaultWarriorSpriteVisibleWhenNotCasting();
+            EnsureWarriorNeverStaysInvisible();
         }
 
         private void FixedUpdate()
         {
+            TrackViolentEnemyRepulse();
+
+            TrackWedgeBetweenEnemies();
+
+            TrackPingPongEpisode();
+
+            TrackRuleMissDiagnostics();
+
+            TrackMovingPlatformSupport();
+
             RememberZalaytyImpactPrePhysicsPosition();
 
             ApplyDestinationPlatformAntiTunnelDuringPhysicsFall();
@@ -434,6 +453,11 @@ namespace Assets.Scripts.Characteres.WarriorController
             ApplyMovingPlatformIdleStick();
 
             ApplyActiveZalaytyBodyImpactAbsorber();
+
+            // Crawling-monster jump pass-through: restores the ignored collisions as soon as the
+            // Warrior is no longer in contact with the monster he jumped off. Runs before the
+            // overlap guardian so that guardian sees the up-to-date pass-through state.
+            UpdateCrawlingJumpPassThrough();
 
             // Guaranteed-separation backstop: runs every frame on the final resolved
             // position (after anti-tunnel + absorber). Self-defers while a bounce is
@@ -915,12 +939,14 @@ namespace Assets.Scripts.Characteres.WarriorController
         private void OnDisable()
         {
             ForceStopSprint();
+            ClearAllCrawlingJumpPassThrough();
             CancelIceBallCastVisualState(restoreMovementAfterCancel: false);
         }
 
         private void OnDestroy()
         {
             ForceStopSprint();
+            ClearAllCrawlingJumpPassThrough();
             CancelIceBallCastVisualState(restoreMovementAfterCancel: false);
         }
 

@@ -25,6 +25,9 @@ public class GameOverUI : MonoBehaviour
     private Coroutine _showRoutine;
     private bool _isTransitioning;
 
+    /// <summary>True while the DEFEAT / GAME OVER panel is on screen and clickable.</summary>
+    public bool IsShown => group != null && group.interactable && group.alpha > 0.01f && gameObject.activeInHierarchy;
+
 
 
     private void Awake()

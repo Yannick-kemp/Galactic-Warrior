@@ -768,6 +768,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
 
             OnDamaged(damage, killed);
 
+            // Boss finisher: every hit that lands on a boss is offered to the cinematic runner. It
+            // stays silent until the boss is on its last hits, and it needs the killing blow too,
+            // so this sits before OnDeath() tears the boss down.
+            if (IsBoss)
+                Assets.Scripts.Objects.BossFinisherFx.BossFinisher.NotifyBossDamaged(this, killed);
+
             if (killed)
             {
                 _isDead = true;
@@ -1374,10 +1380,20 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             if (collision.gameObject.name == "Warrior")
             {
-                var w = GameMgr.Instance.WarriorInstance;
-                if (w == null) return;
+                // GameMgr.Instance et NormalCollider peuvent tous deux etre nuls ici (culling de
+                // zone, mort en cours): mesure en jeu, 118 NullReferenceException en 12 s dont 45
+                // sur ce chemin, chacune avortant le callback.
+                var w = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
+                if (w == null || w.collider2 == null || NormalCollider == null) return;
 
                 w.CanMove = true;
+
+                // Do not re-enable the pair while the Warrior is deliberately phasing through
+                // this enemy after a jump started in contact with it (CrawlingMonster rule).
+                // That pass-through owns the ignore state until the two are separated.
+                if (w.IsCrawlingJumpPassThroughActiveWith(this))
+                    return;
+
                 Physics2D.IgnoreCollision(w.collider2, NormalCollider, false);
             }
         }
@@ -1386,8 +1402,8 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         {
             if (collision.gameObject.name == "Warrior")
             {
-                var w = GameMgr.Instance.WarriorInstance;
-                if (w == null) return;
+                var w = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
+                if (w == null || NormalCollider == null) return;
 
                 if (w.activesJumpCoroutine == null && !w.DescendentPhase)
                 {

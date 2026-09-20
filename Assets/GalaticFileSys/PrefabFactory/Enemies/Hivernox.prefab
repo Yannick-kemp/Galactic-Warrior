@@ -85,7 +85,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &8869326937545259549
 Transform:
   m_ObjectHideFlags: 0
@@ -456,6 +456,9 @@ MonoBehaviour:
   preventWarriorBodyVerticalLift: 1
   warriorBodyLiftAllowance: 0.04
   cancelWarriorBodyPushVelocity: 1
+  preventWarriorBodyPenetration: 1
+  warriorBodyPenetrationSkin: 0.02
+  warriorBodyPenetrationCheckRange: 0.75
   useGroundCheckPointForPatrolEdge: 1
   patrolEdgeAheadProbeDistance: 0.55
   patrolEdgeRayExtraLength: 0.2
@@ -515,6 +518,26 @@ MonoBehaviour:
   autoHandSmashHitDelay: 0.25
   autoResolveHandSmashIfNoAnimationEvent: 0
   dashReturnDamage: 8
+  enableIceBulletCharge: 1
+  iceHitsToTriggerCharge: 2
+  iceHitWindowSeconds: 4
+  chargeCooldown: 3
+  chargeSpeed: 5.5
+  maxChargeSeconds: 2.5
+  chargeStrikeDamage: 14
+  chargeStrikeHitRange: 2.5
+  chargeStrikeAnimationSeconds: 0.95
+  autoChargeStrikeHitDelay: 0.8
+  autoResolveChargeStrikeIfNoAnimationEvent: 1
+  edgeStandbyMargin: 0.7
+  platformExitMarginX: 0.1
+  platformExitMarginY: 7
+  platformExitConfirmSeconds: 0.3
+  withdrawSpeed: 3.5
+  maxWithdrawSeconds: 8
+  chargeStrikeRepulseDistance: 2.25
+  chargeStrikeRepulseDuration: 0.18
+  chargeStrikeRepulseControlLock: 0.25
   safeRetreatPoints: []
   retreatSpeed: 1.21
   retreatArriveDistance: 0.15

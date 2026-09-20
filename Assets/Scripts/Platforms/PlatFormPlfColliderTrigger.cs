@@ -68,6 +68,42 @@ namespace Assets.Scripts.Platforms
         private readonly Dictionary<int, Coroutine> _zalaytyJumpDownRestoreCoroutines =
             new Dictionary<int, Coroutine>();
 
+        // The locked Zalayty instances themselves, keyed the same way as the lock ids.
+        // Needed to RESTART a restore watchdog after this platform was deactivated (zone
+        // culling stops its coroutines): the id alone cannot be resolved back to the monster.
+        private readonly Dictionary<int, ZalaytyMonster> _zalaytyJumpDownLockedInstances =
+            new Dictionary<int, ZalaytyMonster>();
+
+        // Cached buffers for the edge-drop landing search below Zalayty.
+        private readonly List<RaycastHit2D> _zalaytyDropLandingHits = new List<RaycastHit2D>(8);
+        private ContactFilter2D _zalaytyDropLandingFilter = new ContactFilter2D();
+
+        [Header("Warrior Edge Fall Pass-Through")]
+        [Tooltip("ON = la regle de bord ne peut rendre cette plateforme traversable que si le Warrior deborde vraiment d'une extremite. OFF = comportement d'origine, ou zero point de sol suffisait, et ou il traversait meme debout en plein milieu.")]
+        [SerializeField] private bool edgeFallRequiresRealOverhang = true;
+
+        [Tooltip("Marge horizontale: le corps du Warrior doit depasser l'extremite de la plateforme d'au moins cette distance pour que la chute de bord soit accordee.")]
+        [SerializeField, Min(0f)] private float edgeFallOverhangMargin = 0.1f;
+
+        [Tooltip("Hauteur maximale des pieds du Warrior au-dessus du sommet pour qu'une chute de bord soit credible. Au-dela il est porte par autre chose (ennemi, pierre) et il n'y a rien a traverser.")]
+        [SerializeField, Min(0f)] private float edgeFallMaxFeetAboveTop = 0.2f;
+
+        [Tooltip("Delai apres lequel la traversee accordee par la regle de bord est rendue solide, quoi qu'il arrive. Avant, la restauration dependait d'un futur atterrissage ou d'une sortie de trigger: quand ils n'arrivaient pas, la plateforme restait traversable indefiniment et le Warrior la traversait plus tard.")]
+        [SerializeField, Min(0.1f)] private float warriorEdgeFallPassThroughSeconds = 1f;
+
+        [Tooltip("Plafond dur: meme si le corps du Warrior chevauche encore la plateforme, elle redevient solide passe ce delai.")]
+        [SerializeField, Min(0.2f)] private float warriorEdgeFallPassThroughMaxSeconds = 2.5f;
+
+        private readonly Dictionary<int, float> _warriorEdgeFallDeadline = new Dictionary<int, float>();
+        private readonly Dictionary<int, Coroutine> _warriorEdgeFallRestoreCoroutines = new Dictionary<int, Coroutine>();
+        private readonly Dictionary<int, Warrior> _warriorEdgeFallInstances = new Dictionary<int, Warrior>();
+
+        [Header("Diagnostic")]
+        [Tooltip("ON = journalise chaque basculement solide/traversable de cette plateforme pour le Warrior, avec la methode et la ligne responsables.")]
+        [SerializeField] private bool logWarriorPassThroughDecisions = false;
+
+        private readonly Dictionary<int, bool> _lastLoggedIgnoreByCharacter = new Dictionary<int, bool>();
+
         [Header("Anti-jitter")]
         [SerializeField] private float maxWarriorSpeed = 20f;
 
@@ -85,6 +121,15 @@ namespace Assets.Scripts.Platforms
 
         [Tooltip("Zalayty-only: how close to the source platform body still counts as physical contact during jump-down restore.")]
         [SerializeField, Min(0f)] private float zalaytyJumpDownRestoreContactSkin = 0.01f;
+
+        [Tooltip("Zalayty-only: OFF = Zalayty may drop off this platform edge even with nothing underneath (he falls into the void and is lost). ON (recommended) = the edge drop is only allowed when a real landing surface is found below; otherwise he stays solid on the edge and his normal chase logic jumps to the Warrior's platform instead.")]
+        [SerializeField] private bool zalaytyEdgeDropRequiresLandingBelow = true;
+
+        [Tooltip("How far below Zalayty a landing surface is searched before the edge drop is allowed. Nothing within this distance = bottomless gap = no drop.")]
+        [SerializeField, Min(0.5f)] private float zalaytyEdgeDropLandingSearchDistance = 10f;
+
+        [Tooltip("Zalayty-only HARD CAP on the jump-down pass-through. A controlled jump-down never lasts this long, so past this delay the platform becomes solid again no matter what. Without it, a pass-through whose restore watchdog died (zone culling deactivates this platform and Unity kills its coroutines) stayed ignored forever: Zalayty then never got CurrentplatForm back from this platform and froze in the air replaying the jump animation.")]
+        [SerializeField, Min(0.2f)] private float zalaytyJumpDownRestoreMaxSeconds = 3f;
 
         [SerializeField] private float edgeZoneWidth = 0.35f;
 
@@ -107,21 +152,42 @@ namespace Assets.Scripts.Platforms
 
         private void Awake()
         {
+            // Les chronos de bord DOIVENT exister avant tout callback physique. Ils etaient crees
+            // dans Start(), or une plateforme reactivee par le culling de zone recoit des
+            // OnCollisionStay AVANT son Start: mesure en jeu, 15 NullReferenceException d'affilee
+            // sur warriorEdgeTimer, chacune avortant le callback d'atterrissage du Warrior.
+            EnsureEdgeTimers();
+
 #if UNITY_ANDROID
             Time.fixedDeltaTime = 0.01667f;
             Application.targetFrameRate = 60;
 #endif
         }
 
+        /// <summary>
+        /// Cree les chronos de bord une seule fois. Appele a la fois par Awake (avant tout
+        /// callback physique) et par Start (filet pour un objet deja instancie).
+        /// </summary>
+        private void EnsureEdgeTimers()
+        {
+            if (warriorEdgeTimer == null)
+            {
+                warriorEdgeTimer = new Timer(0.75f);
+                warriorEdgeTimer.OnTimerComplete += PerformWarriorEdgeFall;
+            }
+
+            if (zalaytyEdgeTimer == null)
+            {
+                zalaytyEdgeTimer = new Timer(0.20f);
+                zalaytyEdgeTimer.OnTimerComplete += PerformZalaytyEdgeJumpOrDrop;
+            }
+        }
+
         protected override void Start()
         {
             base.Start();
 
-            warriorEdgeTimer = new Timer(0.75f);
-            warriorEdgeTimer.OnTimerComplete += PerformWarriorEdgeFall;
-
-            zalaytyEdgeTimer = new Timer(0.20f);
-            zalaytyEdgeTimer.OnTimerComplete += PerformZalaytyEdgeJumpOrDrop;
+            EnsureEdgeTimers();
 
             var warrior = GameMgr.Instance?.WarriorInstance;
             if (warrior != null && warrior.rigidbody2 != null)
@@ -477,6 +543,19 @@ namespace Assets.Scripts.Platforms
                     if (warrior.activesMoveCoroutine != null)
                         return;
 
+                    if (logWarriorPassThroughDecisions)
+                    {
+                        Bounds pb = platformCollider != null ? platformCollider.bounds : new Bounds();
+                        Bounds wb = warrior.collider2 != null ? warrior.collider2.bounds : new Bounds();
+
+                        Debug.Log("[PLF-BORD] " + name + " declare le Warrior EN EQUILIBRE au bord" +
+                                  " (1 point de sol) -> perte d'equilibre + chrono de chute" +
+                                  " | corps X=[" + wb.min.x.ToString("F2") + " ; " + wb.max.x.ToString("F2") + "]" +
+                                  " plateforme X=[" + pb.min.x.ToString("F2") + " ; " + pb.max.x.ToString("F2") + "]" +
+                                  " | pieds=" + wb.min.y.ToString("F2") + " sommet=" + pb.max.y.ToString("F2") +
+                                  " | CanMove=" + warrior.CanMove, this);
+                    }
+
                     _pendingWarriorFall = warrior;
                     warrior.ShowLosingBalance();
                     warriorEdgeTimer.Start();
@@ -492,6 +571,22 @@ namespace Assets.Scripts.Platforms
                         warrior.rigidbody2 == null ||
                         warrior.rigidbody2.linearVelocity.y <= 0.05f;
 
+                    // Zero ground point does NOT mean "il tombe du bord". Mesure en jeu: le
+                    // Warrior debout EN PLEIN MILIEU de plf-blk_1 (1), pieds 0,53 au-dessus du
+                    // sommet, en contact par un autre collider que son corps, comptait 0 point de
+                    // sol -> cette regle rendait la plateforme traversable sous ses pieds et il la
+                    // traversait de haut en bas. La chute de bord n'a de sens que si son corps
+                    // deborde vraiment d'une extremite ET s'il est reellement a hauteur du sommet.
+                    if (notMovingUp && !IsWarriorAllowedToFallThroughEdge(warrior))
+                    {
+                        SetIgnoreForCharacter(warrior, false);
+
+                        warrior.IsFallingGrazesEdge = false;
+                        _pendingWarriorFall = null;
+
+                        return;
+                    }
+
                     if (notMovingUp)
                     {
                         warrior.IsFallingGrazesEdge = true;
@@ -500,7 +595,7 @@ namespace Assets.Scripts.Platforms
                         warrior.IsFallingHitEnemy = false;
                         warrior.CanMove = false;
 
-                        SetIgnoreForCharacter(warrior, true);
+                        GrantWarriorEdgeFallPassThrough(warrior);
 
                         if (warrior.rigidbody2 != null)
                         {
@@ -573,7 +668,7 @@ namespace Assets.Scripts.Platforms
             }
 
             if (IsValidPlatformCharacter(character) && !IsSourceFallThroughLocked(character))
-                StartCoroutine(ClearPlatformMemoryWhenCharacterFullyLeft(character));
+                TryStartPlatformCoroutine(ClearPlatformMemoryWhenCharacterFullyLeft(character));
 
             if (character is Warrior w)
             {
@@ -614,6 +709,7 @@ namespace Assets.Scripts.Platforms
                 return false;
 
             _zalaytyJumpDownLockedCharacters.Add(id);
+            _zalaytyJumpDownLockedInstances[id] = zalayty;
             _zalaytyJumpDownRestoredInsideTriggerCharacters.Remove(id);
 
             // The source platform is being intentionally left downward. It must not
@@ -622,6 +718,10 @@ namespace Assets.Scripts.Platforms
 
             _firstContactByCharacter[id] = FirstPlatformContact.TriggerFirst;
             _firstContactFrameByCharacter[id] = Time.frameCount;
+
+            // Tell Zalayty this crossing is granted, so his fall-through guard (which blocks
+            // every Warrior-induced top-to-bottom crossing) lets this one happen.
+            zalayty.NotifyAuthorizedPlatformPassThrough(this);
 
             SetIgnoreForCharacter(zalayty, true);
             StartRestoreZalaytyJumpDownWhenBodyClear(zalayty);
@@ -668,11 +768,68 @@ namespace Assets.Scripts.Platforms
             if (id == 0)
                 return;
 
+            _zalaytyJumpDownLockedInstances[id] = zalayty;
+
             if (_zalaytyJumpDownRestoreCoroutines.ContainsKey(id))
                 return;
 
-            _zalaytyJumpDownRestoreCoroutines[id] =
-                StartCoroutine(RestoreZalaytyJumpDownWhenBodyClear(zalayty, id));
+            // A deactivated platform cannot run the watchdog. Leaving no entry behind is what
+            // lets OnEnable (or the next contact) start it for real instead of hitting the
+            // "already running" early-return above with a dead coroutine handle.
+            if (!gameObject.activeInHierarchy || !enabled)
+                return;
+
+            Coroutine jumpDownRestore = TryStartPlatformCoroutine(
+                RestoreZalaytyJumpDownWhenBodyClear(zalayty, id));
+
+            // No entry when it could not start: that is what lets OnEnable (or the next contact)
+            // launch the watchdog for real instead of hitting the "already running" early-return.
+            if (jumpDownRestore != null)
+                _zalaytyJumpDownRestoreCoroutines[id] = jumpDownRestore;
+        }
+
+        /// <summary>
+        /// Zone culling does SetActive(false) on platforms, which kills every coroutine they
+        /// own — including the jump-down restore watchdog — while the Physics2D ignore pair it
+        /// was supposed to clear survives. Forget the dead handles here so the watchdog can be
+        /// restarted; the lock ids themselves are kept so OnEnable knows what to resume.
+        /// </summary>
+        protected virtual void OnDisable()
+        {
+            foreach (KeyValuePair<int, Coroutine> pair in _zalaytyJumpDownRestoreCoroutines)
+            {
+                if (pair.Value != null)
+                    StopCoroutine(pair.Value);
+            }
+
+            _zalaytyJumpDownRestoreCoroutines.Clear();
+        }
+
+        protected virtual void OnEnable()
+        {
+            RearmWarriorEdgeFallRestores();
+
+            if (_zalaytyJumpDownLockedCharacters.Count == 0)
+                return;
+
+            // Restart a watchdog for every pass-through still owed a restore.
+            List<int> lockedIds = new List<int>(_zalaytyJumpDownLockedCharacters);
+
+            for (int i = 0; i < lockedIds.Count; i++)
+            {
+                int id = lockedIds[i];
+
+                if (!_zalaytyJumpDownLockedInstances.TryGetValue(id, out ZalaytyMonster zalayty) ||
+                    zalayty == null)
+                {
+                    // The monster is gone: drop the stale lock, nothing left to restore.
+                    _zalaytyJumpDownLockedCharacters.Remove(id);
+                    _zalaytyJumpDownLockedInstances.Remove(id);
+                    continue;
+                }
+
+                StartRestoreZalaytyJumpDownWhenBodyClear(zalayty);
+            }
         }
 
         private IEnumerator RestoreZalaytyJumpDownWhenBodyClear(ZalaytyMonster zalayty, int id)
@@ -682,19 +839,47 @@ namespace Assets.Scripts.Platforms
             // Let the IgnoreCollision call affect the physics step first.
             yield return wait;
 
+            // Hard deadline: a jump-down is a fraction of a second. Anything longer means the
+            // clear condition can no longer be reached (Zalayty stranded beside/over the edge,
+            // stale flags, interrupted arc), and holding the pass-through open would strand him
+            // permanently platform-less.
+            float deadline = Time.time + zalaytyJumpDownRestoreMaxSeconds;
+
             while (zalayty != null && platformCollider != null)
             {
                 if (!IsAnyCharacterColliderTouchingOrOverlappingPlatformBody(zalayty, zalaytyJumpDownRestoreContactSkin) &&
                     !ShouldKeepZalaytyJumpDownPassThrough(zalayty))
                     break;
+
+                if (Time.time >= deadline)
+                {
+                    Debug.Log(
+                        $"Zalayty jump-down pass-through timed out on '{name}' for {zalayty.name} -> platform restored solid.",
+                        this);
+                    break;
+                }
+
                 SetIgnoreForCharacter(zalayty, true);
                 yield return wait;
             }
 
             if (zalayty != null && platformCollider != null)
+            {
                 ClearZalaytyJumpDownLock(zalayty, restoreCollision: true);
+
+                // The pass-through can be cancelled before the drop ever happened: a resting
+                // Zalayty is already "clear" of the platform body on the first check (he sits a
+                // landing offset above the top). The request had nulled his CurrentplatForm and
+                // flagged him airborne, and nothing else gives the platform back while he floats
+                // a few centimetres above the top with no contact -> he froze at the edge,
+                // replaying the jump animation, with the drop re-armed every 0.20s.
+                // No-op when he really left the top (a genuine drop keeps falling).
+                zalayty.ReclaimPlatformAfterCancelledEdgeDrop(this);
+            }
             else
+            {
                 ClearZalaytyJumpDownLock(zalayty, restoreCollision: false);
+            }
         }
 
         private void ClearZalaytyJumpDownLock(ZalaytyMonster zalayty, bool restoreCollision)
@@ -704,6 +889,7 @@ namespace Assets.Scripts.Platforms
                 return;
 
             _zalaytyJumpDownLockedCharacters.Remove(id);
+            _zalaytyJumpDownLockedInstances.Remove(id);
 
             if (_zalaytyJumpDownRestoreCoroutines.TryGetValue(id, out Coroutine coroutine) && coroutine != null)
                 StopCoroutine(coroutine);
@@ -744,10 +930,103 @@ namespace Assets.Scripts.Platforms
             // edge loss, otherwise this source platform turns pass-through and Zalayty
             // tunnels straight through it. Keep him solid while pressed; normal edge-fall
             // resumes automatically once the press grace window expires.
-            if (zalayty.IsWarriorPressingOnTop)
+            // Any Warrior constraint, not only a clean top press: in a ping-pong cluster the
+            // Warrior bounces on one Zalayty while his pushes shove the neighbours off their
+            // ground points on this platform. Those neighbours never get a press of their own,
+            // so the press-only test let this platform turn pass-through under them and they
+            // crossed it from top to bottom under a Warrior action. Never grant that.
+            if (zalayty.IsWarriorConstraintActive)
                 return false;
 
-            return zalayty.CountGroundPointsOnSpecificPlatform(this) <= 1;
+            // A chase transition owns this moment: Zalayty is standing on his take-off edge
+            // (body hanging over it, hence <= 1 ground point) waiting to leap to the Warrior's
+            // platform. Dropping him here is exactly the "fell into the void instead of jumping"
+            // bug, and the landing-surface gate below cannot catch it because in a real level
+            // there usually IS something further down.
+            if (zalayty.IsPreparingPlatformTransition)
+                return false;
+
+            // Cheap edge test first: the surface search below only runs on the rare frames
+            // where Zalayty really is hanging off this edge.
+            if (zalayty.CountGroundPointsOnSpecificPlatform(this) > 1)
+                return false;
+
+            // A chasing Zalayty must never throw himself into a bottomless gap. The edge drop
+            // exists to let him go DOWN to a lower platform (jump-down through the source
+            // platform); with nothing underneath it just deletes him from the fight. Staying
+            // solid here keeps his CurrentplatForm, so the normal chase logic performs the
+            // platform-change jump toward the Warrior instead.
+            if (zalaytyEdgeDropRequiresLandingBelow && !HasLandingSurfaceBelowForZalaytyDrop(zalayty))
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// True when a real (non-trigger) platform surface exists under Zalayty, close enough to
+        /// be a landing. This platform's own colliders and Zalayty's own colliders are excluded,
+        /// so standing ON this platform never counts as "ground below".
+        /// </summary>
+        private bool HasLandingSurfaceBelowForZalaytyDrop(ZalaytyMonster zalayty)
+        {
+            Collider2D body = zalayty.NormalCollider != null && zalayty.NormalCollider.enabled
+                ? zalayty.NormalCollider
+                : zalayty.collider2;
+
+            if (body == null)
+                return false;
+
+            Bounds bodyBounds = body.bounds;
+
+            Vector2 origin = new Vector2(bodyBounds.center.x, bodyBounds.min.y - 0.02f);
+            Vector2 size = new Vector2(Mathf.Max(0.05f, bodyBounds.size.x * 0.9f), 0.02f);
+
+            // Allocation-free: this can be evaluated every physics frame while Zalayty waits
+            // on the edge for his jump.
+            _zalaytyDropLandingFilter.useTriggers = false;
+            _zalaytyDropLandingFilter.useLayerMask = true;
+            _zalaytyDropLandingFilter.SetLayerMask(zalayty.PlatformLayer);
+
+            _zalaytyDropLandingHits.Clear();
+
+            Physics2D.BoxCast(
+                origin,
+                size,
+                0f,
+                Vector2.down,
+                _zalaytyDropLandingFilter,
+                _zalaytyDropLandingHits,
+                zalaytyEdgeDropLandingSearchDistance);
+
+            for (int i = 0; i < _zalaytyDropLandingHits.Count; i++)
+            {
+                Collider2D hit = _zalaytyDropLandingHits[i].collider;
+
+                if (hit == null || hit.isTrigger)
+                    continue;
+
+                // Never count the platform he is leaving, nor his own colliders.
+                if (hit == platformCollider)
+                    continue;
+
+                if (hit.transform.IsChildOf(zalayty.transform))
+                    continue;
+
+                PlatFormColliderTrigger platform = hit.GetComponentInParent<PlatFormColliderTrigger>();
+                if (platform == this)
+                    continue;
+
+                if (platform == null || platform.platformCollider == null)
+                    continue;
+
+                // The surface must really be BELOW his feet to be a landing.
+                if (platform.platformCollider.bounds.max.y >= bodyBounds.min.y)
+                    continue;
+
+                return true;
+            }
+
+            return false;
         }
 
         // ─── Anti-jitter helpers ──────────────────────────────────────────────
@@ -850,8 +1129,11 @@ namespace Assets.Scripts.Platforms
             if (_sourceFallRestoreCoroutines.ContainsKey(id))
                 return;
 
-            _sourceFallRestoreCoroutines[id] =
-                StartCoroutine(RestoreSourceFallThroughWhenFullyClear(character, id));
+            Coroutine sourceFallRestore = TryStartPlatformCoroutine(
+                RestoreSourceFallThroughWhenFullyClear(character, id));
+
+            if (sourceFallRestore != null)
+                _sourceFallRestoreCoroutines[id] = sourceFallRestore;
         }
 
         private IEnumerator RestoreSourceFallThroughWhenFullyClear(CharacterController character, int id)
@@ -1144,10 +1426,182 @@ namespace Assets.Scripts.Platforms
             return GetFirstContact(character) == FirstPlatformContact.BodyFirst;
         }
 
-        private void SetIgnoreForCharacter(CharacterController ch, bool ignore)
+        /// <summary>
+        /// La regle de bord ne peut rendre cette plateforme traversable que lorsque le Warrior est
+        /// VRAIMENT en train de quitter une extremite. Deux conditions, toutes deux mesurees en
+        /// jeu comme manquantes dans le bug de traversee:
+        ///   1. son corps doit deborder d'une extremite (sinon il est en plein milieu),
+        ///   2. ses pieds doivent etre a hauteur du sommet (sinon il est porte par autre chose et
+        ///      il n'y a rien a traverser).
+        /// Zero point de sol ne suffit pas: un Warrior debout au milieu, pieds 0,53 au-dessus du
+        /// sommet, en contact par un collider secondaire, en comptait zero.
+        /// </summary>
+        private bool IsWarriorAllowedToFallThroughEdge(Warrior warrior)
+        {
+            if (!edgeFallRequiresRealOverhang)
+                return true;
+
+            if (warrior == null || platformCollider == null)
+                return true;
+
+            Collider2D body = warrior.collider2;
+
+            // Sans corps mesurable (collider desactive pendant la mort) on ne juge pas: on garde
+            // le comportement d'origine plutot que de bloquer une chute legitime.
+            if (body == null || !body.enabled || body.bounds.size.x <= 0.0001f)
+                return true;
+
+            Bounds platformBounds = platformCollider.bounds;
+            Bounds warriorBounds = body.bounds;
+
+            bool overhangsLeft = warriorBounds.min.x < platformBounds.min.x + edgeFallOverhangMargin;
+            bool overhangsRight = warriorBounds.max.x > platformBounds.max.x - edgeFallOverhangMargin;
+
+            if (!overhangsLeft && !overhangsRight)
+            {
+                LogEdgeFallRefused(warrior, "en plein milieu de la plateforme", warriorBounds, platformBounds);
+                return false;
+            }
+
+            if (warriorBounds.min.y > platformBounds.max.y + edgeFallMaxFeetAboveTop)
+            {
+                LogEdgeFallRefused(warrior, "pieds trop au-dessus du sommet", warriorBounds, platformBounds);
+                return false;
+            }
+
+            return true;
+        }
+
+        private void LogEdgeFallRefused(Warrior warrior, string reason, Bounds warriorBounds, Bounds platformBounds)
+        {
+            if (!logWarriorPassThroughDecisions)
+                return;
+
+            Debug.Log(
+                "[PLF-EDGE] " + name + " REFUSE de devenir traversable pour le Warrior | raison: " + reason +
+                " | corps X=[" + warriorBounds.min.x.ToString("F2") + " ; " + warriorBounds.max.x.ToString("F2") + "]" +
+                " plateforme X=[" + platformBounds.min.x.ToString("F2") + " ; " + platformBounds.max.x.ToString("F2") + "]" +
+                " | pieds=" + warriorBounds.min.y.ToString("F2") + " sommet=" + platformBounds.max.y.ToString("F2") +
+                " | pointsSol=" + warrior.CountGroundPoints(), this);
+        }
+
+        /// <summary>
+        /// Accorde la traversee de bord ET arme sa restauration sur un VRAI delai. Avant, la
+        /// solidite ne revenait que sur un futur atterrissage ou une sortie de trigger: quand ni
+        /// l'un ni l'autre n'arrivait, la plateforme restait traversable pour toujours (mesure:
+        /// rendue traversable, jamais restauree, puis traversee de haut en bas 600 lignes de
+        /// journal plus tard, jusqu'a la mort dans le vide).
+        /// </summary>
+        private void GrantWarriorEdgeFallPassThrough(Warrior warrior)
+        {
+            if (warrior == null)
+                return;
+
+            SetIgnoreForCharacter(warrior, true);
+
+            int id = warrior.GetInstanceID();
+
+            // Le delai est repousse tant que le contact dure. Des que la traversee commence,
+            // OnCollisionStay ne tombe plus sur cette plateforme, donc le compte a rebours part.
+            _warriorEdgeFallDeadline[id] = Time.time + warriorEdgeFallPassThroughSeconds;
+            _warriorEdgeFallInstances[id] = warrior;
+
+            if (_warriorEdgeFallRestoreCoroutines.TryGetValue(id, out Coroutine running) && running != null)
+                return;
+
+            Coroutine restore = TryStartPlatformCoroutine(RestoreWarriorEdgeFallPassThrough(warrior, id));
+
+            if (restore != null)
+                _warriorEdgeFallRestoreCoroutines[id] = restore;
+        }
+
+        /// <summary>
+        /// Le culling de zone desactive la plateforme et tue ses coroutines: une traversee accordee
+        /// juste avant resterait ouverte pour toujours. On relance donc le watchdog a la
+        /// reactivation, pour chaque restauration encore due.
+        /// </summary>
+        private void RearmWarriorEdgeFallRestores()
+        {
+            if (_warriorEdgeFallDeadline.Count == 0)
+                return;
+
+            _warriorEdgeFallRestoreCoroutines.Clear();
+
+            List<int> pending = new List<int>(_warriorEdgeFallDeadline.Keys);
+
+            for (int i = 0; i < pending.Count; i++)
+            {
+                int id = pending[i];
+
+                if (!_warriorEdgeFallInstances.TryGetValue(id, out Warrior warrior) || warrior == null)
+                {
+                    _warriorEdgeFallDeadline.Remove(id);
+                    _warriorEdgeFallInstances.Remove(id);
+                    continue;
+                }
+
+                Coroutine restore = TryStartPlatformCoroutine(RestoreWarriorEdgeFallPassThrough(warrior, id));
+
+                if (restore != null)
+                    _warriorEdgeFallRestoreCoroutines[id] = restore;
+            }
+        }
+
+        private IEnumerator RestoreWarriorEdgeFallPassThrough(Warrior warrior, int id)
+        {
+            WaitForFixedUpdate wait = new WaitForFixedUpdate();
+
+            float hardDeadline = Time.time + warriorEdgeFallPassThroughMaxSeconds;
+
+            while (warrior != null && platformCollider != null)
+            {
+                if (Time.time >= hardDeadline)
+                    break;
+
+                if (!_warriorEdgeFallDeadline.TryGetValue(id, out float deadline))
+                    break;
+
+                // Le delai court toujours: on attend.
+                if (Time.time < deadline)
+                {
+                    yield return wait;
+                    continue;
+                }
+
+                // Delai ecoule. On ne redevient solide DANS son corps que si on y est force par
+                // le plafond dur: rendre la plateforme solide alors qu'elle le traverse encore
+                // l'ejecterait par depenetration.
+                if (!IsAnyCharacterColliderTouchingOrOverlappingPlatformBody(warrior))
+                    break;
+
+                yield return wait;
+            }
+
+            _warriorEdgeFallDeadline.Remove(id);
+            _warriorEdgeFallRestoreCoroutines.Remove(id);
+            _warriorEdgeFallInstances.Remove(id);
+
+            if (warrior == null || platformCollider == null)
+                yield break;
+
+            // Une autre regle peut legitimement posseder la traversee (chute depuis la plateforme
+            // source). On ne lui coupe pas l'herbe sous le pied.
+            if (IsSourceFallThroughLocked(warrior))
+                yield break;
+
+            SetIgnoreForCharacter(warrior, false);
+        }
+
+        private void SetIgnoreForCharacter(
+            CharacterController ch,
+            bool ignore,
+            [System.Runtime.CompilerServices.CallerMemberName] string caller = null,
+            [System.Runtime.CompilerServices.CallerLineNumber] int callerLine = 0)
         {
             if (ch == null || platformCollider == null)
                 return;
+
+            LogWarriorIgnoreTransition(ch, ignore, caller, callerLine);
 
             Collider2D[] cols = ch.GetComponentsInChildren<Collider2D>(true);
 
@@ -1160,6 +1614,37 @@ namespace Assets.Scripts.Platforms
 
                 Physics2D.IgnoreCollision(platformCollider, c, ignore);
             }
+        }
+
+        /// <summary>
+        /// Diagnostic: journalise CHAQUE basculement solide/traversable de cette plateforme pour le
+        /// Warrior, avec la methode et la ligne qui l'a decide. C'est la seule facon de savoir si
+        /// une traversee de haut en bas vient d'un ignore laisse ouvert (et par quelle regle) ou
+        /// d'un tunneling. Silencieux pour les ennemis et tant que l'etat ne change pas.
+        /// </summary>
+        private void LogWarriorIgnoreTransition(CharacterController ch, bool ignore, string caller, int callerLine)
+        {
+            if (!logWarriorPassThroughDecisions || !(ch is Warrior))
+                return;
+
+            int id = ch.GetInstanceID();
+
+            if (_lastLoggedIgnoreByCharacter.TryGetValue(id, out bool previous) && previous == ignore)
+                return;
+
+            _lastLoggedIgnoreByCharacter[id] = ignore;
+
+            Bounds platformBounds = platformCollider.bounds;
+            Collider2D body = ch.collider2;
+
+            Debug.Log(
+                "[PLF-IGNORE] " + name + (ignore ? " devient TRAVERSABLE" : " redevient SOLIDE") +
+                " pour le Warrior | decide par " + caller + " ligne " + callerLine +
+                " | sommet=" + platformBounds.max.y.ToString("F2") +
+                " pieds=" + (body != null ? body.bounds.min.y.ToString("F2") : "?") +
+                " | vy=" + (ch.rigidbody2 != null ? ch.rigidbody2.linearVelocity.y.ToString("F2") : "?") +
+                " | plateforme courante=" +
+                (ch.CurrentplatForm != null ? ch.CurrentplatForm.name : "aucune"), this);
         }
 
         private bool IsCharacterCurrentlyIgnoringPlatform(CharacterController character)
@@ -1531,6 +2016,12 @@ namespace Assets.Scripts.Platforms
 
             if (ShouldLetZalaytyFallFromThisPlatform(z))
             {
+                Debug.Log(
+                    $"[Zalayty] edge drop from '{name}' (groundPointsOnIt=" +
+                    $"{z.CountGroundPointsOnSpecificPlatform(this)}, landingBelowRequired=" +
+                    $"{zalaytyEdgeDropRequiresLandingBelow}) -> pass-through + natural fall.",
+                    this);
+
                 // This is the important part: do not just mark Zalayty as jumping.
                 // The source platform must ignore only Zalayty, then restore itself
                 // when Zalayty is no longer touching/overlapping its body.

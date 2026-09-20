@@ -12,6 +12,11 @@ namespace Assets.Scripts.Characteres.WarriorController
     public partial class Warrior : CharacterController
     {
 
+        [Header("Enemy hit counts")]
+        [Tooltip("Asset holding how many hits each enemy takes. Leave empty to fall back to the " +
+                 "values hard-coded below, which are identical to the asset's seeded values.")]
+        [SerializeField] private EnemyHitCountTable enemyHitCounts;
+
         #region Hit Reaction
 
         [Header("Hit Reaction - Spark")]
@@ -87,16 +92,21 @@ namespace Assets.Scripts.Characteres.WarriorController
                     _ => attack1KnockbackForce
                 };
 
-                int damage = enemy switch
-                {
-                    M97Monster => 6,
-                    CrawlingMonster => 25,
-                    P39Monster_WithHealthBar => 20,
-                    RakaMonster => 4,
-                    ZalaytyMonster => 10,
-                    HashagarMonster => 2,
-                    _ => attack1Damage
-                };
+                // Hit counts live in the EnemyHitCountTable asset so they can be tuned without a
+                // recompile. The switch stays as the fallback for an unassigned table and mirrors
+                // the asset's seeded values exactly.
+                int damage = enemyHitCounts != null
+                    ? enemyHitCounts.Attack1Damage(enemy)
+                    : enemy switch
+                    {
+                        M97Monster => 6,
+                        CrawlingMonster => 25,
+                        P39Monster_WithHealthBar => 20,
+                        RakaMonster => 4,
+                        ZalaytyMonster => 10,
+                        HashagarMonster => 2,
+                        _ => attack1Damage
+                    };
 
                 KnockbackEnemiesInRange(KnockBack, enemy, damage);
             }
@@ -729,16 +739,21 @@ namespace Assets.Scripts.Characteres.WarriorController
                     _ => attack1KnockbackForce
                 };
 
-                int damage = enemy switch
-                {
-                    M97Monster => 6,
-                    CrawlingMonster => 8,
-                    P39Monster_WithHealthBar => 3,
-                    RakaMonster => 4,
-                    ZalaytyMonster => 5,
-                    HashagarMonster => 2,
-                    _ => attack1Damage
-                };
+                // Hit counts live in the EnemyHitCountTable asset so they can be tuned without a
+                // recompile. The switch stays as the fallback for an unassigned table and mirrors
+                // the asset's seeded values exactly.
+                int damage = enemyHitCounts != null
+                    ? enemyHitCounts.Attack2Damage(enemy)
+                    : enemy switch
+                    {
+                        M97Monster => 6,
+                        CrawlingMonster => 8,
+                        P39Monster_WithHealthBar => 3,
+                        RakaMonster => 4,
+                        ZalaytyMonster => 5,
+                        HashagarMonster => 2,
+                        _ => attack1Damage
+                    };
                 if (TryApplyZalaytyWarriorSafeHit(
                         enemy,
                         WarriorZalaytyHitKind.Attack2,
@@ -812,7 +827,20 @@ namespace Assets.Scripts.Characteres.WarriorController
             }
             return false;
 #else
-            return EventSystem.current.IsPointerOverGameObject();
+            if (EventSystem.current.IsPointerOverGameObject())
+                return true;
+
+#if UNITY_WEBGL
+            // Navigateur mobile : la build WebGL ne passe pas par la branche Android/iOS,
+            // alors on teste aussi chaque doigt, sinon un tap sur un bouton peut lancer
+            // un deplacement vers ce point.
+            for (int i = 0; i < Input.touchCount; i++)
+            {
+                if (EventSystem.current.IsPointerOverGameObject(Input.GetTouch(i).fingerId))
+                    return true;
+            }
+#endif
+            return false;
 #endif
         }
 
@@ -1037,6 +1065,10 @@ namespace Assets.Scripts.Characteres.WarriorController
         {
             LastJumpStartTime = Time.time;
             LastJumpStartFrame = Time.frameCount;
+
+            // Jumping while touching a CrawlingMonster must phase through it (restored as soon
+            // as the two separate). Single hook: every jump entry point goes through here.
+            BeginCrawlingJumpPassThroughOnJumpStart();
 
             PlayJumpSfx(); // <-- NEW
         }

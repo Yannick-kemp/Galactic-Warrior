@@ -143,6 +143,12 @@ MonoBehaviour:
     attackDamage: 10
     overrideMaxHealth: 0
     maxHealth: 100
+    overrideIsBoss: 0
+    isBoss: 0
+    overrideSparkStun: 0
+    sparkStunSeconds: 0.1
+    overrideSparkKnockback: 0
+    sparkKnockbackVel: 0
     zalayty:
       overrideSqueezeCheckInterval: 0
       squeezeCheckInterval: 0.12
@@ -240,12 +246,21 @@ MonoBehaviour:
   hideDefaultRendererWhenThemeApplied: 1
   autoBindDefaultRenderer: 1
   autoBindThemeRenderers: 1
+  edgeFallRequiresRealOverhang: 1
+  edgeFallOverhangMargin: 0.1
+  edgeFallMaxFeetAboveTop: 0.2
+  warriorEdgeFallPassThroughSeconds: 1
+  warriorEdgeFallPassThroughMaxSeconds: 2.5
+  logWarriorPassThroughDecisions: 0
   maxWarriorSpeed: 20
   passThroughBuffer: 0.08
   landingBand: 0.14
   horizontalLandingSkin: 0.03
   restoreAfterTriggerExitTimeout: 0.75
   zalaytyJumpDownRestoreContactSkin: 0.01
+  zalaytyEdgeDropRequiresLandingBelow: 1
+  zalaytyEdgeDropLandingSearchDistance: 10
+  zalaytyJumpDownRestoreMaxSeconds: 3
   edgeZoneWidth: 0.35
   enableWarriorAntiLedgeSnag: 1
   warriorAntiSnagMinUpVelocity: 0.05
@@ -268,6 +283,8 @@ MonoBehaviour:
   respawnHorizontalSkin: 0.08
   respawnSeatGraceSeconds: 0.25
   respawnId: RespawnId
+  riderJumpProtectionSeconds: 1.2
+  logRiderJumpProtection: 0
 --- !u!212 &88550874880223089
 SpriteRenderer:
   m_ObjectHideFlags: 0
@@ -361,7 +378,7 @@ BoxCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 10.7, y: 2.99}
+    oldSize: {x: 10.705454, y: 2.99}
     newSize: {x: 12.48, y: 8.32}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
@@ -407,7 +424,7 @@ BoxCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 10.7, y: 2.99}
+    oldSize: {x: 10.705454, y: 2.99}
     newSize: {x: 12.48, y: 8.32}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
@@ -429,25 +446,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   mode: 1
   keyRelic: {fileID: 11400000, guid: 10be32f63ed74764585e8bd4137849cb, type: 2}
-  keyRelicIdOverride: key
   requiredKeys: 1
-  consumeKeysOnUnlock: 1
-  unlockOnlyOnce: 1
-  requireWarriorHitBoxLayer: 1
-  warriorHitBoxLayerName: Hit Box
   platformMotionTarget: {fileID: 6505351828746811695}
-  autoFindPlatformMotionTarget: 1
-  requirePlatformMotionDisabled: 1
-  armPlatformMotionFromOwnCollider: 1
-  platformMotionPropertyName: PlatformMotionEnabled
-  platformMotionFieldName: platformMotionEnabled
-  disableOwnCollidersOnUnlock: 0
-  extraCollidersToDisable: []
   objectToDisableOnUnlock: {fileID: 0}
   objectToEnableOnUnlock: {fileID: 0}
   animator: {fileID: 0}
-  unlockTriggerName: Open
-  unlockedBoolName: Unlocked
   onUnlocked:
     m_PersistentCalls:
       m_Calls: []
@@ -460,6 +463,8 @@ MonoBehaviour:
   onPlatformMotionPromptClosed:
     m_PersistentCalls:
       m_Calls: []
+  keyRelicIdOverride: key
+  extraCollidersToDisable: []
 --- !u!1 &7067051257432765168
 GameObject:
   m_ObjectHideFlags: 0

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using UnityEditor;
@@ -24,15 +25,36 @@ using Debug = UnityEngine.Debug;
 /// </summary>
 public static class AndroidDeployToUser0
 {
-    private const string PackageName = "com.polymart.GalacticWarrior";
+    internal const string PackageName = "com.polymart.GalacticWarrior";
     private const string ApkRelativePath = "Builds/Android/Galactic-Warrior.apk";
 
     [MenuItem("Tools/Galactic Warrior/Android/Build APK + Deploy to User 0")]
     public static void BuildAndDeploy()
     {
-        string apkPath = BuildApk();
+        string apkPath = BuildApk(forceDevelopmentBuild: false);
         if (apkPath == null)
             return; // build failed/cancelled; BuildApk already logged.
+
+        if (InstallToUser0(apkPath))
+            LaunchApp();
+    }
+
+    /// <summary>
+    /// Meme deploiement, mais en FORCANT la build de developpement, quel que soit l'etat de la case
+    /// des Build Settings.
+    ///
+    /// Pourquoi une entree separee: l'outillage de test (le geste qui simule un joueur n'ayant
+    /// jamais paye, les raccourcis de remise a zero) est derriere
+    /// <c>#if UNITY_EDITOR || DEVELOPMENT_BUILD</c>. Avec la case decochee, ce code est purement
+    /// supprime du binaire et le testeur cherche un geste qui n'existe pas dans l'application. La
+    /// case a deja ete decochee au mauvais moment une fois, sans que rien ne le signale.
+    /// </summary>
+    [MenuItem("Tools/Galactic Warrior/Android/Build DEV APK + Deploy to User 0")]
+    public static void BuildAndDeployDevelopment()
+    {
+        string apkPath = BuildApk(forceDevelopmentBuild: true);
+        if (apkPath == null)
+            return;
 
         if (InstallToUser0(apkPath))
             LaunchApp();
@@ -54,7 +76,7 @@ public static class AndroidDeployToUser0
 
     // --- Build -------------------------------------------------------------
 
-    private static string BuildApk()
+    private static string BuildApk(bool forceDevelopmentBuild)
     {
         string[] scenes = EditorBuildSettings.scenes
             .Where(s => s.enabled)
@@ -67,8 +89,27 @@ public static class AndroidDeployToUser0
             return null;
         }
 
+        // Assert APK mode. AndroidReleaseBundleBuilder sets buildAppBundle = true and leaves it
+        // that way, so without this the deploy silently produces an AAB with a .apk name. The
+        // device then rejects it with INSTALL_PARSE_FAILED_UNEXPECTED_EXCEPTION on
+        // AndroidManifest.xml, which reads like a manifest problem and is not one.
+        if (EditorUserBuildSettings.buildAppBundle)
+        {
+            EditorUserBuildSettings.buildAppBundle = false;
+            Debug.Log("[AndroidDeploy] Editor was in App Bundle mode; switched to APK for this deploy.");
+        }
+
         string apkPath = Path.GetFullPath(Path.Combine(GetProjectRoot(), ApkRelativePath));
         Directory.CreateDirectory(Path.GetDirectoryName(apkPath));
+
+        // Development est pose a la fois dans EditorUserBuildSettings et dans les BuildOptions.
+        // La case des Build Settings est ce que lit le compilateur pour definir DEVELOPMENT_BUILD;
+        // l'option seule ne suffit donc pas a faire exister le code de test dans le binaire.
+        if (forceDevelopmentBuild && !EditorUserBuildSettings.development)
+        {
+            EditorUserBuildSettings.development = true;
+            Debug.Log("[AndroidDeploy] Development Build force pour ce deploiement.");
+        }
 
         var options = new BuildPlayerOptions
         {
@@ -76,10 +117,13 @@ public static class AndroidDeployToUser0
             locationPathName = apkPath,
             target = BuildTarget.Android,
             targetGroup = BuildTargetGroup.Android,
-            options = BuildOptions.None, // mirror current Player Settings; no forced dev build.
+
+            // Sans forcage: on suit les Player Settings, comme avant.
+            options = forceDevelopmentBuild ? BuildOptions.Development : BuildOptions.None,
         };
 
-        Debug.Log($"[AndroidDeploy] Building {scenes.Length} scene(s) -> {apkPath}");
+        Debug.Log($"[AndroidDeploy] Building {scenes.Length} scene(s) -> {apkPath}" +
+                  (forceDevelopmentBuild ? " (DEVELOPPEMENT)" : string.Empty));
         BuildReport report = BuildPipeline.BuildPlayer(options);
 
         if (report.summary.result != BuildResult.Succeeded)
@@ -94,8 +138,41 @@ public static class AndroidDeployToUser0
 
     // --- Install / launch --------------------------------------------------
 
+    /// <summary>
+    /// An AAB is a zip too, so a mislabelled bundle installs "successfully" as far as the file
+    /// system is concerned and only fails on the device with a confusing manifest parse error.
+    /// Checking the archive layout here turns that into a clear message.
+    /// </summary>
+    private static bool LooksLikeApk(string path)
+    {
+        try
+        {
+            using (var archive = System.IO.Compression.ZipFile.OpenRead(path))
+            {
+                if (archive.GetEntry("AndroidManifest.xml") != null)
+                    return true;
+
+                if (archive.GetEntry("BundleConfig.pb") != null)
+                    Debug.LogError($"[AndroidDeploy] {Path.GetFileName(path)} is an App Bundle, not an APK. " +
+                                   "Rebuild with 'Build APK + Deploy to User 0'.");
+                else
+                    Debug.LogError($"[AndroidDeploy] {Path.GetFileName(path)} has no AndroidManifest.xml at its root.");
+
+                return false;
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[AndroidDeploy] Cannot read {path} as an archive: {e.Message}");
+            return false;
+        }
+    }
+
     private static bool InstallToUser0(string apkPath)
     {
+        if (!LooksLikeApk(apkPath))
+            return false;
+
         string serial = GetSingleDeviceSerial();
         if (serial == null)
             return false;
@@ -134,7 +211,7 @@ public static class AndroidDeployToUser0
 
     // --- ADB plumbing ------------------------------------------------------
 
-    private static string GetSingleDeviceSerial()
+    internal static string GetSingleDeviceSerial()
     {
         var (code, stdout, stderr) = RunAdb("devices");
         if (code != 0)
@@ -164,7 +241,7 @@ public static class AndroidDeployToUser0
         return serials[0];
     }
 
-    private static (int code, string stdout, string stderr) RunAdb(string args)
+    internal static (int code, string stdout, string stderr) RunAdb(string args)
     {
         string adb = GetAdbPath();
         if (adb == null)
@@ -194,7 +271,7 @@ public static class AndroidDeployToUser0
         }
     }
 
-    private static string GetAdbPath()
+    internal static string GetAdbPath()
     {
         var candidates = new List<string>();
 

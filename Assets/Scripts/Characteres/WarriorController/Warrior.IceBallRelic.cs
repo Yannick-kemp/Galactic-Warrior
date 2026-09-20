@@ -41,11 +41,35 @@ namespace Assets.Scripts.Characteres.WarriorController
         // (flag set but the Attack3 animation not playing). -1 = not orphaned.
         private float _castOrphanSince = -1f;
 
-        // Set true by Hashagar while it visually holds (hides) the Warrior during its Attack2
-        // grab. The Attack3 sprite watchdog below must NOT re-enable the default sprite while
-        // this is true, otherwise Hashagar's per-frame hide is overwritten every Update and the
-        // Warrior never disappears. Hashagar-only: does not touch Hivernox / Attack3 paths.
-        public bool IsExternallyHiddenByHashagar { get; set; }
+        // Hashagar hides the Warrior while it holds him during its Attack2 grab, and the Attack3
+        // sprite watchdog must not fight that hide every Update.
+        //
+        // The HOLDER is kept, not a bare flag, so the watchdog can tell a live grab from an owner
+        // that vanished mid-hold. With a flag, killing / disabling / culling Hashagar during the
+        // grab left the Warrior invisible but fully controllable forever: the release only ever ran
+        // from Hashagar's own code, and there was nothing left to run it.
+        private MonoBehaviour _hashagarVisualHolder;
+
+        public bool IsExternallyHiddenByHashagar => _hashagarVisualHolder != null;
+
+        /// <summary>Hashagar claims the Warrior's visuals for the duration of its grab, or releases them.</summary>
+        public void SetHashagarVisualHold(MonoBehaviour holder, bool held)
+        {
+            _hashagarVisualHolder = held ? holder : null;
+        }
+
+        /// <summary>
+        /// A grab only counts while its owner is still alive, enabled and in the scene. Anything
+        /// else means the hold was abandoned and the Warrior has to take his visuals back.
+        /// </summary>
+        private bool IsHashagarHoldStillLive()
+        {
+            if (_hashagarVisualHolder == null) return false;          // destroyed
+            if (!_hashagarVisualHolder.isActiveAndEnabled) return false;  // disabled or culled
+
+            var owner = _hashagarVisualHolder as Assets.Scripts.Characteres.EnemyContoller.Enemy;
+            return owner == null || !owner.IsDeadOrDying;
+        }
 
         private bool _iceBallArmed;
         private string _iceBallRelicId;
@@ -103,7 +127,16 @@ namespace Assets.Scripts.Characteres.WarriorController
             // Hashagar owns the hide while it holds the Warrior during its Attack2 grab.
             // Without this guard the watchdog re-enables the default sprite every frame and
             // the Warrior never disappears during HashagarMonster.HandleAttack2HoldByFrame.
-            if (IsExternallyHiddenByHashagar) return;
+            if (IsExternallyHiddenByHashagar)
+            {
+                if (IsHashagarHoldStillLive())
+                    return;
+
+                // Owner gone mid-grab. Take the visuals back rather than stay hidden forever.
+                _hashagarVisualHolder = null;
+                ForceRestoreNormalVisualsAfterExternalHide();
+                return;
+            }
 
             if (defaultWarriorSpriteRenderer == null) return;
 

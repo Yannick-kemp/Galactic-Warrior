@@ -142,6 +142,19 @@ public class WarriorTutorialController : MonoBehaviour
             yield break;
         }
 
+        // Control-scheme gate: the whole tutorial is tap-based (a hand on a world target the player
+        // taps, tap-to-jump). In joystick (Direct) mode it makes no sense and would soft-lock the
+        // player (combat is frozen, the Warrior is boxed in by confinement walls) → skip it cleanly.
+        // We deliberately do NOT mark it completed, so switching back to Tap later still shows it.
+        if (ControlScheme.IsDirect)
+        {
+            Log("Control scheme = Direct (joystick) → skipping tap tutorial (normal gameplay).");
+            TutorialActive = false;
+            SetActiveSafe(attackHint, false);
+            enabled = false;
+            yield break;
+        }
+
         bool done = GameMgr.Instance != null && GameMgr.Instance.IsTutorialCompleted;
         Log($"GameMgr.Instance={(GameMgr.Instance != null)}, IsTutorialCompleted={done}.");
 
@@ -253,6 +266,17 @@ public class WarriorTutorialController : MonoBehaviour
 
         if (!_running)
             return;
+
+        // A controller connected mid-tutorial switches to Direct control (a browser only reports
+        // it once a button is pressed). The tap steps, and the attack step that waits for the
+        // on-screen button, can no longer be done: end the tutorial like the Direct-mode skip
+        // above — gameplay unlocked, but NOT marked completed.
+        if (ControlScheme.IsDirect)
+        {
+            Log("Control scheme switched to Direct during the tutorial → ending it (not marked completed).");
+            CompleteTutorial(markCompleted: false);
+            return;
+        }
 
         // Keep the hand pinned to its target (fixed world spot for L/R, above the Warrior for jump).
         if (_handActive && _hand != null)
@@ -436,7 +460,7 @@ public class WarriorTutorialController : MonoBehaviour
             EnterStep(Step.Done);
     }
 
-    private void CompleteTutorial()
+    private void CompleteTutorial(bool markCompleted = true)
     {
         _running = false;
         TutorialActive = false;
@@ -448,7 +472,8 @@ public class WarriorTutorialController : MonoBehaviour
 
         RestoreDisabledEnemies();
 
-        GameMgr.Instance?.MarkTutorialCompleted();
+        if (markCompleted)
+            GameMgr.Instance?.MarkTutorialCompleted();
 
         ButtonClickHandler.OnAttackButtonPressed -= HandleAttackButtonPressed;
 
@@ -458,7 +483,9 @@ public class WarriorTutorialController : MonoBehaviour
 
         enabled = false;
 
-        Debug.Log("[Tutorial] All steps validated — gameplay unlocked, tutorial marked complete.");
+        Debug.Log(markCompleted
+            ? "[Tutorial] All steps validated — gameplay unlocked, tutorial marked complete."
+            : "[Tutorial] Ended early (Direct control) — gameplay unlocked, tutorial not marked complete.");
     }
 
     private IEnumerator FadeOutHalo()

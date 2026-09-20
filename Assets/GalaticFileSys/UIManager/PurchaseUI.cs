@@ -99,6 +99,15 @@ public class PurchaseUI : MonoBehaviour
             Debug.Log($"[PurchaseUI] FetchProducts for {productId}");
             storeController.FetchProducts(productsToFetch);
 
+            // Interrupteur de developpement: sans ce saut, l'appareil de test se redeverrouille
+            // tout seul quelques secondes apres le lancement, parce que le compte Google possede
+            // deja le produit. Effacer les preferences ne suffit donc jamais.
+            if (DevPurchaseSimulation.IsActive)
+            {
+                Debug.Log("[DEV-ACHAT] restauration ignoree: simulation 'jamais achete' armee.");
+                return;
+            }
+
             // Restore: if this non-consumable was already bought (e.g. a previous
             // closed-testing purchase), Google won't let it be re-bought. Query the
             // existing purchases so an owner is unlocked automatically.
@@ -193,6 +202,16 @@ public class PurchaseUI : MonoBehaviour
 
     public void OnBuyPressed()
     {
+        // Interrupteur de developpement: achat simule localement. Google refuserait de revendre un
+        // non consommable deja possede, donc sans ce raccourci la sequence d'achat serait injouable
+        // sur l'appareil de test. Le parcours d'ecrans, lui, est identique a un vrai achat.
+        if (DevPurchaseSimulation.IsActive)
+        {
+            Debug.Log("[DEV-ACHAT] achat SIMULE (aucun appel a Google).");
+            Unlock(navigate: true);
+            return;
+        }
+
         if (storeController == null)
         {
             Debug.LogWarning("[PurchaseUI] StoreController is null.");
@@ -235,6 +254,14 @@ public class PurchaseUI : MonoBehaviour
     {
         if (orders == null)
             return;
+
+        // Ceinture et bretelles: une requete lancee avant l'armement de l'interrupteur pourrait
+        // encore repondre ici et redeverrouiller dans le dos du testeur.
+        if (DevPurchaseSimulation.IsActive)
+        {
+            Debug.Log("[DEV-ACHAT] reponse de restauration ignoree: simulation 'jamais achete' armee.");
+            return;
+        }
 
         Debug.Log($"[PurchaseUI] OnPurchasesFetched confirmed={orders.ConfirmedOrders?.Count ?? 0} pending={orders.PendingOrders?.Count ?? 0}");
 
@@ -324,6 +351,12 @@ public class PurchaseUI : MonoBehaviour
 
     private void OnGetFullVersionPressed()
     {
+#if YOUTUBE_PLAYABLES
+        // YouTube forbids links to external content; the build never offers a purchase anyway.
+        Debug.LogWarning("[PurchaseUI] Store link disabled in the YouTube build.");
+        GameMgr.Instance?.OnPurchaseDeclined();
+        return;
+#else
         if (string.IsNullOrWhiteSpace(playStoreUrl))
         {
             Debug.LogWarning("[PurchaseUI] playStoreUrl non renseigné dans l'Inspector.");
@@ -332,16 +365,22 @@ public class PurchaseUI : MonoBehaviour
 
         Debug.Log($"[PurchaseUI] (Web) Ouverture Google Play: {playStoreUrl}");
         Application.OpenURL(playStoreUrl);
+#endif
     }
 #endif
+
+    // The GameObject can stay active while faded out, so activeSelf is not a visibility test.
+    public bool IsVisible => _visible && gameObject.activeInHierarchy;
 
     public void Show()
     {
         if (_routine != null)
             StopCoroutine(_routine);
 
-        _visible = true;
+        // Activate first: on a first open the Awake runs here and its HideImmediate would
+        // reset _visible to false, making IsVisible lie while the popup is on screen.
         gameObject.SetActive(true);
+        _visible = true;
         _routine = StartCoroutine(ShowRoutine());
     }
 

@@ -27899,7 +27899,7 @@ IL_0012:
 		String_t* L_4 = ___0_key;
 		NullCheck(L_3);
 		RuntimeObject* L_5;
-		L_5 = VirtualFuncInvoker1< RuntimeObject*, RuntimeObject* >::Invoke(29, L_3, L_4);
+		L_5 = VirtualFuncInvoker1< RuntimeObject*, RuntimeObject* >::Invoke(30, L_3, L_4);
 		G_B3_0 = L_5;
 	}
 
@@ -27972,7 +27972,7 @@ IL_0021:
 		L_6 = StartDragArgs_get_genericData_m9F34B0D595FC63E28E4D033BCA5767E5ED8185BD_inline((&___0_args), NULL);
 		NullCheck(L_6);
 		RuntimeObject* L_7;
-		L_7 = VirtualFuncInvoker0< RuntimeObject* >::Invoke(31, L_6);
+		L_7 = VirtualFuncInvoker0< RuntimeObject* >::Invoke(32, L_6);
 		V_3 = L_7;
 	}
 	{
@@ -28021,7 +28021,7 @@ IL_004c_1:
 				RuntimeObject* L_15;
 				L_15 = DictionaryEntry_get_Value_m75FD18FE968AE131F28AA2CB0DF4895EBA39075E_inline((&V_4), NULL);
 				NullCheck(L_13);
-				VirtualActionInvoker2< RuntimeObject*, RuntimeObject* >::Invoke(30, L_13, ((String_t*)CastclassSealed((RuntimeObject*)L_14, il2cpp_defaults.string_class)), L_15);
+				VirtualActionInvoker2< RuntimeObject*, RuntimeObject* >::Invoke(31, L_13, ((String_t*)CastclassSealed((RuntimeObject*)L_14, il2cpp_defaults.string_class)), L_15);
 			}
 
 IL_007a_1:
@@ -30720,7 +30720,7 @@ IL_0019:
 		int32_t L_9 = ___1_length;
 		Span_1_t3C5DB525B005B1AC5A1F3BDD528900C5C7C7D316 L_10;
 		memset((&L_10), 0, sizeof(L_10));
-		Span_1__ctor_m89B8042F831A4ACF35D15B29B8141AE29CFFDF84_inline((&L_10), L_8, L_9, il2cpp_rgctx_method(InitializedTypeInfo(method->klass)->rgctx_data, 18));
+		Span_1__ctor_m89B8042F831A4ACF35D15B29B8141AE29CFFDF84_inline((&L_10), L_8, L_9, il2cpp_rgctx_method(InitializedTypeInfo(method->klass)->rgctx_data, 19));
 		return L_10;
 	}
 }

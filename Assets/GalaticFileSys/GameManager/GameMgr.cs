@@ -207,13 +207,21 @@ public class GameMgr : MonoBehaviour, IGame
     public event System.Action OnRetryConsumed;
 
     // Treat this as "campaign purchased / rest unlocked"
-    public bool Level2Unlocked => autoUnlockForTesting || level2Unlocked;
+    // Web demo (YouTube or polymart.be): nothing is sold there, so every demo chapter is open (the
+    // campaign itself is cut to the demo chapters in NormalizeCampaignSceneOrder).
+    public bool Level2Unlocked => WebDemo.IsBuild || autoUnlockForTesting || level2Unlocked;
 
     // Menu-facing properties
     public bool HasCampaignPurchase => Level2Unlocked;
     public int HighestReachedSceneIndex => _highestReachedSceneIndex;
     public int CampaignSceneCount => campaignSceneOrder != null ? campaignSceneOrder.Count : 0;
     public string PurchasePriceText => purchasePriceText;
+
+    /// <summary>
+    /// Index de la scene de campagne active (0 = demo), ou -1 hors campagne (le menu).
+    /// Expose pour que l'octroi des reliques de progression sache dans quel chapitre il entre.
+    /// </summary>
+    public int CurrentCampaignSceneIndex => GetCurrentCampaignSceneIndex();
 
     private void Awake()
     {
@@ -333,6 +341,11 @@ public class GameMgr : MonoBehaviour, IGame
         _isSceneTransitionRunning = false;
         Time.timeScale = 1f;
 
+        // A boss fight never survives a scene change; a stale flag here would keep the level track
+        // from ever coming back.
+        _bossMusicActive = false;
+        _musicBeforeBoss = null;
+
         if (UIManager.Instance != null)
         {
             UIManager.Instance.HidePurchaseScreen();
@@ -441,6 +454,68 @@ public class GameMgr : MonoBehaviour, IGame
             clip = Resources.Load<AudioClip>(level4MusicResourcesPath);
 
         StartMusic(clip);
+    }
+
+    // --- Boss battle music ---------------------------------------------------
+
+    private AudioClip _musicBeforeBoss;
+    private float _musicTimeBeforeBoss;
+    private bool _bossMusicActive;
+
+    public bool IsBossMusicPlaying => _bossMusicActive;
+
+    /// <summary>
+    /// Swaps the level track for a boss track. The level track and its playhead are remembered so
+    /// the fight can hand it back where it left off instead of restarting it from the top, which
+    /// would be obvious right after a boss dies.
+    /// </summary>
+    public void PlayBossMusic(AudioClip clip)
+    {
+        if (clip == null) return;
+
+        EnsureMusicSource();
+
+        if (_bossMusicActive && _musicSource.clip == clip)
+            return;
+
+        if (!_bossMusicActive)
+        {
+            _musicBeforeBoss = _musicSource.clip;
+            _musicTimeBeforeBoss = _musicSource.clip != null ? _musicSource.time : 0f;
+        }
+
+        _bossMusicActive = true;
+
+        _musicSource.Stop();
+        _musicSource.clip = clip;
+        _musicSource.time = 0f;
+        _musicSource.volume = musicVolume;
+        _musicSource.loop = true;
+        _musicSource.Play();
+    }
+
+    /// <summary>Ends the boss track and resumes the level track where it was.</summary>
+    public void StopBossMusic()
+    {
+        if (!_bossMusicActive) return;
+
+        _bossMusicActive = false;
+        EnsureMusicSource();
+        _musicSource.Stop();
+
+        if (_musicBeforeBoss == null)
+        {
+            _musicSource.clip = null;
+            return;
+        }
+
+        _musicSource.clip = _musicBeforeBoss;
+        _musicSource.time = Mathf.Clamp(_musicTimeBeforeBoss, 0f, Mathf.Max(0f, _musicBeforeBoss.length - 0.05f));
+        _musicSource.volume = musicVolume;
+        _musicSource.loop = true;
+        _musicSource.Play();
+
+        _musicBeforeBoss = null;
     }
 
     private void StartMusic(AudioClip clip)
@@ -553,7 +628,11 @@ public class GameMgr : MonoBehaviour, IGame
         SceneManager.LoadScene(menuSceneName);
     }
 
-    private void LoadMainMenu()
+    /// <summary>
+    /// Public so the in-game pause menu can offer a way back. Without it a player who starts a
+    /// chapter is stuck in it until they win or die, and the chapter picker becomes unreachable.
+    /// </summary>
+    public void LoadMainMenu()
     {
         LoadMenu(mainMenuSceneName);
     }
@@ -774,6 +853,12 @@ public class GameMgr : MonoBehaviour, IGame
         // The level is finished: any checkpoint inside it is no longer a valid resume point.
         ClearSavedCheckpoint();
 
+        if (!HasNextCampaignScene(currentIndex) && WebDemo.IsBuild)
+        {
+            ShowDemoEndScreen();
+            return;
+        }
+
         if (!HasNextCampaignScene(currentIndex))
         {
             // Dernier niveau du jeu terminé (boss final vaincu) → écran de victoire
@@ -843,6 +928,26 @@ public class GameMgr : MonoBehaviour, IGame
         int retries = ScoreManager.Instance != null ? ScoreManager.Instance.RetryCount : 0;
 
         UIManager.Instance?.ShowVictoryScreen(score, dur, retries, finalRewardCoins, finalRewardTokens);
+    }
+
+    /// <summary>
+    /// Web demo: the last demo chapter is cleared. YouTube requires telling the player there is no
+    /// more content (and, there, no store link; the polymart.be build adds a Google Play button),
+    /// so this replaces both the purchase gate and the final victory screen of the full game.
+    /// </summary>
+    private void ShowDemoEndScreen()
+    {
+        // Nothing may happen behind this screen (a late hit would open DEFEAT under it).
+        // LoadMenu restores the time scale when the player leaves.
+        Time.timeScale = 0f;
+
+        if (InputMgr.Instance != null)
+            InputMgr.Instance.InputLocked = true;
+
+        SaveProgression();
+
+        Debug.Log("[GameMgr] Last demo chapter cleared. Showing the end-of-demo screen.");
+        DemoEndScreen.Show(ReturnToMenuFromVictory);
     }
 
     // Called by the victory screen buttons.
@@ -973,6 +1078,9 @@ public class GameMgr : MonoBehaviour, IGame
         StartCoroutine(HandleBossFinalDeathLevelCompleteRoutine());
     }
 
+    /// <summary>Safety net on the wait for the boss death cinematic, in real seconds.</summary>
+    private const float MaxWaitForDeathCinematic = 4f;
+
     private IEnumerator HandleBossFinalDeathLevelCompleteRoutine()
     {
         _bossFinalDeathFlowRunning = true;
@@ -985,10 +1093,20 @@ public class GameMgr : MonoBehaviour, IGame
         while (_bossSlowMoPlaying)
             yield return null;
 
+        // Then let the death cinematic finish. It owns the camera and fires the explosion chain,
+        // and the relic rising in the middle of that reads as one muddled event instead of two
+        // beats. Bounded on purpose: a cinematic that somehow never ends must not strand the level
+        // in an uncompletable state.
+        float finisherDeadline = Time.realtimeSinceStartup + MaxWaitForDeathCinematic;
+        while (Assets.Scripts.Objects.BossFinisherFx.BossFinisher.IsRunning
+               && Time.realtimeSinceStartup < finisherDeadline)
+            yield return null;
+
         yield return new WaitForSecondsRealtime(bossDeathCompletionDelay);
 
-        // After the slow-mo: play the boss MemoryRelic sequence (reused VFX + SFX + new "rise"
-        // animation), then increment the persistent boss-relic counter, before the end-of-level UI.
+        // After the death cinematic: play the boss MemoryRelic sequence (reused VFX + SFX + new
+        // "rise" animation), then increment the persistent boss-relic counter, before the
+        // end-of-level UI.
         yield return GrantBossRelicSequence(_pendingBossRelicType, _pendingBossDeathPosition);
 
         CompleteCurrentCampaignSceneInternal();
@@ -1107,12 +1225,14 @@ public class GameMgr : MonoBehaviour, IGame
     {
         level2Unlocked = true;
 
-        int level2Index = GetCampaignSceneIndex(level2SceneName);
-        if (level2Index >= 0)
-            MarkSceneAsReached(level2Index);
+        // L'achat ouvre le chapitre 1 tout de suite, sans attendre que la demo soit finie.
+        // La reserve d'origine ("il n'aurait jamais la relique memoire") est levee: la relique
+        // manquante est accordee a l'entree du chapitre par ProgressionRelicGrant.
+        _highestReachedSceneIndex = Mathf.Max(_highestReachedSceneIndex, 1);
+        _highestReachedSceneIndex = Mathf.Clamp(_highestReachedSceneIndex, 0, Mathf.Max(0, campaignSceneOrder.Count - 1));
 
         SaveProgression();
-        Debug.Log("[GameMgr] Campaign purchased / Level 2 unlocked.");
+        Debug.Log("[GameMgr] Campagne achetee: chapitre 1 ouvert immediatement (relique accordee a l'entree).");
     }
 
     public void OnPurchaseConfirmed()
@@ -1431,11 +1551,33 @@ public class GameMgr : MonoBehaviour, IGame
     public void StartNewGame()
     {
         ResetMenuLaunchState();
-        ClearSavedCheckpoint(); // New Game always restarts the campaign from the very beginning.
-        ClearBossRelics();      // New Game also wipes boss-relic progress.
+        ClearSavedCheckpoint();   // New Game always restarts the campaign from the very beginning.
+        ClearBossRelics();        // New Game also wipes boss-relic progress.
+        ResetCampaignProgress();  // ...and how far the player got, which used to survive.
         _suppressCheckpointRespawnOnce = true;
         ScoreManager.Instance?.StartNewRun();
         SceneManager.LoadScene(warriorSceneName);
+    }
+
+    /// <summary>
+    /// Wipes how far the player reached. New Game used to clear only the checkpoint and the boss
+    /// relics, so every level unlocked in the previous run stayed selectable in the chapter picker
+    /// and Continue still pointed deep into the campaign.
+    ///
+    /// The purchase is deliberately NOT cleared: it is an entitlement, not progress. A fresh start
+    /// therefore means the demo alone for everybody, owner included — the demo is where the memory
+    /// relic is awarded, so it stays a mandatory step.
+    /// </summary>
+    private void ResetCampaignProgress()
+    {
+        NormalizeCampaignSceneOrder();
+
+        _highestReachedSceneIndex = 0;
+        _continueSceneIndex = 0;
+
+        SaveProgression();
+
+        Debug.Log("[GameMgr] New Game: campaign progress reset to the demo (purchase kept).");
     }
 
     public void ContinueGame()
@@ -1465,7 +1607,19 @@ public class GameMgr : MonoBehaviour, IGame
         ResetMenuLaunchState();
         _suppressCheckpointRespawnOnce = true; // Level Select always plays the chosen level from its start.
         ScoreManager.Instance?.StartNewRun();
-        SceneManager.LoadScene(EnforceTutorialGate(campaignSceneOrder[sceneIndex]));
+
+        // Un acheteur qui DESIGNE un chapitre dans le selecteur y va, sans detour par le tutoriel.
+        // Le rediriger ici viderait de son sens la ligne qu'il vient de toucher, et contredirait la
+        // promesse de l'achat. Le garde-fou reste entier partout ailleurs: Continuer et les
+        // enchainements automatiques passent toujours par EnforceTutorialGate, donc un acheteur qui
+        // n'a encore rien joue et appuie simplement sur Continuer recoit bien le tutoriel.
+        bool explicitPaidChapter = sceneIndex >= 1 && Level2Unlocked;
+
+        string target = explicitPaidChapter
+            ? campaignSceneOrder[sceneIndex]
+            : EnforceTutorialGate(campaignSceneOrder[sceneIndex]);
+
+        SceneManager.LoadScene(target);
     }
 
     // Onboarding gate: until the WarriorScene tutorial has been completed once, every campaign
@@ -1476,7 +1630,12 @@ public class GameMgr : MonoBehaviour, IGame
     // HighestReachedSceneIndex is never lowered, so all unlocked levels stay available afterwards.
     private string EnforceTutorialGate(string requestedSceneName)
     {
-        if (IsTutorialCompleted)
+        // Direct (joystick) mode deliberately skips the tap-based tutorial (see
+        // WarriorTutorialController) and never sets GW_TutorialCompleted. Since joystick is now the
+        // default scheme, without this exemption Direct players are redirected AgeOfIce → WarriorScene
+        // forever after finishing the tutorial scene. Treat Direct mode as gate-exempt; the flag stays
+        // 0 so Tap players still get the tutorial if they switch schemes.
+        if (IsTutorialCompleted || ControlScheme.IsDirect)
             return requestedSceneName;
         if (string.IsNullOrEmpty(warriorSceneName))
             return requestedSceneName;
@@ -1693,6 +1852,11 @@ public class GameMgr : MonoBehaviour, IGame
         if (platform.platformCollider == null)
             return platform.transform.position;
 
+        // Same cull guard as the static path: a culled zone collapses platformCollider.bounds
+        // onto the pivot, which GetSafeRespawnPositionFor would read as the surface.
+        EnsurePlatformZoneActive(platform);
+        Physics2D.SyncTransforms();
+
         float preferredX = warrior.LastSafePosition != Vector3.zero
             ? warrior.LastSafePosition.x
             : warrior.transform.position.x;
@@ -1707,6 +1871,11 @@ public class GameMgr : MonoBehaviour, IGame
 
         if (platform.platformCollider == null)
             return platform.transform.position;
+
+        // Same cull guard as the static path: a culled zone collapses platformCollider.bounds
+        // onto the pivot, which GetSafeRespawnPositionFor would read as the surface.
+        EnsurePlatformZoneActive(platform);
+        Physics2D.SyncTransforms();
 
         float preferredX = warrior.LastSafePosition != Vector3.zero
             ? warrior.LastSafePosition.x
@@ -1723,11 +1892,33 @@ public class GameMgr : MonoBehaviour, IGame
         if (platform.platformCollider == null)
             return platform.transform.position;
 
+        // Same cull guard as the static path: a culled zone collapses platformCollider.bounds
+        // onto the pivot, which GetSafeRespawnPositionFor would read as the surface.
+        EnsurePlatformZoneActive(platform);
+        Physics2D.SyncTransforms();
+
         float preferredX = warrior.LastSafePosition != Vector3.zero
             ? warrior.LastSafePosition.x
             : warrior.transform.position.x;
 
         return platform.GetSafeRespawnPositionFor(warrior, preferredX);
+    }
+
+    /// <summary>
+    /// Reactivates the ZoneCullable that owns <paramref name="platform"/> if it is currently
+    /// culled, so the platform's collider reports valid (non-degenerate) bounds. Found via
+    /// GetComponentInParent with includeInactive: true — reliable even when the zone GameObject
+    /// is inactive, and independent of any point-in-zone geometry test (the platform pivot can
+    /// sit below the zone's own bounds collider).
+    /// </summary>
+    private static void EnsurePlatformZoneActive(PlatFormColliderTrigger platform)
+    {
+        if (platform == null)
+            return;
+
+        ZoneCullable zone = platform.GetComponentInParent<ZoneCullable>(true);
+        if (zone != null && !zone.IsZoneActive)
+            zone.SetZoneActive(true);
     }
 
     /// <summary>
@@ -1743,16 +1934,47 @@ public class GameMgr : MonoBehaviour, IGame
         if (platform.platformCollider == null)
             return platform.transform.position;
 
+        // The platform's zone may be culled (its GameObject SetActive(false)) at this moment —
+        // the camera followed the Warrior down as he fell off the edge. A Collider2D on a
+        // DISABLED GameObject reports a DEGENERATE bounds collapsed onto the platform pivot,
+        // which for these platforms sits well BELOW the real surface (pivot y≈113.98 vs surface
+        // y≈116.65 for plf-blk_1 (3)). Reading that produced a respawn ~2.7 units too low and
+        // horizontally centered — the AgeOfIce/Zone2 "plf-blk_1 (3)" below-surface bug. Bring
+        // the zone back to life and resync physics FIRST so platformCollider.bounds reports the
+        // true surface. ApplyRespawnToWarrior re-ensures the zone shortly after; this is just
+        // earlier and idempotent.
+        EnsurePlatformZoneActive(platform);
+        Physics2D.SyncTransforms();
+
         Bounds pb = platform.platformCollider.bounds;
 
-        // Use the real collider half-height; fall back only if the collider is not yet enabled.
-        float halfHeight = (warrior.collider2 != null && warrior.collider2.enabled)
-            ? warrior.collider2.bounds.extents.y
-            : 0.8f;
+        // IMPORTANT: on the retry path this runs BEFORE TryRevive() re-enables the Warrior
+        // collider (death disabled it via disableCollidersOnDeath), so warrior.collider2 is
+        // disabled here and its live .bounds is unreliable. Derive the half-extents from the
+        // serialized BoxCollider2D size/offset (valid while disabled), scaled by the transform.
+        //
+        // The Warrior collider has a vertical offset (offset.y ≈ -0.5), so we must seat his
+        // FEET on the surface using the real pivot->feet distance. The old code used
+        // extents.y — and, because the collider was disabled, actually fell back to 0.8f —
+        // which placed the pivot ~0.5–1.0 too low, dropping his feet BELOW the (thin) platform
+        // top and leaving him trapped UNDERNEATH it (the AgeOfIce/Zone2 "plf-blk_1 (3)"
+        // bad-respawn bug). Seat by feetToPivot instead, mirroring Warrior.LateUpdate and
+        // PerformWarriorEdgeFall which both seat by feetToPivot for exactly this reason.
+        BoxCollider2D box = warrior.collider2;
+        Vector3 lossy = warrior.transform.lossyScale;
 
-        float halfWidth = (warrior.collider2 != null && warrior.collider2.enabled)
-            ? warrior.collider2.bounds.extents.x
-            : 0.4f;
+        float feetToPivot;
+        float halfWidth;
+        if (box != null)
+        {
+            feetToPivot = (box.size.y * 0.5f - box.offset.y) * Mathf.Abs(lossy.y);
+            halfWidth = (box.size.x * 0.5f) * Mathf.Abs(lossy.x);
+        }
+        else
+        {
+            feetToPivot = 1.3f;
+            halfWidth = 0.4f;
+        }
 
         // Clamp X inside the platform surface with a small horizontal skin.
         const float horizontalSkin = 0.08f;
@@ -1767,7 +1989,9 @@ public class GameMgr : MonoBehaviour, IGame
             ? Mathf.Clamp(preferredX, minX, maxX)
             : pb.center.x;
 
-        float safeY = pb.max.y + halfHeight + movingPlatformRespawnSeatOffset;
+        // safeY is the Warrior PIVOT position; pivot - feetToPivot puts the feet at
+        // pb.max.y + seatOffset, i.e. just above the platform surface.
+        float safeY = pb.max.y + feetToPivot + movingPlatformRespawnSeatOffset;
 
         return new Vector3(safeX, safeY, warrior.transform.position.z);
     }
@@ -2172,6 +2396,11 @@ public class GameMgr : MonoBehaviour, IGame
         EnsureCampaignSceneAfter(level2SceneName, warriorSceneName);
         EnsureCampaignSceneAfter(level3SceneName, level2SceneName);
         EnsureCampaignSceneAfter(level4SceneName, level3SceneName);
+
+        // The web demo ships the demo chapters only (the other scenes are not even in the build).
+        if (WebDemo.IsBuild && campaignSceneOrder.Count > WebDemo.DemoChapterCount)
+            campaignSceneOrder.RemoveRange(WebDemo.DemoChapterCount,
+                campaignSceneOrder.Count - WebDemo.DemoChapterCount);
     }
 
     private void EnsureCampaignSceneFirst(string sceneName)
@@ -2213,17 +2442,29 @@ public class GameMgr : MonoBehaviour, IGame
 
         level2Unlocked = purchased == 1 || legacyUnlocked == 1;
 
-        int defaultReachedIndex = level2Unlocked ? 1 : 0;
+        // L'achat ouvre le chapitre 1 immediatement.
+        //
+        // Ce plancher avait ete retire parce que la demo etait le seul endroit ou la relique memoire
+        // etait accordee: un acheteur qui la sautait restait coince plus loin. Cette raison n'existe
+        // plus, ProgressionRelicGrant donne la relique manquante a l'entree de tout chapitre. Rendre
+        // le plancher est donc ce qui fait tenir la promesse "l'achat debloque tout le jeu".
+        int defaultReachedIndex = purchased == 1 ? 1 : 0;
         int maxIndex = Mathf.Max(0, campaignSceneOrder.Count - 1);
 
         _highestReachedSceneIndex = PlayerPrefs.GetInt(HighestReachedSceneIndexKey, defaultReachedIndex);
+
+        // Le defaut ci-dessus ne couvre que les saves neuves. Une save existante porte deja un 0
+        // ecrit du temps de l'ancienne regle, il faut donc relever aussi les valeurs deja stockees.
+        if (purchased == 1)
+            _highestReachedSceneIndex = Mathf.Max(_highestReachedSceneIndex, 1);
+
         _highestReachedSceneIndex = Mathf.Clamp(_highestReachedSceneIndex, 0, maxIndex);
 
-        if (level2Unlocked)
-            _highestReachedSceneIndex = Mathf.Max(_highestReachedSceneIndex, Mathf.Min(1, maxIndex));
-
-        // Continue target defaults to the first playable level; it is set explicitly on level completion.
-        _continueSceneIndex = PlayerPrefs.GetInt(ContinueSceneIndexKey, defaultReachedIndex);
+        // Continue reste sur la demo tant que rien n'a ete joue, acheteur compris: le plancher
+        // ci-dessus ouvre le CHOIX du chapitre 1, il ne doit pas faire sauter l'entree en matiere a
+        // quelqu'un qui appuie simplement sur Continuer. La valeur est posee explicitement a chaque
+        // fin de niveau.
+        _continueSceneIndex = PlayerPrefs.GetInt(ContinueSceneIndexKey, 0);
         _continueSceneIndex = Mathf.Clamp(_continueSceneIndex, 0, maxIndex);
     }
 
@@ -2318,6 +2559,20 @@ public class GameMgr : MonoBehaviour, IGame
     public string GetContinueSceneDisplayName()
     {
         return NicifySceneName(GetContinueSceneName());
+    }
+
+    /// <summary>
+    /// Display name of a campaign scene, for the chapter picker. Returns empty for an index outside
+    /// the campaign so the caller can simply skip it rather than special-case the count.
+    /// </summary>
+    public string GetCampaignSceneDisplayName(int sceneIndex)
+    {
+        NormalizeCampaignSceneOrder();
+
+        if (sceneIndex < 0 || sceneIndex >= campaignSceneOrder.Count)
+            return string.Empty;
+
+        return NicifySceneName(campaignSceneOrder[sceneIndex]);
     }
 
     public bool IsSceneUnlockedForMenu(int sceneIndex)

@@ -10,20 +10,52 @@ namespace Assets.Scripts.Characteres.WarriorController
 
         private void HandleInput()
         {
-            // Hivernox freeze/hit-lock must stop world input before IceBallRelic touch handling.
-            if (IsHardActionLocked || _frozenByHivernox || !CanAttackWarrior)
+            // Direct-control (joystick) mode fully bypasses tap-to-navigate.
+            // DirectControlHud drives the Warrior through DirectMove/DirectJump instead.
+            if (ControlScheme.IsDirect)
                 return;
 
+            // Hivernox freeze/hit-lock must stop world input before IceBallRelic touch handling.
+            if (IsHardActionLocked || _frozenByHivernox || !CanAttackWarrior)
+            {
+                NoteSqueezeJumpRefusedIfWindowOpen(
+                    "entree tap coupee: verrouDur=" + IsHardActionLocked +
+                    ", gele=" + _frozenByHivernox +
+                    ", CanAttackWarrior=" + CanAttackWarrior);
+
+                if (InputMgr.Instance != null && InputMgr.Instance.IsScreenTouched())
+                    NoteTapOutcome("IGNORE en entree: verrouDur=" + IsHardActionLocked +
+                                   ", gele=" + _frozenByHivernox +
+                                   ", CanAttackWarrior=" + CanAttackWarrior);
+
+                return;
+            }
+
             if (Time.time < _uiInputBlockUntil)
+            {
+                if (InputMgr.Instance != null && InputMgr.Instance.IsScreenTouched())
+                    NoteTapOutcome("IGNORE: blocage d'entree apres une UI");
+
                 return;
+            }
+
             if (blockWorldInputWhenPointerOverUI && IsPointerOverUI())
+            {
+                if (InputMgr.Instance != null && InputMgr.Instance.IsScreenTouched())
+                    NoteTapOutcome("IGNORE: pointeur au-dessus de l'interface");
+
                 return;
+            }
+
             if (!InputMgr.Instance.IsScreenTouched())
                 return;
 
             // ICE BALL RELIC HAS PRIORITY OVER NORMAL WORLD TOUCH
             if (TryHandleArmedIceBallTouch())
+            {
+                NoteTapOutcome("consomme par la relique de boule de glace");
                 return;
+            }
 
             // IMPORTANT: must be before CanJump / CanAttack block.
             // Rustine: only restore CanMove when warrior is genuinely standing on a
@@ -39,15 +71,59 @@ namespace Assets.Scripts.Characteres.WarriorController
                 && IsStandingOnPlatformSurface())
                 CanMove = true; // rustine
 
-            if (!CanMove || !CanAttackWarrior)
-                return;
+            // Ecrasement lateral: meme sursis que sur le chemin joystick. Sans point de sol le
+            // saut serait refuse alors que c'est la sortie offerte au joueur.
+            bool squeezeEscapeJump = IsSqueezeEscapeJumpAllowed;
 
-            if (activesJumpCoroutine != null || IsFallingEdge || CountGroundPoints() == 0 || IsFallingGrazesEdge || CanDie)
+            // Meme regle que le chemin joystick: un support confirme sous les pieds rend le saut
+            // independant des points de sol et de CanMove.
+            bool supportedJump = HasConfirmedSupportForJump;
+
+            if ((!CanMove && !squeezeEscapeJump && !supportedJump) || !CanAttackWarrior)
+            {
+                NoteSqueezeJumpRefusedIfWindowOpen(
+                    "CanMove=" + CanMove + ", CanAttackWarrior=" + CanAttackWarrior);
+
+                NoteTapOutcome("IGNORE: CanMove=" + CanMove +
+                               ", support=" + HasConfirmedSupportForJump +
+                               ", CanAttackWarrior=" + CanAttackWarrior);
+
                 return;
+            }
+
+            if (activesJumpCoroutine != null || CanDie)
+            {
+                NoteSqueezeJumpRefusedIfWindowOpen(
+                    "sautDejaEnCours=" + (activesJumpCoroutine != null) + ", CanDie=" + CanDie);
+
+                NoteTapOutcome("IGNORE: sautDejaEnCours=" + (activesJumpCoroutine != null) +
+                               ", CanDie=" + CanDie);
+
+                return;
+            }
+
+            if (!squeezeEscapeJump && !supportedJump &&
+                (IsFallingEdge || CountGroundPoints() == 0 || IsFallingGrazesEdge))
+            {
+                NoteTapOutcome("IGNORE: chuteBord=" + IsFallingEdge +
+                               ", pointsSol=" + CountGroundPoints() +
+                               ", support=" + HasConfirmedSupportForJump +
+                               ", frolementBord=" + IsFallingGrazesEdge);
+
+                return;
+            }
+
+            if (supportedJump && CountGroundPoints() == 0 && IsTapAimedAtJump())
+                NoteJumpGrantedByMovingPlatformSupport("tap");
 
             SetDirectionVariables(InputMgr.Instance.TouchedVector.x);
             StopJumpTowardCoroutine();
             StopMoveTowardCoroutine();
+
+            NoteSqueezeTapDuringWindow(CanJump, InputMgr.Instance.TouchedVector.y);
+
+            if (CanJump)
+                NoteTapOutcome("-> SAUT");
 
             if (CanJump)
             {
@@ -56,6 +132,10 @@ namespace Assets.Scripts.Characteres.WarriorController
                 MarkJumpStarted();
 
                 JumpAnimationDisplay();
+
+                if (squeezeEscapeJump)
+                    NotifySqueezeEscapeJumpStarted();
+
                 activesJumpCoroutine = JumpTowardPositionAction(
                     new Vector2(GetJumpMaxX(), transform.position.y),
                     maxJump,
@@ -72,8 +152,16 @@ namespace Assets.Scripts.Characteres.WarriorController
        !_sprintActive &&
        HasEnemyInAttackRange();
 
+            if (!shouldAttackFromWorldTouch)
+                NoteTapOutcome("appui sans saut ni attaque -> tentative de deplacement" +
+                               " | CanMove=" + CanMove +
+                               " aligne=" + IsWarriorBodyBottomAlignedWithCurrentPlatformTop() +
+                               " | porteurReel=" + DescribePlatformUnderFeet());
+
             if (shouldAttackFromWorldTouch)
             {
+                NoteTapOutcome("-> ATTAQUE");
+
                 if (attackMode == AttackAnimMode.Attack2 && _attack2ArmedByRelic)
                     return;
 
@@ -83,13 +171,25 @@ namespace Assets.Scripts.Characteres.WarriorController
                 return;
             }
 
-            if (!CanMove) return;
+            if (!CanMove)
+            {
+                NoteTapOutcome("DEPLACEMENT REFUSE: CanMove=false | porteurReel=" + DescribePlatformUnderFeet());
+                return;
+            }
 
             // Warrior-only movement authorization:
             // do not start MoveTowardPostionAction unless the Warrior body bottom
             // is aligned with the current platform's solid platformCollider top.
             if (!IsWarriorBodyBottomAlignedWithCurrentPlatformTop())
+            {
+                float ecart = (CurrentplatForm != null && CurrentplatForm.platformCollider != null && collider2 != null)
+                    ? collider2.bounds.min.y - CurrentplatForm.platformCollider.bounds.max.y
+                    : float.NaN;
+
+                NoteTapOutcome("DEPLACEMENT REFUSE: corps non aligne (ecart=" + ecart.ToString("F3") +
+                               ", tolerance 0,060) | porteurReel=" + DescribePlatformUnderFeet());
                 return;
+            }
 
             if (animator.GetBool("IsLosingCtrl"))
                 animator.SetBool("IsLosingCtrl", false);
@@ -97,6 +197,9 @@ namespace Assets.Scripts.Characteres.WarriorController
 
             //Sprint relic uses only when movement starts
             TryStartArmedSprintFromMove();
+
+            NoteTapOutcome("-> DEPLACEMENT lance vers x=" +
+                           InputMgr.Instance.TouchedVector.x.ToString("F2"));
 
             activesMoveCoroutine = MoveTowardPostionAction(InputMgr.Instance.TouchedVector.x);
             StartCoroutine(activesMoveCoroutine);
@@ -378,6 +481,26 @@ namespace Assets.Scripts.Characteres.WarriorController
             return IsWarriorBodyBottomAlignedWithCurrentPlatformTop();
         }
 
+        [Header("Autorisation de deplacement - alignement sur la plateforme")]
+        [Tooltip("Enfoncement maximal sous le sommet de la plateforme encore considere comme 'pose'. Le Warrior repose naturellement SOUS le sommet (depenetration du solveur + edgeRadius du collider): mesure sur plf-blk_1 (6), il stationne a 0,060 exactement, soit la valeur de l'ancienne tolerance unique, ce qui refusait tout deplacement en boucle.")]
+        [SerializeField, Min(0.06f)] private float platformAlignSinkTolerance = 0.30f;
+
+        [Tooltip("Hauteur maximale au-dessus du sommet encore consideree comme 'pose'. Au-dela il est en l'air et le deplacement doit rester refuse.")]
+        [SerializeField, Min(0.02f)] private float platformAlignFloatTolerance = 0.12f;
+
+        /// <summary>
+        /// Le Warrior est-il reellement pose sur sa plateforme courante ? Garde-fou d'origine
+        /// contre un deplacement lance alors qu'il n'est pas assis dessus (accroche au flanc,
+        /// suspendu au-dessus apres un mauvais atterrissage).
+        ///
+        /// Deux corrections apres mesure en jeu:
+        ///   1. Deux points de sol prouvent qu'il est pose. Aucune comparaison de hauteur ne peut
+        ///      etre plus fiable que ca.
+        ///   2. La tolerance n'est plus symetrique ni serree a 0,06. Il repose naturellement SOUS
+        ///      le sommet, et il stationnait a -0,060 pile: la comparaison basculait sur le bruit
+        ///      du flottant et refusait tout deplacement, en boucle, alors que CanMove etait vrai,
+        ///      la plateforme la bonne et les deux pieds au sol.
+        /// </summary>
         private bool IsWarriorBodyBottomAlignedWithCurrentPlatformTop()
         {
             if (CurrentplatForm == null || CurrentplatForm.platformCollider == null)
@@ -386,12 +509,12 @@ namespace Assets.Scripts.Characteres.WarriorController
             if (collider2 == null)
                 return false;
 
-            float warriorBottom = collider2.bounds.min.y;
-            float platformTop = CurrentplatForm.platformCollider.bounds.max.y;
+            if (CountGroundPoints() >= 2)
+                return true;
 
-            const float tolerance = 0.06f;
+            float delta = collider2.bounds.min.y - CurrentplatForm.platformCollider.bounds.max.y;
 
-            return Mathf.Abs(warriorBottom - platformTop) <= tolerance;
+            return delta <= platformAlignFloatTolerance && delta >= -platformAlignSinkTolerance;
         }
 
         private void ForceCancelCurrentAttackInternal(bool restoreMovementAfterAttack3Cancel)

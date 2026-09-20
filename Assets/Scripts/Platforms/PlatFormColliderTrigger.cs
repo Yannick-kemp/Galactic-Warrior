@@ -198,6 +198,26 @@ public class PlatFormColliderTrigger : MonoBehaviour
         return null;
     }
 
+    /// <summary>
+    /// Starts a deferred platform check, but only when this platform can actually run it.
+    ///
+    /// Zone culling does SetActive(false) on platforms and Unity still delivers that frame's
+    /// exit callbacks afterwards. StartCoroutine on an already-inactive GameObject does NOT run
+    /// the routine — it only logs a Unity ERROR ("Coroutine couldn't be started because the game
+    /// object 'X' is inactive!"), which polluted the console and the device logcat. Skipping it
+    /// here is behaviour-preserving (the routine never ran in that case anyway) and silent.
+    /// </summary>
+    protected Coroutine TryStartPlatformCoroutine(IEnumerator routine)
+    {
+        if (routine == null)
+            return null;
+
+        if (!gameObject.activeInHierarchy || !enabled)
+            return null;
+
+        return StartCoroutine(routine);
+    }
+
     protected virtual void OnCollisionExit2D(Collision2D collision)
     {
         CharacterController character = collision.collider.GetComponentInParent<CharacterController>();
@@ -208,7 +228,7 @@ public class PlatFormColliderTrigger : MonoBehaviour
         if (character.CurrentplatForm != this)
             return;
 
-        StartCoroutine(ClearPlatformIfReallyLeft(character));
+        TryStartPlatformCoroutine(ClearPlatformIfReallyLeft(character));
     }
 
     protected virtual void OnCollisionEnter2D(Collision2D collision)
@@ -386,8 +406,12 @@ public class PlatFormColliderTrigger : MonoBehaviour
         if (zalayty == null || platformCollider == null)
             return false;
 
+        // Tell Zalayty this crossing is granted, so his fall-through guard (which blocks
+        // every Warrior-induced top-to-bottom crossing) lets this one happen.
+        zalayty.NotifyAuthorizedPlatformPassThrough(this);
+
         SetPlatformCollisionForCharacter(zalayty, ignore: true);
-        StartCoroutine(RestoreZalaytySourcePlatformWhenBodyClear(zalayty));
+        TryStartPlatformCoroutine(RestoreZalaytySourcePlatformWhenBodyClear(zalayty));
         return true;
     }
 

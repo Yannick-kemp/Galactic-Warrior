@@ -45,6 +45,9 @@ public class M97Monster : Enemy
     [Header("Laser Damage")]
     public int laserDamage = 3;
     public float laserDamageTick = 0.2f;
+
+    [Tooltip("Durabilite de bouclier consommee par tick de laser quand le Warrior pare. La consommation reste plafonnee par l'intervalle minimal de blocage du bouclier.")]
+    [SerializeField, Min(0f)] private float laserShieldAbsorbCost = 4f;
     private Coroutine laserDamageCoroutine;
 
     [Header("Barrel Axis")]
@@ -1213,6 +1216,18 @@ public class M97Monster : Enemy
 
             if (warrior.IsDodging)
             {
+                yield return new WaitForSeconds(laserDamageTick);
+                continue;
+            }
+
+            // Bouclier leve = aucun degat. Le laser du M97 etait la seule source continue a ne pas
+            // le regarder: le lance-flammes du Raka, le rayon de Zort, l'Arachnee et le projectile
+            // d'Hivernox testent tous ShieldIsUp. Meme regle que le lance-flammes: le faisceau use
+            // la durabilite au lieu de blesser, et reprend ses degats quand le bouclier tombe.
+            if (warrior.ShieldIsUp)
+            {
+                warrior.TryAbsorbSqueeze(laserShieldAbsorbCost);
+
                 yield return new WaitForSeconds(laserDamageTick);
                 continue;
             }

@@ -8,7 +8,9 @@ public static class AudioMute
 
     public static void Apply()
     {
-        AudioListener.volume = IsMuted ? 0f : 1f;
+        // YouTube's mute button overrides the in-game setting (always "enabled" elsewhere).
+        bool silent = IsMuted || !YouTubePlayables.AudioEnabled;
+        AudioListener.volume = silent ? 0f : 1f;
         // If you prefer to fully pause audio processing:
         // AudioListener.pause = IsMuted;
     }
