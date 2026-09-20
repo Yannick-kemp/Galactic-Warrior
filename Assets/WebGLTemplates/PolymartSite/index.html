@@ -9,6 +9,8 @@
     <meta name="robots" content="noindex, follow">
     <meta name="theme-color" content="#05030d">
     <link rel="icon" type="image/png" sizes="32x32" href="../../../favicon-32.png">
+    <!-- Statistiques : charge avant le jeu pour que window.PolymartStats existe quand Unity l'appelle. -->
+    <script src="/stats.js?v=20260918"></script>
     <style>
       html, body {
         margin: 0;
@@ -309,6 +311,7 @@
               window.gwUnityInstance = instance; // diagnostics: instance.GetMetricsInfo()
               loading.style.display = 'none';
               canvas.focus();
+              if (window.PolymartStats) window.PolymartStats.demoStarted();
             }).catch(showError);
           };
           document.body.appendChild(script);

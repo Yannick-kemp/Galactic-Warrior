@@ -1,6 +1,14 @@
 // Web demo helpers (polymart.be build). See WebDemo.cs.
 mergeInto(LibraryManager.library, {
 
+  // Reports a finished demo run to the page, which counts it. stats.js reports the start by
+  // itself, but only the game knows when the demo chapter is cleared. The guard covers a page
+  // copied without stats.js: the demo must keep working, it just stops being counted.
+  GW_ReportGameCompleted: function () {
+    if (window.PolymartStats && window.PolymartStats.gameCompleted)
+      window.PolymartStats.gameCompleted();
+  },
+
   // Opens a URL in a new tab; if the browser refuses the popup (no user gesture in progress,
   // e.g. the press came from a gamepad), opens it in the current tab instead.
   GW_OpenUrl: function (urlPtr) {

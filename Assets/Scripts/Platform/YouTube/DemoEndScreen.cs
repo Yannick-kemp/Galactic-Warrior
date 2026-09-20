@@ -21,6 +21,9 @@ public class DemoEndScreen : MonoBehaviour
 
     public static DemoEndScreen Show(System.Action onMainMenu)
     {
+        // Single entry point for "the demo was cleared": the site counts the run here.
+        WebDemo.ReportGameCompleted();
+
         var go = new GameObject("DemoEndScreen", typeof(RectTransform), typeof(Canvas),
             typeof(CanvasScaler), typeof(GraphicRaycaster));
 

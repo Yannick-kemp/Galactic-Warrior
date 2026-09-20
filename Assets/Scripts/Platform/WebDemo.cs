@@ -42,7 +42,22 @@ public static class WebDemo
 
 #if UNITY_WEBGL && !UNITY_EDITOR
     [DllImport("__Internal")] private static extern void GW_OpenUrl(string url);
+    [DllImport("__Internal")] private static extern void GW_ReportGameCompleted();
 #endif
+
+    /// <summary>
+    /// Tells the polymart.be page that a demo run was finished, so it can count it. Does nothing
+    /// in the YouTube build, which must not talk to anything outside YouTube.
+    /// </summary>
+    public static void ReportGameCompleted()
+    {
+        if (!IsSite)
+            return;
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        GW_ReportGameCompleted();
+#endif
+    }
 
     /// <summary>
     /// Opens the full game's Play Store page. A browser only allows a new tab during a click,
