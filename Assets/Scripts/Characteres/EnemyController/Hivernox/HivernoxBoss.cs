@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using Assets.Scripts.Characteres.WarriorController;
 using Assets.Scripts.Tools;
 using UnityEngine;
@@ -86,6 +86,39 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [SerializeField] private float autoHandSmashHitDelay = 0.25f;
         [SerializeField] private bool autoResolveHandSmashIfNoAnimationEvent = false;
         [SerializeField] private float dashReturnDamage = 5f;
+        [Header("Ice Bullet Charge")]
+        [Tooltip("OFF = ice bullets only ever trigger the normal counterattack.")]
+        [SerializeField] private bool enableIceBulletCharge = true;
+        [Tooltip("Warrior ice bullets needed inside the window below to trigger the charge.")]
+        [SerializeField, Min(1)] private int iceHitsToTriggerCharge = 2;
+        [Tooltip("Sliding window. Two bullets further apart than this never add up to a charge.")]
+        [SerializeField] private float iceHitWindowSeconds = 4f;
+        [SerializeField] private float chargeCooldown = 3f;
+        [SerializeField] private float chargeSpeed = 5.5f;
+        [Tooltip("The charge gives up after this long without reaching the Warrior: he dodged.")]
+        [SerializeField] private float maxChargeSeconds = 2.5f;
+        [SerializeField] private int chargeStrikeDamage = 14;
+        [SerializeField] private float chargeStrikeHitRange = 1.9f;
+        [SerializeField] private float chargeStrikeAnimationSeconds = 0.6f;
+        [SerializeField] private float autoChargeStrikeHitDelay = 0.2f;
+        [SerializeField] private bool autoResolveChargeStrikeIfNoAnimationEvent = true;
+        [Tooltip("Distance kept from the platform edge when Hivernox withdraws to the far end.")]
+        [SerializeField] private float edgeStandbyMargin = 0.7f;
+        [Tooltip("How far past the platform ends the Warrior must be before he counts as gone.")]
+        [SerializeField] private float platformExitMarginX = 0.6f;
+        [Tooltip("Vertical gap that counts as gone. Must stay well above a normal jump apex, or every jump would trigger the withdrawal.")]
+        [SerializeField] private float platformExitMarginY = 2.5f;
+        [Tooltip("The Warrior must stay off the platform this long before Hivernox gives up. Stops a jump over the edge and back from flapping the decision.")]
+        [SerializeField] private float platformExitConfirmSeconds = 0.3f;
+        [Tooltip("Speed of the walk back to the far end. Deliberately NOT retreatSpeed (1.21 on the prefab): that value is tuned for the short step back taken next to the Warrior, and crossing a 20-unit platform at it takes 12 s.")]
+        [SerializeField] private float withdrawSpeed = 3.5f;
+        [Tooltip("Hard cap on the walk back to the far end. The real budget is computed from the distance; this only stops a runaway.")]
+        [SerializeField] private float maxWithdrawSeconds = 8f;
+        [Header("Ice Bullet Charge - Strike Repulse")]
+        [Tooltip("Smooth platform repulse, same style as the IceBreaker punch. Applied even when the shield blocks the damage.")]
+        [SerializeField] private float chargeStrikeRepulseDistance = 2.25f;
+        [SerializeField] private float chargeStrikeRepulseDuration = 0.18f;
+        [SerializeField] private float chargeStrikeRepulseControlLock = 0.25f;
         [Header("Retreat / Cooldown")]
         [SerializeField] private Transform[] safeRetreatPoints;
         [SerializeField] private float retreatSpeed = 4f;
@@ -129,6 +162,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         private int _lastHandSmashHitSfxFrame = -1;
         private float _nextIceAttackTime = -999f;
         private float _nextCounterTime = -999f;
+        private bool _chargePending;
+        private bool _chargeStrikeHitResolved;
+        private int _iceHitsCount;
+        private float _lastIceHitTime = -999f;
+        private float _nextChargeTime = -999f;
+        private float _offPlatformTimer;
         private Vector3 _homePosition;
         private Warrior _finisherTarget;
         public HivernoxState State => state;
@@ -177,6 +216,15 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             if (warrior.IsFrozenByHivernox)
             {
                 BeginFreezeFinisher(warrior);
+                return;
+            }
+            // Consumed here, never in OnDamaged: this is the only place where no action routine is
+            // running, so starting the charge cannot cut an ice attack short. Placed after the
+            // freeze check on purpose, so a freeze landing before the charge starts still wins.
+            if (_chargePending)
+            {
+                _chargePending = false;
+                BeginCharge(warrior);
                 return;
             }
             SetState(HivernoxState.DetectWarrior);
@@ -499,6 +547,13 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         /// </summary>
         public void AE_IceBreakerHit()
         {
+            // The charge strike borrows Attack2Animation, so that clip's impact event lands here.
+            // Route it: the charge resolves its own hit, with its own damage and repulse.
+            if (state == HivernoxState.ChargeStrike)
+            {
+                AE_ChargeStrikeHit();
+                return;
+            }
             if (_iceBreakerHitResolved)
                 return;
 
@@ -656,6 +711,10 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         }
         private void BeginCounterAttack()
         {
+            // The hand smash wins over the ice-bullet charge: at counter range the Warrior is
+            // already within reach, so there is nothing to charge at. Disarm what the bullets set.
+            _chargePending = false;
+            _iceHitsCount = 0;
             _nextCounterTime = Time.time + counterCooldown;
             StartExclusiveRoutine(CounterAttackRoutine());
         }
@@ -737,6 +796,281 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             CanMove = true;
             _actionRoutine = null;
             StartExclusiveRoutine(CooldownRoutine());
+        }
+        /// <summary>
+        /// Called by the Warrior ice bullet on every hit (IceBulletProjectile).
+        /// Only arms a flag, exactly like ZortBoss.NotifyIceBulletHit. Starting the reaction here
+        /// would run it in the middle of the damage pipeline, ahead of the stun, the attack-disable
+        /// and the step-back that this very hit is about to apply. Update consumes the flag.
+        /// </summary>
+        public void NotifyIceBulletHit()
+        {
+            if (!enableIceBulletCharge || !_bossActivated || IsDeadOrDying || state == HivernoxState.Dead)
+                return;
+            _iceHitsCount = (Time.time - _lastIceHitTime > iceHitWindowSeconds) ? 1 : _iceHitsCount + 1;
+            _lastIceHitTime = Time.time;
+            if (_iceHitsCount < iceHitsToTriggerCharge || Time.time < _nextChargeTime)
+                return;
+            _iceHitsCount = 0;
+            _chargePending = true;
+        }
+        private void BeginCharge(Warrior warrior)
+        {
+            _nextChargeTime = Time.time + chargeCooldown;
+            StartExclusiveRoutine(ChargeAtWarriorRoutine(warrior));
+        }
+        private IEnumerator ChargeAtWarriorRoutine(Warrior warrior)
+        {
+            SetState(HivernoxState.Charge);
+            StopMoveTowardCoroutine();
+            CanMove = false;
+            _offPlatformTimer = 0f;
+            float timer = 0f;
+            bool reached = false;
+            while (timer < maxChargeSeconds)
+            {
+                if (warrior == null || warrior.IsDeadOrDying || IsDeadOrDying)
+                {
+                    StopHivernoxMotionNow();
+                    WaitAnimationDisplay();
+                    _actionRoutine = null;
+                    yield break;
+                }
+                // StunRoutine drops CanMove and kills the move coroutines, but it does NOT stop this
+                // routine. Without this guard Hivernox would keep sliding through his own stun,
+                // because the movement helper writes the transform directly.
+                if (IsStunned)
+                {
+                    StopHivernoxMotionNow();
+                    WaitAnimationDisplay();
+                    timer += Time.deltaTime;
+                    yield return null;
+                    continue;
+                }
+                // The Warrior left the shared platform. Chasing the edge he just left would park
+                // Hivernox exactly where the Warrior has to climb back on, which locks the fight.
+                // IsWarriorOnSamePlatform is useless here: warrior.CurrentplatForm stays stuck on
+                // the platform he came from, so it reported "same platform" for the whole charge
+                // while he was visibly on another one. Geometry is the only reliable signal.
+                _offPlatformTimer = HasWarriorLeftMyPlatform(warrior)
+                    ? _offPlatformTimer + Time.deltaTime
+                    : 0f;
+                if (_offPlatformTimer >= platformExitConfirmSeconds)
+                {
+                    StopHivernoxMotionNow();
+                    yield return StartCoroutine(WithdrawToOppositeEdgeRoutine(warrior));
+                    yield break;
+                }
+                FaceWarrior();
+                if (IsTouchingWarriorHitBoxLayer(warrior))
+                {
+                    reached = true;
+                    break;
+                }
+                float currentX = transform.position.x;
+                float nextX = Mathf.MoveTowards(currentX, warrior.transform.position.x,
+                    chargeSpeed * Time.deltaTime);
+                // groundBound: he can never leave his platform. When the Warrior stands elsewhere,
+                // this clamp parks Hivernox on the edge, which is exactly the asked-for ending.
+                nextX = ClampToCurrentPlatform(nextX);
+                if (WouldTouchWarriorHitBoxLayerAtX(warrior, nextX))
+                {
+                    MoveHivernoxHorizontallyWithLocomotionAnimation(nextX, useRunAnimation: true);
+                    reached = true;
+                    break;
+                }
+                // The clamp refuses to go any further toward the Warrior: edge of the platform.
+                if (Mathf.Approximately(nextX, currentX))
+                    break;
+                MoveHivernoxHorizontallyWithLocomotionAnimation(nextX, useRunAnimation: true);
+                timer += Time.deltaTime;
+                yield return null;
+            }
+            StopHivernoxMotionNow();
+            if (reached)
+            {
+                yield return StartCoroutine(ChargeStrikeRoutine(warrior));
+                yield break;
+            }
+            // Any charge that fails to land ends at the far end of the platform, whatever the
+            // reason: the Warrior left, dodged, or the charge simply timed out. Telling those
+            // apart proved unreliable — the geometric exit test kept missing by centimetres — and
+            // the player-facing rule is the same in all three cases: clear the ground so the
+            // Warrior can come back and fight. RetreatRoutine is deliberately not used here: its
+            // short step back is meant for standing next to the Warrior, not for crossing the
+            // platform.
+            yield return StartCoroutine(WithdrawToOppositeEdgeRoutine(warrior));
+        }
+        /// <summary>
+        /// The Warrior left the platform mid-charge. Hivernox walks to the far end and waits there,
+        /// so the Warrior can come back on without landing straight into him.
+        /// </summary>
+        private IEnumerator WithdrawToOppositeEdgeRoutine(Warrior warrior)
+        {
+            SetState(HivernoxState.Retreat);
+            CanMove = false;
+            float targetX = GetOppositeEdgeX(warrior);
+            // maxRetreatSeconds (1.4 s) was sized for the short step back taken next to the Warrior.
+            // Walking the full width of a 20-unit platform needs ~3.2 s at retreatSpeed, so that
+            // budget stopped Hivernox halfway, which reads as "he never reaches the end". Budget the
+            // time from the actual distance instead, with a hard cap against a runaway.
+            float distanceToCover = Mathf.Abs(transform.position.x - targetX);
+            float allowedSeconds = Mathf.Min(
+                maxWithdrawSeconds,
+                distanceToCover / Mathf.Max(0.1f, withdrawSpeed) + 1f);
+            float timer = 0f;
+            while (Mathf.Abs(transform.position.x - targetX) > retreatArriveDistance &&
+                   timer < allowedSeconds)
+            {
+                if (IsDeadOrDying)
+                    break;
+                if (IsStunned)
+                {
+                    StopHivernoxMotionNow();
+                    WaitAnimationDisplay();
+                    timer += Time.deltaTime;
+                    yield return null;
+                    continue;
+                }
+                FaceAwayFrom(warrior);
+                float nextX = Mathf.MoveTowards(transform.position.x, targetX,
+                    withdrawSpeed * Time.deltaTime);
+                nextX = ClampToCurrentPlatform(nextX);
+                // Running, not walking: a walk cycle played at withdrawSpeed slides visibly.
+                MoveHivernoxHorizontallyWithLocomotionAnimation(nextX, useRunAnimation: true);
+                timer += Time.deltaTime;
+                yield return null;
+            }
+            StopHivernoxMotionNow();
+            WaitAnimationDisplay();
+            CanMove = false;
+            _actionRoutine = null;
+            StartExclusiveRoutine(CooldownRoutine());
+        }
+        /// <summary>
+        /// True when the Warrior is no longer standing over Hivernox's platform.
+        ///
+        /// Deliberately NOT based on warrior.CurrentplatForm: that field stays pinned to the
+        /// platform he jumped from, so it reports the wrong answer for the whole charge. The
+        /// horizontal test carries the decision, because a jump barely moves X, and the vertical
+        /// margin has to stay above a jump apex so a plain hop never counts as leaving.
+        /// </summary>
+        private bool HasWarriorLeftMyPlatform(Warrior warrior)
+        {
+            if (warrior == null || CurrentplatForm == null || CurrentplatForm.platformCollider == null)
+                return false;
+            Bounds bounds = CurrentplatForm.platformCollider.bounds;
+            // A culled zone reports collapsed bounds: refuse to decide rather than decide wrongly.
+            if (bounds.size.x <= 0.01f)
+                return false;
+            Vector3 warriorPos = warrior.transform.position;
+            if (warriorPos.x < bounds.min.x - platformExitMarginX ||
+                warriorPos.x > bounds.max.x + platformExitMarginX)
+                return true;
+            return Mathf.Abs(warriorPos.y - bounds.max.y) > platformExitMarginY;
+        }
+        /// <summary>
+        /// Far end of Hivernox's own platform, on the side away from the Warrior. Returns the
+        /// current position when the bounds are unusable: a culled zone reports collapsed bounds,
+        /// and walking to a bogus edge would be worse than not moving at all.
+        /// </summary>
+        private float GetOppositeEdgeX(Warrior warrior)
+        {
+            if (warrior == null || CurrentplatForm == null || CurrentplatForm.platformCollider == null)
+                return transform.position.x;
+            Bounds bounds = CurrentplatForm.platformCollider.bounds;
+            if (bounds.size.x <= 0.01f)
+                return transform.position.x;
+            float leftX = bounds.min.x + edgeStandbyMargin;
+            float rightX = bounds.max.x - edgeStandbyMargin;
+            // "The end he came from": the edge BEHIND Hivernox, i.e. opposite to the way he was
+            // charging. Measured against Hivernox himself, not the platform centre, which gave the
+            // wrong end whenever the Warrior left on the same side Hivernox had started from.
+            return warrior.transform.position.x >= transform.position.x ? leftX : rightX;
+        }
+        private IEnumerator ChargeStrikeRoutine(Warrior warrior)
+        {
+            SetState(HivernoxState.ChargeStrike);
+            StopHivernoxMotionNow();
+            FaceWarrior();
+            CanMove = false;
+            _chargeStrikeHitResolved = false;
+            // The ice bullets that armed this charge also called DisableAttackTemporarily (0.2 s by
+            // default, and again through ApplyStun). CanDealDamageNow() would then drop the impact
+            // silently: the animation plays and nothing lands. This strike is the answer to those
+            // bullets, so they must not be what disarms it.
+            _attackDisabledUntil = -999f;
+            // Attack2Animation is the ONLY melee clip Hivernox owns: there is no Attack3 state
+            // and no isAttacking3 parameter on hivernoxController, and AttackAnimation (Attack1) is
+            // the ranged ice cast, which read as "he does nothing" on arrival. The clip is reused
+            // for its visuals only: the damage, the shield rule and the repulse below stay those of
+            // the charge strike, and the freeze finisher is never involved.
+            AttackAnimation2Display();
+            if (autoResolveChargeStrikeIfNoAnimationEvent)
+            {
+                yield return new WaitForSeconds(autoChargeStrikeHitDelay);
+                if (!_chargeStrikeHitResolved)
+                    AE_ChargeStrikeHit();
+                yield return new WaitForSeconds(Mathf.Max(0f, chargeStrikeAnimationSeconds - autoChargeStrikeHitDelay));
+            }
+            else
+            {
+                yield return new WaitForSeconds(chargeStrikeAnimationSeconds);
+            }
+            WaitAnimationDisplay();
+            CanMove = false;
+            _actionRoutine = null;
+            StartExclusiveRoutine(RetreatRoutine());
+        }
+        /// <summary>
+        /// Put this animation event on the exact impact frame of the charge strike.
+        /// </summary>
+        public void AE_ChargeStrikeHit()
+        {
+            if (_chargeStrikeHitResolved)
+                return;
+            _chargeStrikeHitResolved = true;
+            if (!CanDealDamageNow())
+                return;
+            Warrior warrior = GameMgr.Instance != null ? GameMgr.Instance.WarriorInstance : null;
+            if (warrior == null || warrior.IsDeadOrDying)
+                return;
+            // The charge stops on COLLIDER contact, not on a centre-to-centre distance: Hivernox is
+            // wide, so contact happens around 2.1 while handSmashHitRange-style values sit at 1.9.
+            // Testing distance alone made the strike unreachable by construction. Contact wins, and
+            // the range only serves as tolerance for a Warrior who stepped away between the contact
+            // and the animation impact frame.
+            if (!IsTouchingWarriorHitBoxLayer(warrior) &&
+                GetHorizontalDistanceTo(warrior.transform) > chargeStrikeHitRange)
+                return;
+            if (!IsWarriorOnSamePlatform(warrior))
+                return;
+            if (!IsWarriorInFront(warrior.transform))
+                return;
+            warrior.TryReceiveHivernoxDamage(
+               source: this,
+               damage: chargeStrikeDamage,
+               canBeBlockedByShield: true,
+               stunSeconds: 0f,
+               knockbackVelocity: 0f);
+            // Deliberately outside the damage result: the push lands even when the shield blocked,
+            // so the player still feels the charge. Smooth platform repulse rather than a Rigidbody
+            // velocity knockback, which is what produced the violent ejections elsewhere. The impact
+            // point is Hivernox himself, so the Warrior is always pushed away from him: the
+            // direction of the strike.
+            warrior.TryRepulseFromPlatformStoneImpact(
+               warrior.CurrentplatForm,
+               (Vector2)transform.position,
+               chargeStrikeRepulseDistance,
+               chargeStrikeRepulseDuration,
+               chargeStrikeRepulseControlLock);
+            // handSmashHitFxPrefab is unassigned on the prefab, and the clip own AE_Attack2ImpactFx
+            // bails out outside IceBreakerAttack, so without this the strike lands with nothing
+            // visible at all.
+            GameObject impactFx = attack2ImpactFxPrefab != null
+                ? attack2ImpactFxPrefab
+                : (handSmashHitFxPrefab != null ? handSmashHitFxPrefab : iceBreakerHitFxPrefab);
+            SpawnFx(impactFx, warrior.transform.position);
         }
         private IEnumerator RetreatRoutine()
         {
@@ -1124,6 +1458,19 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             }
             if (lifetime > 0f)
                 Destroy(fx, lifetime);
+        }
+        /// <summary>
+        /// A retry reuses the same instance, so a charge armed just before death would fire on the
+        /// fresh run. Clear the ice-bullet bookkeeping along with the rest of the combat state.
+        /// </summary>
+        protected override void OnCombatStateReset()
+        {
+            base.OnCombatStateReset();
+            _chargePending = false;
+            _chargeStrikeHitResolved = false;
+            _iceHitsCount = 0;
+            _lastIceHitTime = -999f;
+            _nextChargeTime = -999f;
         }
         protected override void OnDeath()
         {

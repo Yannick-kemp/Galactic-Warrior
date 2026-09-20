@@ -1,4 +1,4 @@
-namespace Assets.Scripts.Characteres.EnemyContoller
+﻿namespace Assets.Scripts.Characteres.EnemyContoller
 {
     public enum HivernoxState
     {
@@ -12,6 +12,11 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         HandSmash,
         Retreat,
         Cooldown,
-        Dead
+        Dead,
+        // Appended on purpose. The prefab feeds (int)state to the Animator through
+        // stateIntParameter ("hivernoxState"), so inserting a value above would shift
+        // Retreat/Cooldown/Dead and silently rewire every existing transition.
+        Charge,
+        ChargeStrike
     }
 }
