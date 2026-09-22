@@ -92,11 +92,17 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         [Tooltip("Warrior ice bullets needed inside the window below to trigger the charge.")]
         [SerializeField, Min(1)] private int iceHitsToTriggerCharge = 2;
         [Tooltip("Sliding window. Two bullets further apart than this never add up to a charge.")]
-        [SerializeField] private float iceHitWindowSeconds = 4f;
+        // 10, not 4: each ice bullet means re-arming the relic and playing the cast, so a real
+        // player lands them 3.6 to 4.7 s apart. At 4 s every other pair reset the count to 1.
+        [SerializeField] private float iceHitWindowSeconds = 10f;
         [SerializeField] private float chargeCooldown = 3f;
         [SerializeField] private float chargeSpeed = 5.5f;
-        [Tooltip("The charge gives up after this long without reaching the Warrior: he dodged.")]
+        [Tooltip("Minimum charge budget. The real budget is the time needed to cover the distance to the Warrior, plus a margin.")]
         [SerializeField] private float maxChargeSeconds = 2.5f;
+        [Tooltip("Extra seconds on top of distance / chargeSpeed, so a Warrior stepping back still gets reached.")]
+        [SerializeField] private float chargeBudgetMarginSeconds = 1f;
+        [Tooltip("Hard cap on the charge, whatever the distance.")]
+        [SerializeField] private float chargeBudgetCapSeconds = 8f;
         [SerializeField] private int chargeStrikeDamage = 14;
         [SerializeField] private float chargeStrikeHitRange = 1.9f;
         [SerializeField] private float chargeStrikeAnimationSeconds = 0.6f;
@@ -805,8 +811,12 @@ namespace Assets.Scripts.Characteres.EnemyContoller
         /// </summary>
         public void NotifyIceBulletHit()
         {
-            if (!enableIceBulletCharge || !_bossActivated || IsDeadOrDying || state == HivernoxState.Dead)
+            if (!enableIceBulletCharge || IsDeadOrDying || state == HivernoxState.Dead)
                 return;
+            // Being shot is detection. The ice bullet outranges detectionRange (9), so a Warrior
+            // firing from the far end of plf-blk_1 (9) hit a boss that was still Idle, and both
+            // hits were dropped here: no count, no charge, Hivernox never even turned around.
+            ActivateBoss();
             _iceHitsCount = (Time.time - _lastIceHitTime > iceHitWindowSeconds) ? 1 : _iceHitsCount + 1;
             _lastIceHitTime = Time.time;
             if (_iceHitsCount < iceHitsToTriggerCharge || Time.time < _nextChargeTime)
@@ -827,7 +837,15 @@ namespace Assets.Scripts.Characteres.EnemyContoller
             _offPlatformTimer = 0f;
             float timer = 0f;
             bool reached = false;
-            while (timer < maxChargeSeconds)
+            // A flat 2.5 s at chargeSpeed 5.5 covers 13.75 units, while plf-blk_1 (9) is 31 wide:
+            // shot from 20 units away, Hivernox gave up halfway and turned back. Budget the time
+            // from the actual distance instead, the same way WithdrawToOppositeEdgeRoutine does.
+            float chargeDistance = GetHorizontalDistanceTo(warrior.transform);
+            float allowedSeconds = Mathf.Clamp(
+                chargeDistance / Mathf.Max(0.1f, chargeSpeed) + chargeBudgetMarginSeconds,
+                maxChargeSeconds,
+                chargeBudgetCapSeconds);
+            while (timer < allowedSeconds)
             {
                 if (warrior == null || warrior.IsDeadOrDying || IsDeadOrDying)
                 {

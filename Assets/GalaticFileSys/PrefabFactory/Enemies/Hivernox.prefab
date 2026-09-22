@@ -520,7 +520,7 @@ MonoBehaviour:
   dashReturnDamage: 8
   enableIceBulletCharge: 1
   iceHitsToTriggerCharge: 2
-  iceHitWindowSeconds: 4
+  iceHitWindowSeconds: 10
   chargeCooldown: 3
   chargeSpeed: 5.5
   maxChargeSeconds: 2.5
